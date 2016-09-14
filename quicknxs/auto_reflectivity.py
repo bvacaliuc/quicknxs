@@ -399,6 +399,7 @@ class ReflectivityBuilder(Thread):
 
       if not self.newLiveData.isSet():
         # the live data file has not changed, wait and try again
+        logging.debug('Continue step 4 (no new LiveData), LDI: %i, CI: %i'%(self.live_data_idx, self.current_index))
         continue
       self.newLiveData.clear()
 
@@ -408,6 +409,7 @@ class ReflectivityBuilder(Thread):
       live_ds=qreduce.NXSData(instrument.LIVE_DATA, use_caching=False,
                               event_tof_overwrite=self.live_data_tof_overwrite)
       if live_ds is None:
+        logging.debug('Continue step 5 (live_ds is None), LDI: %i, CI: %i'%(self.live_data_idx, self.current_index))
         continue
       if live_ds.number>self.current_index:
         # if the current run has finished we increment the live data index and add
@@ -418,6 +420,7 @@ class ReflectivityBuilder(Thread):
       if live_ds.number<self.current_index:
         # if the live data is a direct beam run, ignore it, this will just loop over
         # wait times until the live data index is incremented
+        logging.debug('Continue step 6 (live_ds.number %i < CI), LDI: %i, CI: %i'%(live_ds.number,self.live_data_idx, self.current_index))
         continue
       if not self.reflectivity_active:
         self.start_new_reflectivity(live_ds)
@@ -425,6 +428,7 @@ class ReflectivityBuilder(Thread):
       # create reflectivity from live data and plot the result to the live reflectivity file
       live_refl=self.create_live_refl(live_ds)
       if live_refl is None:
+        logging.debug('Continue step 7 (live_refl is None), LDI: %i, CI: %i'%(self.live_data_idx, self.current_index))
         continue
       data=self.combine_reflectivity(live_add=[live_refl])
       title='+'.join([r[0].options['number'] for r in self.reflectivity_items])
