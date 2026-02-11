@@ -181,19 +181,19 @@ class PeakFinder(object):
     ridge_info=self.ridge_info
 
     if analyze:
-      self.length_filtered=filter(lambda item: item[0]<ridge_length,
-                     ridge_info)
-      self.snr_filtered=filter(lambda item: item[5]<snr, ridge_info)
+      self.length_filtered=list(filter(lambda item: item[0]<ridge_length,
+                     ridge_info))
+      self.snr_filtered=list(filter(lambda item: item[5]<snr, ridge_info))
     # filter for signal to noise ratio
-    ridge_info=filter(lambda item: item[5]>=snr, ridge_info)
+    ridge_info=list(filter(lambda item: item[5]>=snr, ridge_info))
     if double_peak_detection:
       # store peaks filtered by ridge length
-      ridge_filtered=filter(lambda item: (item[0]<ridge_length)&
+      ridge_filtered=list(filter(lambda item: (item[0]<ridge_length)&
                             (item[0]>=double_peak_reduced_ridge_length),
-                            ridge_info)
+                            ridge_info))
     # filter for minimum ridge line length
-    ridge_info=filter(lambda item: item[0]>=ridge_length,
-                     ridge_info)
+    ridge_info=list(filter(lambda item: item[0]>=ridge_length,
+                     ridge_info))
     # calculate peak info from ridge info
     # peak info items are [center_position, width, intensity]
     peak_info=[]
@@ -227,8 +227,8 @@ class PeakFinder(object):
       info.append(item[5])
       peak_info.append(info)
     # filter for peak width
-    peak_info=filter(lambda item: (item[1]>=min_width)&(item[1]<=max_width),
-                     peak_info)
+    peak_info=list(filter(lambda item: (item[1]>=min_width)&(item[1]<=max_width),
+                     peak_info))
     if double_peak_detection:
       # detect double-peaks by reducing the ridge-length filtering in adjacency of
       # strong peaks
@@ -276,9 +276,9 @@ class PeakFinder(object):
                         ]
       peak_info+=adjecent_peaks
     if analyze:
-      width_filtered=zip(ridge_info, peak_info)
-      self.width_filtered=filter(lambda item: \
-              (item[1][1]<min_width)|(item[1][1]>max_width), width_filtered)
+      width_filtered=list(zip(ridge_info, peak_info))
+      self.width_filtered=list(filter(lambda item: \
+              (item[1][1]<min_width)|(item[1][1]>max_width), width_filtered))
     peak_info.sort()
     return peak_info
 
@@ -413,7 +413,7 @@ class Cwt:
             nmax=ndata/largestscale/2
             self.scales=numpy.arange(float(2), float(nmax))
             self.nscale=len(self.scales)
-        else: raise ValueError, "scaling must be linear or log"
+        else: raise ValueError("scaling must be linear or log")
         return
 
     def getdata(self):

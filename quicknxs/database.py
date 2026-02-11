@@ -25,7 +25,7 @@ class DatabaseHandler(object):
   fields=[]
   
   def __init__(self):
-    self.fields=[('file_id', int), ('file_path', unicode),
+    self.fields=[('file_id', int), ('file_path', str),
             ('no_states', int), ('no_bins', int), ('first_bin', float), ('last_bin', float),
             ('xpix', float), ('ycenter', float), ('ywidth', float),
             ('ai', float), ('lambda_center', float)]
@@ -147,7 +147,7 @@ class DatabaseHandler(object):
     elif len(args)==2:
       return db.select(*args, **opts)
     else:
-      raise ValueError, '__call__ expects 0 to 2 non keyword arguments'
+      raise ValueError('__call__ expects 0 to 2 non keyword arguments')
 
 
   def find_direct_beams(self, dataset):

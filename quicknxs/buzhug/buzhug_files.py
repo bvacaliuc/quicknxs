@@ -1,4 +1,4 @@
-"""This module defines the classes used to modelize the files in which 
+"""This module defines the classes used to modelize the files in which
 information is stored
 
 One file is used for each field of the base. The values stored are first
@@ -7,8 +7,8 @@ physical files in the file system. Symmetrically, data is read from the
 physical file as a bytestring, and can be converted into a value
 
 To optimize the speed of the select() method, the comparison between
-a searched value and a record value is made by converting the searched 
-value into a "block", then compare it to the blocks in the file : this is 
+a searched value and a record value is made by converting the searched
+value into a "block", then compare it to the blocks in the file : this is
 much faster than converting each block in the file to a value
 
 A consequence of this is that the conversion between value and block must
@@ -18,8 +18,8 @@ because 10 > 2 (integers) but '10' < '2' (strings). The function used here
 is block = struct('>i',value+sys.maxint)
 
 Since the "for line in _file" loop is extremely fast, whenever possible the
-blocks are stored on one line (lines are separated by \n). Storage of Python
-bytestrings and of Unicode objects use this format (characters \n and \r must
+blocks are stored on one line (lines are separated by \\n). Storage of Python
+bytestrings and of Unicode objects use this format (characters \\n and \\r must
 be escaped to keep the block on one line) ; so do date and datetime
 
 Integers are converted into blocks of 4 characters, since one of them can be
@@ -45,7 +45,7 @@ class File:
     def create(self):
         if not os.path.isdir(self.base):
             os.mkdir(self.base)
-        file(self.path,'w').close()
+        open(self.path,'w').close()
         self.fileobj = open(self.path,'r+b')
         return self
 
@@ -71,23 +71,23 @@ class File:
     def mark_as_deleted(self,pos):
         """mark the block at position pos as deleted"""
         self.fileobj.seek(pos)
-        self.fileobj.write('#')
+        self.fileobj.write(b'#')
         self.fileobj.seek(pos)
 
     def get_value_at_pos(self,pos):
         return self.from_block(self.get_block_at_pos(pos))
-   
+
     def write_value_at_pos(self,pos,value):
         self.fileobj.seek(pos)
         self.fileobj.write(self.to_block(value))
         self.fileobj.seek(pos)
-        
+
     def tell(self):
         return self.fileobj.tell()
-    
+
     def seek(self,*args):
         return self.fileobj.seek(*args)
-    
+
     def read(self,size=-1):
         return self.fileobj.read(size)
 
@@ -125,36 +125,38 @@ class FixedLengthFile(File):
     def get_block_at_pos(self,pos):
         self.fileobj.seek(pos)
         return self.fileobj.read(self.block_len)
-   
+
     def get_block_at(self,num):
         return self.get_block_at_pos(self.block_len*num)
 
     def __iter__(self):
         self.fileobj.seek(0)
-        chunk_size = self.block_len*(131072/self.block_len)
+        chunk_size = self.block_len*(131072//self.block_len)
         while True:
             buf = self.fileobj.read(chunk_size)
             if not buf:
-                raise StopIteration
-            for i in range(len(buf)/self.block_len):
+                return
+            for i in range(len(buf)//self.block_len):
                 yield buf[self.block_len*i:self.block_len*(i+1)]
 
 class StringFile(VariableLengthFile):
 
     def to_block(self,value):
         if value is None:
-            return '!\n'
+            return b'!\n'
         elif not isinstance(value,str):
-            raise ValueError,'Bad type : expected str, got %s %s' %(value,
-                    value.__class__)
+            raise ValueError('Bad type : expected str, got %s %s' %(value,
+                    value.__class__))
         else:
             # escape CR & LF so that the block is on one line
             value = value.replace('\\','\\\\')
             value = value.replace('\n','\\n')
             value = value.replace('\r','\\r')
-            return '-' + value + '\n'
-    
+            return ('-' + value + '\n').encode('utf-8')
+
     def from_block(self,block):
+        if isinstance(block, bytes):
+            block = block.decode('utf-8')
         if block == '!\n':
             return None
         else:
@@ -168,7 +170,7 @@ class StringFile(VariableLengthFile):
                     j = i
                     while j<len(b) and b[j] == '\\':
                         j += 1
-                    res += '\\'*((j-i)/2)
+                    res += '\\'*((j-i)//2)
                     if (j-i) % 2:   # odd number of slashes
                         if b[j] == 'n':
                             res += '\n'
@@ -181,28 +183,31 @@ class StringFile(VariableLengthFile):
                     res += b[i]
                     i += 1
             return res
-    
+
 class UnicodeFile(StringFile):
-    """Unicode strings are converted to their UTF-8 encoding"""
+    """Unicode strings are converted to their UTF-8 encoding
+    In Python 3, str is unicode, so this is essentially the same as StringFile"""
 
     def to_block(self,value):
         if value is None:
-            return '!\n'
-        elif not isinstance(value,unicode):
-            raise ValueError,'Bad type : expected unicode, got %s %s' %(value,
-                    value.__class__)
+            return b'!\n'
+        elif not isinstance(value,str):
+            raise ValueError('Bad type : expected str, got %s %s' %(value,
+                    value.__class__))
         else:
-            return StringFile.to_block(self,value.encode('utf-8'))
-    
+            return StringFile.to_block(self,value)
+
     def from_block(self,block):
+        if isinstance(block, bytes):
+            block = block.decode('utf-8')
         if block == '!\n':
             return None
         else:
-            return StringFile.from_block(self,block).decode('utf-8')
+            return StringFile.from_block(self,block)
 
 
 # Generic class for dates
-# Although dates have a fixed length file, this class derives from 
+# Although dates have a fixed length file, this class derives from
 # VariableLengthFile because select is faster this way
 # block_len is set because this forces the use of the fast select algos
 
@@ -214,44 +219,48 @@ class DateFile(VariableLengthFile):
 
     def to_block(self,value):
         if value is None:
-            return '!xxxxxxxx\n'
+            return b'!xxxxxxxx\n'
         elif not isinstance(value,date):
-            raise ValueError,'Bad type : expected datetime.date, got %s %s' \
-                %(value,value.__class__)
+            raise ValueError('Bad type : expected datetime.date, got %s %s'
+                %(value,value.__class__))
         else:
             if value.year>=1900:
-                return value.strftime('-%Y%m%d')+'\n'
+                return (value.strftime('-%Y%m%d')+'\n').encode('ascii')
             else:
                 # strftime doesn't work for year<1900
-                return "-%04d%02d%02d\n" %(value.year,value.month,value.day)
-    
+                return ("-%04d%02d%02d\n" %(value.year,value.month,value.day)).encode('ascii')
+
     def from_block(self,block):
+        if isinstance(block, bytes):
+            block = block.decode('ascii')
         if block[0] == '!':
             return None
         else:
-            return date(int(block[1:5]),int(block[5:7]),int(block[7:-1]))  
-   
+            return date(int(block[1:5]),int(block[5:7]),int(block[7:-1]))
+
 class DateTimeFile(VariableLengthFile):
 
     block_len = 16 # value set to force use of the fast select algos
 
     def to_block(self,value):
         if value is None:
-            return '!xxxxxxxxxxxxxx\n'
+            return b'!xxxxxxxxxxxxxx\n'
         elif not isinstance(value,date):
-            raise ValueError,'Bad type : expected datetime.date, got %s %s' \
-                %(value,value.__class__)
+            raise ValueError('Bad type : expected datetime.date, got %s %s'
+                %(value,value.__class__))
         else:
             if value.year>=1900:
-                return value.strftime('-%Y%m%d%H%M%S')+'\n'
+                return (value.strftime('-%Y%m%d%H%M%S')+'\n').encode('ascii')
             else:
                 # strftime doesn't work for year<1900
-                _date = "-%04d%02d%02d%02d%02D%02d\n" %(value.year,
+                _date = "-%04d%02d%02d%02d%02d%02d\n" %(value.year,
                     value.month,value.day,value.hour,value.minute,
                     value.second)
-                return _date
-    
+                return _date.encode('ascii')
+
     def from_block(self,block):
+        if isinstance(block, bytes):
+            block = block.decode('ascii')
         if block[0] == '!':
             return None
         else:
@@ -266,14 +275,16 @@ class TimeFile(VariableLengthFile):
 
     def to_block(self,value):
         if value is None:
-            return '!xxxxxx\n'
+            return b'!xxxxxx\n'
         elif not isinstance(value, dtime):
-            raise ValueError,'Bad type : expected datetime.time, got %s %s' \
-                %(value,value.__class__)
+            raise ValueError('Bad type : expected datetime.time, got %s %s'
+                %(value,value.__class__))
         else:
-            return value.strftime('-%H%M%S')+'\n'
-    
+            return (value.strftime('-%H%M%S')+'\n').encode('ascii')
+
     def from_block(self,block):
+        if isinstance(block, bytes):
+            block = block.decode('ascii')
         if block[0] == '!':
             return None
         else:
@@ -285,23 +296,23 @@ class BooleanFile(FixedLengthFile):
 
     def to_block(self,value):
         if value is None:
-            return '!'+chr(0)
+            return b'!' + bytes([0])
         elif not isinstance(value,bool):
-            raise ValueError,'Bad type : expected bool, got %s %s' \
-                %(value,value.__class__)
+            raise ValueError('Bad type : expected bool, got %s %s'
+                %(value,value.__class__))
         else:
             if value:
-                return '-1'
+                return b'-1'
             else:
-                return '-0'
+                return b'-0'
     def from_block(self,block):
-        if block[0]=='!':
+        if block[0:1]==b'!':
             return None
-        elif block == "-0":
+        elif block == b"-0":
             return False
         else:
             return True
-    
+
 import struct
 
 class IntegerFile(FixedLengthFile):
@@ -311,21 +322,21 @@ class IntegerFile(FixedLengthFile):
 
     def to_block(self,value):
         if value is None:
-            return '!'+chr(0)*4
+            return b'!' + bytes(4)
         elif not isinstance(value,int):
-            raise ValueError,'Bad type : expected int, got %s %s' \
-                %(value,value.__class__)
+            raise ValueError('Bad type : expected int, got %s %s'
+                %(value,value.__class__))
         else:
-            if value <= -sys.maxint/2:
-                raise OverflowError,"Integer value must be > %s, got %s" \
-                    %(-sys.maxint/2,value)
-            if value > sys.maxint/2:
-                raise OverflowError,"Integer value must be <= %s, got %s" \
-                    %(sys.maxint/2,value)
-            return '-'+struct.pack('>i',value+self.MIDINT)
+            if value <= -sys.maxsize//2:
+                raise OverflowError("Integer value must be > %s, got %s"
+                    %(-sys.maxsize//2,value))
+            if value > sys.maxsize//2:
+                raise OverflowError("Integer value must be <= %s, got %s"
+                    %(sys.maxsize//2,value))
+            return b'-'+struct.pack('>i',value+self.MIDINT)
 
     def from_block(self,block):
-        if block[0]=='!':
+        if block[0:1]==b'!':
             return None
         else:
             return struct.unpack('>i',block[1:])[0]-self.MIDINT
@@ -343,11 +354,11 @@ class FloatFile(FixedLengthFile):
     If value is negative : e1 = 16384 - exp (decreases when mantissa
        increases, to preserve order)
     If value is positive : e1 = 16384*3 + exp
-    
+
     This conversion will work in all cases if abs(exp) < 16384
-    
+
     3. e1 is converted into a 2-byte string by struct.pack('>H',e1)
-    
+
     4. mantissa conversion :
     - if value is positive : struct.pack('>d',mant)
     - if value is negative : struct.pack('>d',1.1 + mant)
@@ -357,49 +368,49 @@ class FloatFile(FixedLengthFile):
     This implementation has changed in version 1.1. Use script conversion_float
     to upgrade databases made with older versions
     """
-    
+
     block_len = 10
     offsetneg = 16384
     offsetpos = 16384*3
 
     def to_block(self,value):
         if value is None:
-            return '!'+chr(0)*9
+            return b'!' + bytes(9)
         elif not isinstance(value,float):
-            raise ValueError,'Bad type : expected float, got %s %s' \
-                %(value,value.__class__)
+            raise ValueError('Bad type : expected float, got %s %s'
+                %(value,value.__class__))
         elif value == 0.0:
-            return '-'+chr(128)+chr(0)*8
+            return b'-' + bytes([128]) + bytes(8)
         else:
             # get mantissa and exponent
             # f = mant*2**exp, 0.5 <= abs(mant) < 1
             mant,exp = math.frexp(value)
             if value>=0:
                 pack_exp = struct.pack('>H',exp+self.offsetpos)
-                return '-'+pack_exp+struct.pack('>d',mant)[1:]
+                return b'-'+pack_exp+struct.pack('>d',mant)[1:]
             else:
                 pack_exp = struct.pack('>H',self.offsetneg-exp)
-                return '-'+pack_exp+struct.pack('>d',1.1+mant)[1:]
+                return b'-'+pack_exp+struct.pack('>d',1.1+mant)[1:]
 
     def from_block(self,block):
-        if block[0]=='!':
+        if block[0:1]==b'!':
             return None
         else:
             s = block[1:]
-            if ord(s[0])==128:
+            if s[0] == 128 if isinstance(s[0], int) else ord(s[0]) == 128:
                 return 0.0
-            elif ord(s[0])<128:
+            elif (s[0] if isinstance(s[0], int) else ord(s[0]))<128:
                 # negative number
                 exp = self.offsetneg-struct.unpack('>H',s[:2])[0]
-                mant = struct.unpack('>d',chr(63)+s[2:])[0] - 1.1
+                mant = struct.unpack('>d',bytes([63])+s[2:])[0] - 1.1
             else:
                 exp = struct.unpack('>H',s[:2])[0]-self.offsetpos
-                mant = struct.unpack('>d',chr(63)+s[2:])[0]
+                mant = struct.unpack('>d',bytes([63])+s[2:])[0]
             return math.ldexp(mant,exp)
 
 class PositionFile(FixedLengthFile):
     """A position file is used to reference records by their id
-    The information stored about a record is the position of the 
+    The information stored about a record is the position of the
     record fields in the respective field files
     """
 
@@ -413,13 +424,13 @@ class PositionFile(FixedLengthFile):
         self.block_len = 1+4*len(baseobj.field_names)
         self._count = 0 # number of records in the base
         self.next_id = 0
-    
+
     def open(self):
         self.fileobj = open(self.path,'r+b')
         # get deleted items, identified by a leading '#'
         self.deleted_lines, self._count = [],0
         for line_num,line in enumerate(self):
-            if line[0]=='#':
+            if line[0:1]==b'#':
                 self.deleted_lines.append(line_num)
             else:
                 self._count += 1
@@ -428,13 +439,13 @@ class PositionFile(FixedLengthFile):
         # attributed ids
         _id_pos = self.baseobj._id_pos
         _id_pos.seek(0,2)
-        self.next_id = _id_pos.tell()/5
+        self.next_id = _id_pos.tell()//5
         return self
 
     def insert(self,value):
         """Method called when a record is inserted in the base. value
         is the list of the positions in field files
-        Return the id of the inserted record and the line number in 
+        Return the id of the inserted record and the line number in
         the position file
         """
         if self.deleted_lines:
@@ -446,7 +457,7 @@ class PositionFile(FixedLengthFile):
             # append a new record at the end of the file
             self.fileobj.seek(0,2)
             pos = self.fileobj.tell()
-            num = pos/self.block_len
+            num = pos//self.block_len
         _id = self.next_id
         self.fileobj.seek(pos)
         self.fileobj.write(self.to_block(value))
@@ -456,9 +467,9 @@ class PositionFile(FixedLengthFile):
         return _id,num
 
     def update(self,_line,new_positions):
-        """Method used if the record identified by _line has changed with 
-        variable length fields modified : in this case the new fields are 
-        appended at the end of the field files and their new positions must 
+        """Method used if the record identified by _line has changed with
+        variable length fields modified : in this case the new fields are
+        appended at the end of the field files and their new positions must
         be updated"""
         pos = _line*self.block_len
         self.fileobj.seek(pos)
@@ -470,16 +481,16 @@ class PositionFile(FixedLengthFile):
         pos = _line*self.block_len
         # skip flag
         self.fileobj.seek(pos+1)
-        self.fileobj.write(''.join([struct.pack('>i',v) 
+        self.fileobj.write(b''.join([struct.pack('>i',v)
             for v in new_positions]))
         self.fileobj.seek(pos+3)
 
     def remove(self,_line):
         self.fileobj.seek(_line*self.block_len)
-        if self.fileobj.read(1) == '#':
+        if self.fileobj.read(1) == b'#':
             return  # if record is already removed, ignore silently
         self.fileobj.seek(_line*self.block_len)
-        self.fileobj.write('#')
+        self.fileobj.write(b'#')
         self.fileobj.seek(_line*self.block_len)
         self.deleted_lines.append(_line)
         self._count -= 1
@@ -522,11 +533,11 @@ class PositionFile(FixedLengthFile):
 
     def to_block(self,value):
         # value = positions in field files
-        return '-'+''.join([struct.pack('>i',v) for v in value])
+        return b'-'+b''.join([struct.pack('>i',v) for v in value])
 
     def from_block(self,block):
         """Returns a list : position of field in their files"""
-        return list(struct.unpack('>'+'i'*(len(block[1:])/4),block[1:]))
+        return list(struct.unpack('>'+'i'*(len(block[1:])//4),block[1:]))
 
 class DeletedRowsFile(VariableLengthFile):
     """File that references the deleted rows. Stores integers on variable
@@ -542,31 +553,33 @@ class DeletedRowsFile(VariableLengthFile):
         self.fileobj = open(self.path,'r+b')
         self.deleted_rows = [ int(line[:-1]) for line in self ]
         return self
-    
+
     def insert(self,value):
         VariableLengthFile.insert(self,value)
         self.deleted_rows.append(value)
 
     def to_block(self,value):
-        return str(value)+'\n'
-    
+        return (str(value)+'\n').encode('ascii')
+
     def from_block(self,block):
+        if isinstance(block, bytes):
+            block = block.decode('ascii')
         return int(block[:-1])
 
 class ExternalFile(FixedLengthFile):
     """Class for references to another base"""
 
     block_len = 5
-    
+
     def to_block(self,value):
         if value is None:
-            return '!'+chr(0)*4
+            return b'!' + bytes(4)
         else:
             #v = [ value.__id__ ]
-            return '-'+struct.pack('>i',value.__id__)
+            return b'-'+struct.pack('>i',value.__id__)
 
     def from_block(self,block):
-        if block[0]=='!':
+        if block[0:1]==b'!':
             return None
         _id = struct.unpack('>i',block[1:])[0]
         try:
@@ -575,5 +588,5 @@ class ExternalFile(FixedLengthFile):
             # if the referenced record has been deleted, return
             # an uninitialized record (all fields set to None,
             # including __id__)
-            rec = ['!']*len(self.db.field_names)
+            rec = [b'!']*len(self.db.field_names)
             return self.db._full_rec(rec)

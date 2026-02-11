@@ -26,7 +26,7 @@ def get_total_reflection(refl, return_npoints=False):
   :returns: scaling, (number of points used for weighted mean)
   """
   if not type(refl) is Reflectivity:
-    raise ValueError, "'refl' needs to be a Reflectiviy object"
+    raise ValueError("'refl' needs to be a Reflectiviy object")
   last=refl.options['PN']
   first=len(refl.R)-refl.options['P0']
   R=refl.R[last:first]
@@ -57,7 +57,7 @@ def get_scaling(refl1, refl2, add_points=0, polynom=3):
   :returns: scaling, array of fitted x and y
   """
   if not (type(refl1) is Reflectivity and type(refl2) is Reflectivity):
-    raise ValueError, "'refl1' and 'refl2' need to be Reflectiviy objects"
+    raise ValueError("'refl1' and 'refl2' need to be Reflectiviy objects")
   last=refl1.options['PN']
   first=len(refl1.R)-refl1.options['P0']
   R1=refl1.R[last:first]
@@ -105,7 +105,7 @@ def get_xpos(data, dangle0_overwrite=None, direct_pixel_overwrite=-1,
   :returns: x_center, (Peakfinder)
   """
   if type(data) is not MRDataset:
-    raise ValueError, "'data' needs to be a MRDataset object"
+    raise ValueError("'data' needs to be a MRDataset object")
   if data.total_counts==0:
     # for datasets with no counts return the direct pixel from the metadata
     if return_pf:
@@ -167,7 +167,7 @@ def get_yregion(data):
   :returns: y_center, y_width, y_bg
   """
   if type(data) is not MRDataset:
-    raise ValueError, "'data' needs to be a MRDataset object"
+    raise ValueError("'data' needs to be a MRDataset object")
   yproj=data.ydata
   # find the central peak region with intensities larger than the median
   y_bg=median(yproj)
@@ -447,7 +447,7 @@ class DetectorTailCorrector(object):
     else:
       result=zeros(self.mshape)
       lendiff=self.mshape-data.shape[0]
-      result[lendiff/2:data.shape[0]+lendiff/2]=data
+      result[lendiff//2:data.shape[0]+lendiff//2]=data
       data=result.copy()
     rdiff=data-self.convole_data(result)
     last_diff=abs(rdiff).sum()

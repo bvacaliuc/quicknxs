@@ -12,7 +12,7 @@ import numpy as np
 from logging import debug, info
 from time import strftime
 from zipfile import ZipFile
-from cPickle import loads, dumps
+from pickle import loads, dumps
 from .config import paths, instrument, output_templates
 from .decorators import log_call
 from .qcalc import smooth_data, DetectorTailCorrector
@@ -282,7 +282,7 @@ class HeaderCreator(object):
     # first run through all data and headers to determine each column widths
     for option in options:
       column_leni=len(option)
-      if any([type(di[option]) in [bool, type(None), str, unicode, list] for di in data]):
+      if any([type(di[option]) in [bool, type(None), str, list] for di in data]):
         item=u'%s'
         fstring=u'%%%%(%s)-%%is'%option
       elif type(data[0][option])  is int:
@@ -301,7 +301,7 @@ class HeaderCreator(object):
       output+=data_line%di
     return output
 
-  def __unicode__(self):
+  def __str__(self):
     output=self._get_general_header()
     output+=u'\n'
     for section in self.sections:
@@ -309,13 +309,6 @@ class HeaderCreator(object):
       output+=self._get_section(*section)
     output+=u'\n'
     return output
-
-  if sys.version_info[0]>=3:
-    def __str__(self):
-      return self.__unicode__()
-  else:
-    def __str__(self):
-      return self.__unicode__().encode('utf8', 'ignore')
 
   @classmethod
   def get_data_header(cls, names, units):
@@ -336,7 +329,7 @@ class HeaderCreator(object):
     return output+u'\n'
 
   def as_comments(self):
-    output=unicode(self)
+    output=str(self)
     return u'# '+u'\n# '.join([line for line in output.splitlines()])+'\n'
 
 
@@ -364,8 +357,8 @@ class HeaderParser(object):
   states_in_file=None
 
   def __init__(self, header, parse_meta=True):
-    if type(header) is not unicode:
-      header=unicode(header, 'utf8', 'ignore')
+    if isinstance(header, bytes):
+      header=header.decode('utf8', 'ignore')
     # if header is a single line, assume it is a file name, not a header string
     if not '\n' in header:
       header=self.read_file_header(header)
@@ -378,7 +371,7 @@ class HeaderParser(object):
 
   @staticmethod
   def read_file_header(fname):
-    text=unicode(open(fname, 'rb').read(), 'utf8')
+    text=open(fname, 'rb').read().decode('utf8')
     header=[]
     for line in text.splitlines():
       if not line.startswith('#'):
@@ -398,7 +391,7 @@ class HeaderParser(object):
     '''
     hlines=self.header.splitlines()
     if not hlines[0].startswith('# Datafile created by QuickNXS'):
-      raise IOError, 'This is no file created by QuickNXS'
+      raise IOError('This is no file created by QuickNXS')
     self.quicknxs_version=hlines[0].strip().rsplit(' ', 1)[1]
     for line in hlines:
       if line.startswith('# Date:'):
@@ -414,7 +407,7 @@ class HeaderParser(object):
     This is then stored in a dictionary.
     '''
     hlines=self.header.splitlines()
-    hlines=map(lambda line: line.lstrip('#'), hlines)
+    hlines=[line.lstrip('#') for line in hlines]
     current_section=None
     for line in hlines:
       line=line.strip()
@@ -440,7 +433,7 @@ class HeaderParser(object):
       idata=dict(defaults)
       for i, key in enumerate(sitems):
         value=item[i]
-        if key in defaults and type(defaults[key]) in [str, unicode]:
+        if key in defaults and isinstance(defaults[key], str):
           idata[key]=value
         elif value in ['True', 'False', 'None'] or ',' in value or \
               ('[' in value and ']' in value):
@@ -449,7 +442,7 @@ class HeaderParser(object):
           try:
             value=float(value)
           except ValueError:
-            idata[key]=unicode(value)
+            idata[key]=str(value)
           else:
             if key in defaults and type(defaults[key]) is int:
               idata[key]=int(value)
@@ -488,7 +481,7 @@ class HeaderParser(object):
     read_opts=dict(NXSData.DEFAULT_OPTIONS)
     if options['EVT_ID'] is not None:
       if not "Event Mode Options" in self.section_data:
-        raise ValueError, 'No "Event Mode Options" section defined but EVT_ID is set'
+        raise ValueError('No "Event Mode Options" section defined but EVT_ID is set')
       evt_opts=self.section_data["Event Mode Options"][int(options['EVT_ID'])-1]
       for key in ['bin_type', 'bins', 'event_split_bins', 'event_split_index']:
         read_opts[key]=evt_opts[key]
@@ -508,7 +501,7 @@ class HeaderParser(object):
         opt_item[key]=item[key]
       if item['bg_poly_regions'] is not None:
         if not 'Background Polygon Regions' in self.section_data:
-          raise ValueError, 'No "Background Polygon Regions" section defined but bg_poly_regions is set'
+          raise ValueError('No "Background Polygon Regions" section defined but bg_poly_regions is set')
         opt_item['bg_poly_regions']=[]
         for index in item['bg_poly_regions']:
           poly=self.section_data['Background Polygon Regions'][index-1]
@@ -536,7 +529,7 @@ class HeaderParser(object):
           calc_opts[key]=db[key]
       if db['BG_ID'] is not None:
         if not 'Advanced Background Options' in self.section_data:
-          raise ValueError, 'No "Advanced Background Options" section defined but BG_ID is set'
+          raise ValueError('No "Advanced Background Options" section defined but BG_ID is set')
         calc_opts.update(self._bg_options[int(db['BG_ID'])-1])
       norm=Reflectivity(data[0], **calc_opts)
       self.norms.append(norm)
@@ -556,7 +549,7 @@ class HeaderParser(object):
           calc_opts[key]=db[key]
       if db['BG_ID'] is not None:
         if not 'Advanced Background Options' in self.section_data:
-          raise ValueError, 'No "Advanced Background Options" section defined but BG_ID is set'
+          raise ValueError('No "Advanced Background Options" section defined but BG_ID is set')
         calc_opts.update(self._bg_options[int(db['BG_ID'])-1])
       calc_opts['normalization']=self.norms[int(db['DB_ID'])-1]
       refl=Reflectivity(data[0], **calc_opts)
@@ -606,7 +599,7 @@ class Exporter(object):
         self.indices.append(refli.options['number'])
     self.indices.sort()
     self.ind_str="+".join(map(str, self.indices))
-    self.ipts_str=self.raw_data.values()[0].experiment
+    self.ipts_str=list(self.raw_data.values())[0].experiment
 
   @log_call
   def extract_reflectivity(self):

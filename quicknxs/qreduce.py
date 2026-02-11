@@ -113,6 +113,8 @@ class OptionsDocMeta(type):
   '''
 
   def __new__(cls, name, bases, dct):
+    import builtins as _builtins
+    _max = _builtins.max
     # overwrite the docstring
     docstring=dct['__doc__']
     docstring+='''
@@ -132,8 +134,8 @@ class OptionsDocMeta(type):
     maxlen_key=3
     maxlen_val=7
     for key, value in sorted(opts.items()):
-      maxlen_key=max(maxlen_key, len("%s"%key))
-      maxlen_val=max(maxlen_val, len("%s"%value))
+      maxlen_key=_max(maxlen_key, len("%s"%key))
+      maxlen_val=_max(maxlen_val, len("%s"%value))
     maxlen_desc=80-maxlen_key-maxlen_val
     docline='\n      %%-%is  %%-%is  %%-%is'%(maxlen_key, maxlen_val, maxlen_desc)
     docstring+=docline%('='*maxlen_key, '='*maxlen_val, '='*maxlen_desc)
@@ -162,15 +164,14 @@ class OptionsDocMeta(type):
     return output
     
 
-class NXSData(object):
+class NXSData(object, metaclass=OptionsDocMeta):
   '''
   Class for readout and evaluation of histogram and event mode .nxs files,
   which also stores the data to be accessed by attributes.
-  
+
   The object can be used as a ordered dictionary or list of channels,
   where each channel is a MRDataset object.
   '''
-  __metaclass__=OptionsDocMeta
 
   DEFAULT_OPTIONS=dict(bin_type=0, bins=40, use_caching=True, callback=None,
                        event_split_bins=None, event_split_index=0,
@@ -193,7 +194,7 @@ class NXSData(object):
     if type(filename) is int:
       fn=locate_file(filename)
       if fn is None:
-        raise RuntimeError, 'No file found for index %i'%filename
+        raise RuntimeError('No file found for index %i'%filename)
       filename=fn
     if filename.endswith('.xml') and cls is not XMLData:
       return XMLData(filename, **options)
@@ -238,7 +239,7 @@ class NXSData(object):
     all_options=dict(cls.DEFAULT_OPTIONS)
     for key, value in options.items():
       if not key in all_options:
-        raise ValueError, "%s is not a known option parameter"%key
+        raise ValueError("%s is not a known option parameter"%key)
       all_options[key]=value
     return all_options
 
@@ -257,13 +258,12 @@ class NXSData(object):
       debug('Could not read nxs file %s'%filename, exc_info=True)
       return False
     # analyze channels
-    channels=nxs.keys()
+    channels=list(nxs.keys())
     debug('Channels in file: '+repr(channels))
     if channels==['entry'] and 'DASlogs' not in nxs[channels[0]]:
       # ancient file format with polarizations in different files
       nxs=self._get_ancient(filename)
-      channels=nxs.keys()
-      channels.sort()
+      channels=sorted(nxs.keys())
       is_ancient=True
     else:
       is_ancient=False
@@ -418,7 +418,7 @@ class NXSData(object):
       elif item in self._channel_origin:
         return self._channel_data[self._channel_origin.index(item)]
       else:
-        raise KeyError, "No such channel: %s"%str(item)
+        raise KeyError("No such channel: %s"%str(item))
 
   def __setitem__(self, item, data):
     if type(item)==int:
@@ -429,7 +429,7 @@ class NXSData(object):
       elif item in self._channel_origin:
         self._channel_data[self._channel_origin.index(item)]=data
       else:
-        raise KeyError, "No such channel: %s"%str(item)
+        raise KeyError("No such channel: %s"%str(item))
 
   def __len__(self):
     return len(self._channel_data)
@@ -466,7 +466,7 @@ class NXSData(object):
 
   def numitems(self):
     ''':returns: three items tuples of the channel index, name and data'''
-    return zip(xrange(len(self.keys())), self.keys(), self.values())
+    return zip(range(len(self.keys())), self.keys(), self.values())
 
   def __iter__(self):
     for item in self.values():
@@ -512,7 +512,7 @@ class NXSMultiData(NXSData):
 
   def __new__(cls, filenames, **options):
     if not hasattr(filenames, '__iter__') or len(filenames)==0:
-      raise ValueError, 'File names needs to be an iterable of length > 0'
+      raise ValueError('File names needs to be an iterable of length > 0')
     all_options=cls._get_all_options(options)
     all_options['callback']=None
     cached_names=[item.origin for item in cls._cache]
@@ -535,7 +535,7 @@ class NXSMultiData(NXSData):
       cls._progress=(i+1.)/cls._progress_items
       other=NXSData(filename, **options)
       if len(self._channel_data)!=len(other._channel_data):
-        raise ValueError, 'Files can not be combined due to different number of states'
+        raise ValueError('Files can not be combined due to different number of states')
       self._add_data(other)
       numbers.append(other.number)
     self.origin=filenames
@@ -826,7 +826,7 @@ class MRDataset(object):
       elif bin_type==2: # constant Δλ/λ
         tof_edges=tmin*(((tmax/tmin)**(1./bins))**arange(bins+1))
       else:
-        raise ValueError, 'Unknown bin type %i'%bin_type
+        raise ValueError('Unknown bin type %i'%bin_type)
     else:
       tof_edges=tof_overwrite
 
@@ -948,10 +948,10 @@ class MRDataset(object):
       elif bin_type==2: # constant Δλ/λ
         tof_edges=tmin*(((tmax/tmin)**(1./bins))**arange(bins+1))
       else:
-        raise ValueError, 'Unknown bin type %i'%bin_type
+        raise ValueError('Unknown bin type %i'%bin_type)
     else:
       tof_edges=tof_overwrite
-    
+
     tmin=float(tofxxml.getElementsByTagName('TOFMin')[0].childNodes[0].data[:-3])
     tstep=float(tofxxml.getElementsByTagName('TOFBinSize')[0].childNodes[0].data[:-3])
     tof_bins=arange(tmin, tmin+tstep*tofxdata.shape[1], tstep)
@@ -1043,7 +1043,7 @@ class MRDataset(object):
           continue
         try:
           if 'units' in item['value'].attrs:
-            self.log_units[motor]=unicode(item['value'].attrs['units'], encoding='utf8')
+            self.log_units[motor]=item['value'].attrs['units'].decode('utf8') if isinstance(item['value'].attrs['units'], bytes) else str(item['value'].attrs['units'])
           else:
             self.log_units[motor]=u''
           val=item['value'].value
@@ -1111,7 +1111,7 @@ class MRDataset(object):
     xdim=int(data.getAttribute('xdim'))
     ydim=int(data.getAttribute('ydim'))
     type_name=data.getAttribute('type')
-    Idata=fromstring(base64.decodestring(rawdata.data), dtype=type_name).reshape(xdim, ydim)
+    Idata=frombuffer(base64.decodebytes(rawdata.data.encode() if isinstance(rawdata.data, str) else rawdata.data), dtype=type_name).reshape(xdim, ydim)
     return Idata
 
   def __repr__(self):
@@ -1178,14 +1178,14 @@ class MRDataset(object):
     def data(self):
       if MRDataset._cached_object is self:
         return MRDataset._cached_data
-      data=fromstring(zlib.decompress(self._data_zipped), dtype=self._data_dtype)
+      data=frombuffer(zlib.decompress(self._data_zipped), dtype=self._data_dtype).copy()
       data=data.reshape(self._data_shape)
       MRDataset._cached_data=data
       MRDataset._cached_object=self
       return data
     @data.setter
     def data(self, data):
-      self._data_zipped=zlib.compress(data.tostring(), 1)
+      self._data_zipped=zlib.compress(data.tobytes(), 1)
       self._data_dtype=data.dtype
       self._data_shape=data.shape
       MRDataset._cached_data=data
@@ -1362,12 +1362,11 @@ def locate_file(number, histogram=True, old_format=False, verbose=True):
     else:
       return None
 
-class Reflectivity(object):
+class Reflectivity(object, metaclass=OptionsDocMeta):
   """
   Extraction of reflectivity from MRDatatset object storing all data
   and options used for the extraction process.
   """
-  __metaclass__=OptionsDocMeta
 
   DEFAULT_OPTIONS=dict(
        x_pos=None,
@@ -1425,7 +1424,7 @@ class Reflectivity(object):
     all_options=dict(Reflectivity.DEFAULT_OPTIONS)
     for key, value in options.items():
       if not key in all_options:
-        raise ValueError, "%s is not a known option parameter"%key
+        raise ValueError("%s is not a known option parameter"%key)
       all_options[key]=value
     self.options=all_options
     self.origin=dataset.origin
@@ -1521,7 +1520,7 @@ class Reflectivity(object):
       DETECTOR_SENSITIVITY[self.options['sensitivity_correction']]=Isens
       return data/Isens[:, :, newaxis]
     else:
-      raise NotImplementedError, 'sensitivity correction %s not known'%self.options['sensitivity_correction']
+      raise NotImplementedError('sensitivity correction %s not known'%self.options['sensitivity_correction'])
 
   #############################################################################
 
@@ -1548,9 +1547,9 @@ class Reflectivity(object):
     scale=1./dataset.proton_charge # scale by user factor
 
     # Get regions in pixels as integers
-    reg=map(lambda item: int(round(item)),
+    reg=list(map(lambda item: int(round(item)),
             [x_pos-x_width/2., x_pos+x_width/2.+1,
-             y_pos-y_width/2., y_pos+y_width/2.+1])
+             y_pos-y_width/2., y_pos+y_width/2.+1]))
     debug('Reflectivity region: %s'%str(reg))
 
     # get incident angle of reflected beam
@@ -1636,9 +1635,9 @@ class Reflectivity(object):
     y_width=self.options['y_width']
     scale=1./dataset.proton_charge # scale by user factor
 
-    reg=map(lambda item: int(round(item)),
+    reg=list(map(lambda item: int(round(item)),
             [x_pos-x_width/2., x_pos+x_width/2.+1,
-             y_pos-y_width/2., y_pos+y_width/2.+1])
+             y_pos-y_width/2., y_pos+y_width/2.+1]))
     debug('Reflectivity region: %s'%str(reg))
 
     rad_per_pixel=dataset.det_size_x/dataset.dist_sam_det/dataset.xydata.shape[1]
@@ -1760,9 +1759,9 @@ class Reflectivity(object):
     scale=1./dataset.proton_charge # scale by user factor
 
     # Get regions in pixels as integers
-    reg=map(lambda item: int(round(item)),
+    reg=list(map(lambda item: int(round(item)),
             [bg_pos-bg_width/2., bg_pos+bg_width/2.+1,
-             y_pos-y_width/2., y_pos+y_width/2.+1 ])
+             y_pos-y_width/2., y_pos+y_width/2.+1 ]))
     debug('Background region: %s'%str(reg))
 
 
@@ -1873,7 +1872,7 @@ class OffSpecular(Reflectivity):
     all_options=dict(OffSpecular.DEFAULT_OPTIONS)
     for key, value in options.items():
       if not key in all_options:
-        raise ValueError, "%s is not a known option parameter"%key
+        raise ValueError("%s is not a known option parameter"%key)
       all_options[key]=value
     self.options=all_options
     self.origin=dataset.origin
@@ -1928,9 +1927,9 @@ class OffSpecular(Reflectivity):
     scale=1./dataset.proton_charge # scale by user factor
 
     # Get regions in pixels as integers
-    reg=map(lambda item: int(round(item)),
+    reg=list(map(lambda item: int(round(item)),
             [x_pos-x_width/2., x_pos+x_width/2.+1,
-             y_pos-y_width/2., y_pos+y_width/2.+1])
+             y_pos-y_width/2., y_pos+y_width/2.+1]))
     debug('Off-Specular region: %s'%str(reg))
 
     rad_per_pixel=dataset.det_size_x/dataset.dist_sam_det/dataset.xydata.shape[1]
@@ -1998,7 +1997,7 @@ class GISANS(Reflectivity):
     all_options=dict(OffSpecular.DEFAULT_OPTIONS)
     for key, value in options.items():
       if not key in all_options:
-        raise ValueError, "%s is not a known option parameter"%key
+        raise ValueError("%s is not a known option parameter"%key)
       all_options[key]=value
     self.options=all_options
     self.origin=dataset.origin

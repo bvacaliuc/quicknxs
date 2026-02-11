@@ -189,7 +189,7 @@ class DataSet:
         returns the extra_data object with name name [string] if does not
         exist an LookupError is yielded.
         '''
-        if not self.extra_data.has_key(name):
+        if name not in self.extra_data:
             raise LookupError('Can not find extra data with name %s'%name)
 
         return self.extra_data[name]
@@ -210,13 +210,13 @@ class DataSet:
             f=open(filename)
             #f.close()
         except:
-            print "Can't open file: %s"%filename
+            print("Can't open file: %s"%filename)
         else:
             try:
                 A=loadtxt(f)
                 #, comments = '#', delimeter = None, skiprows = 0
             except:
-                print "Can't read the file %s, check the format"%filename
+                print("Can't read the file %s, check the format"%filename)
             else:
                 #print A
                 xcol=self.cols[0]
@@ -238,11 +238,11 @@ class DataSet:
                     else:
                       self.xerror=0.*self.error
                       self.xerror_raw=0.*self.error_raw
-                    print "Sucessfully loaded %i datapoints"%(A.shape[0])
+                    print("Sucessfully loaded %i datapoints"%(A.shape[0]))
                     return True
                 else:
-                    print "There are not enough columns in your data\n\
-                     As I see it there are %i columns"%A.shape[1]
+                    print("There are not enough columns in your data\n\
+                     As I see it there are %i columns"%A.shape[1])
             return False
 
     def save_file(self, filename):
@@ -369,28 +369,28 @@ class DataSet:
         if command_dict['x']!='':
             try:
                 xt=eval(command_dict['x'])
-            except Exception, e:
+            except Exception as e:
                 result+='Error in evaluating x expression.\n\nPython output:\n'\
                             +e.__str__()+'\n'
 
         if command_dict['y']!='':
             try:
                 yt=eval(command_dict['y'])
-            except Exception, e:
+            except Exception as e:
                 result+='Error in evaluating y expression.\n\nPython output:\n'\
                         +e.__str__()+'\n'
 
         if command_dict['e']!='':
             try:
                 et=eval(command_dict['e'])
-            except Exception, e:
+            except Exception as e:
                 result+='Error in evaluating e expression.\n\nPython output:\n'\
                         +e.__str__()+'\n'
 
         if command_dict['xe']!='':
             try:
                 xet=eval(command_dict['xe'])
-            except Exception, e:
+            except Exception as e:
                 result+='Error in evaluating xe expression.\n\nPython output:\n'\
                         +e.__str__()+'\n'
 
@@ -398,7 +398,7 @@ class DataSet:
             if command_dict[key]!='':
                 try:
                     exec('%st = eval(command_dict["%s"])'%(key, key))
-                except Exception, e:
+                except Exception as e:
                     result+='Error in evaluating %s expression.\n\nPython output:\n'%key\
                             +e.__str__()+'\n'
 
@@ -443,7 +443,7 @@ class DataSet:
             self.xerror_command=command_dict['xe']
         # Lets do it for the extra commands as well
         for key in command_dict:
-            if self.extra_commands.has_key(key):
+            if key in self.extra_commands:
                 if command_dict[key]!='':
                     self.extra_commands[key]=command_dict[key]
 
@@ -702,7 +702,7 @@ class DataList:
 
         if indices:
             if not sum([i<len(self.items) for i in indices])==len(indices):
-                raise IOError, 'Error in export_data_to_files'
+                raise IOError('Error in export_data_to_files')
         else:
             indices=range(len(self.items))
         #print 'Output: ', indices, len(self.items)
@@ -725,7 +725,7 @@ class DataList:
 
         if indices:
             if not sum([i<len(self.items) for i in indices])==len(indices):
-                raise IOError, 'Error in get_data_as_asciitable'
+                raise IOError('Error in get_data_as_asciitable')
         else:
             indices=range(len(self.items))
 
