@@ -9,6 +9,9 @@ from qtpy.QtCore import QLocale#, Qt
 from quicknxs.main_gui import MainGUI
 from quicknxs.qreduce import NXSData, Reflectivity
 
+# Create a single QApplication instance for all tests
+_app = QApplication.instance() or QApplication([])
+
 dot=QLocale().decimalPoint()
 if not isinstance(dot, str):
   dot=str(dot)
@@ -18,7 +21,7 @@ statepath=os.path.join(os.path.expanduser('~/.quicknxs'), 'run_state.dat')
 
 class MainGUIGeneral(unittest.TestCase):
   def setUp(self):
-    self.app=QApplication([])
+    self.app=_app
     self.gui=MainGUI([])
     # switch of delay triggering
     self.gui.trigger.stay_alive=False
@@ -26,7 +29,9 @@ class MainGUIGeneral(unittest.TestCase):
     self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
 
   def tearDown(self):
-    os.remove(statepath)
+    self.gui.close()
+    if os.path.exists(statepath):
+      os.remove(statepath)
 
   def test_1startup(self):
     self.assertTrue(isinstance(self.gui, QMainWindow))
@@ -56,7 +61,7 @@ class MainGUIGeneral(unittest.TestCase):
 
 class MainGUIActions(unittest.TestCase):
   def setUp(self):
-    self.app=QApplication([])
+    self.app=_app
     self.gui=MainGUI([])
     # switch of delay triggering
     self.gui.trigger.stay_alive=False
@@ -65,7 +70,9 @@ class MainGUIActions(unittest.TestCase):
     self.gui.fileOpen(TEST_DATASET, do_plot=True)
 
   def tearDown(self):
-    os.remove(statepath)
+    self.gui.close()
+    if os.path.exists(statepath):
+      os.remove(statepath)
 
   def test_1normalization(self):
     self.gui.ui.dangle0Overwrite.setText(str(self.gui.active_data[0].dangle))

@@ -1476,7 +1476,7 @@ class Ui_MainWindow(object):
     self.actionOpen_Sum.triggered.connect(MainWindow.fileOpenSumDialog)
     self.refScale.valueChanged['double'].connect(MainWindow.changeRegionValues)
     self.color_selector.currentIndexChanged['int'].connect(MainWindow.toggleColorbars)
-    self.directPixelOverwrite.valueChanged['QString'].connect(MainWindow.overwriteChanged)
+    self.directPixelOverwrite.valueChanged.connect(MainWindow.overwriteChanged)
     self.show_colorbars.stateChanged['int'].connect(MainWindow.toggleColorbars)
     self.refYWidth.valueChanged['double'].connect(MainWindow.changeRegionValues)
     self.refYPos.valueChanged['double'].connect(MainWindow.changeRegionValues)
