@@ -872,12 +872,10 @@ class MainGUI(QtWidgets.QMainWindow):
     P0=len(self.refl.Q)-self.ui.rangeStart.value()
     PN=self.ui.rangeEnd.value()
 
-    if len(self.ui.refl.toolbar._views)>0:
-      spos=self.ui.refl.toolbar._views._pos
-      view=self.ui.refl.toolbar._views[spos]
-      position=self.ui.refl.toolbar._positions[spos]
+    if len(self.ui.refl.toolbar._nav_stack)>0:
+      nav_state=self.ui.refl.toolbar._nav_stack()
     else:
-      view=None
+      nav_state=None
 
     self.ui.refl.clear()
     if self.active_data[self.active_channel].total_counts==0:
@@ -942,16 +940,14 @@ class MainGUI(QtWidgets.QMainWindow):
     else:
       self.ui.refl.set_yscale('linear')
     self.ui.refl.legend()
-    if view is not None:
+    if nav_state is not None:
       self.ui.refl.toolbar.push_current()
-      self.ui.refl.toolbar._views.push(view)
-      self.ui.refl.toolbar._positions.push(position)
+      self.ui.refl.toolbar._nav_stack.push(nav_state)
     if preserve_lim:
       # reset the last zoom position
       self.ui.refl.toolbar._update_view()
     else:
-      self.ui.refl.toolbar._views._pos=0
-      self.ui.refl.toolbar._positions._pos=0
+      self.ui.refl.toolbar._nav_stack._pos=0
     self.ui.refl.draw()
     self.ui.refl.toolbar.set_history_buttons()
 
@@ -2321,8 +2317,10 @@ Do you want to try to restore the working reduction list?""",
     '''
     # join delay thread
     debug('Shutting down delay trigger')
-    self.trigger.stay_alive=False
-    self.trigger.wait()
+    if hasattr(self.trigger, 'stay_alive'):
+      self.trigger.stay_alive=False
+    if hasattr(self.trigger, 'wait'):
+      self.trigger.wait()
     del(self.trigger)
     debug('Gathering figure and window layout')
     # store geometry and setting parameters

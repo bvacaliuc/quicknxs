@@ -428,8 +428,7 @@ class MPLWidget(QtWidgets.QWidget):
 
   def clear(self):
     self.cplot=None
-    self.toolbar._views.clear()
-    self.toolbar._positions.clear()
+    self.toolbar._nav_stack.clear()
     self.canvas.ax.clear()
     if self.canvas.ax2 is not None:
       self.canvas.ax2.clear()
@@ -438,17 +437,15 @@ class MPLWidget(QtWidgets.QWidget):
     self.cplot.set_data(*data)
     if 'extent' in opts:
       self.cplot.set_extent(opts['extent'])
-      oldviews=self.toolbar._views
-      if self.toolbar._views:
-        # set the new extent as home for the new data
-        newviews=Stack()
-        newviews.push([tuple(opts['extent'])])
-        for item in oldviews[1:]:
-          newviews.push(item)
-        self.toolbar._views=newviews
-      if not oldviews or oldviews[oldviews._pos]==oldviews[0]:
-        self.canvas.ax.set_xlim(opts['extent'][0], opts['extent'][1])
-        self.canvas.ax.set_ylim(opts['extent'][2], opts['extent'][3])
+      was_at_home=len(self.toolbar._nav_stack)==0 or \
+                  self.toolbar._nav_stack._pos==0
+      # reset navigation stack so new extent becomes the home view
+      self.toolbar._nav_stack.clear()
+      self.canvas.ax.set_xlim(opts['extent'][0], opts['extent'][1])
+      self.canvas.ax.set_ylim(opts['extent'][2], opts['extent'][3])
+      self.toolbar.push_current()
+      if was_at_home:
+        self.toolbar._nav_stack._pos=0
 
   def legend(self, *args, **opts):
     return self.canvas.ax.legend(*args, **opts)

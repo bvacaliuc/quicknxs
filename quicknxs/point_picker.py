@@ -98,12 +98,10 @@ class PointPicker(QDialog):
     plot=self.ui.plot
 
     # collect information about the current view
-    if len(plot.toolbar._views)>0:
-      spos=plot.toolbar._views._pos
-      view=plot.toolbar._views[spos]
-      position=plot.toolbar._positions[spos]
+    if len(plot.toolbar._nav_stack)>0:
+      nav_state=plot.toolbar._nav_stack()
     else:
-      view=None
+      nav_state=None
 
     plot.clear()
     # collect filtered data
@@ -127,10 +125,9 @@ class PointPicker(QDialog):
     plot.legend()
 
     # keep old zoom position
-    if view is not None:
+    if nav_state is not None:
       plot.toolbar.push_current()
-      plot.toolbar._views.push(view)
-      plot.toolbar._positions.push(position)
+      plot.toolbar._nav_stack.push(nav_state)
       plot.toolbar._update_view()
     plot.draw()
 

@@ -2,7 +2,8 @@
 
 import os
 import unittest
-from qtpy.QtWidgets import QApplication, QMainWindow
+from unittest.mock import patch
+from qtpy.QtWidgets import QApplication, QMainWindow, QMessageBox
 from qtpy.QtTest import QTest
 from qtpy.QtCore import QLocale#, Qt
 
@@ -22,7 +23,10 @@ statepath=os.path.join(os.path.expanduser('~/.quicknxs'), 'run_state.dat')
 class MainGUIGeneral(unittest.TestCase):
   def setUp(self):
     self.app=_app
-    self.gui=MainGUI([])
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    with patch.object(QMessageBox, 'warning', return_value=QMessageBox.No):
+      self.gui=MainGUI([])
     # switch of delay triggering
     self.gui.trigger.stay_alive=False
     self.gui.trigger.wait()
@@ -62,7 +66,10 @@ class MainGUIGeneral(unittest.TestCase):
 class MainGUIActions(unittest.TestCase):
   def setUp(self):
     self.app=_app
-    self.gui=MainGUI([])
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    with patch.object(QMessageBox, 'warning', return_value=QMessageBox.No):
+      self.gui=MainGUI([])
     # switch of delay triggering
     self.gui.trigger.stay_alive=False
     self.gui.trigger.wait()
@@ -77,7 +84,9 @@ class MainGUIActions(unittest.TestCase):
   def test_1normalization(self):
     self.gui.ui.dangle0Overwrite.setText(str(self.gui.active_data[0].dangle))
     self.gui.ui.refXPos.setValue(self.gui.active_data[0].dpix)
-    self.gui.ui.actionNorm.trigger()
+    # Call setNorm() directly; QAction.triggered(checked=False) in PySide6
+    # overrides the do_plot=True default, preventing recalculation
+    self.gui.setNorm()
     self.assertTrue((self.gui.refl.R[self.gui.refl.R>0]==1.).all(),
                     'reflectivity self normalized %s'%repr(self.gui.refl))
 
@@ -109,7 +118,9 @@ class MainGUIActions(unittest.TestCase):
     self.gui.auto_change_active=False
 
     # make sure reflectivity got extracted with new params
-    self.gui.ui.actionNorm.trigger()
+    # Call setNorm() directly; QAction.triggered(checked=False) in PySide6
+    # overrides the do_plot=True default, preventing recalculation
+    self.gui.setNorm()
     self.assertEqual(self.gui.refl.options['x_pos'], 200.5)
     self.assertEqual(self.gui.refl.options['x_width'], 20.)
     self.assertEqual(self.gui.refl.options['y_pos'], 150.)
