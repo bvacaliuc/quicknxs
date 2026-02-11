@@ -2,16 +2,16 @@
 
 import os
 import unittest
-from PyQt5.QtGui import QApplication, QMainWindow
-from PyQt5.QtTest import QTest
-from PyQt5.QtCore import QLocale#, Qt
+from qtpy.QtWidgets import QApplication, QMainWindow
+from qtpy.QtTest import QTest
+from qtpy.QtCore import QLocale#, Qt
 
 from quicknxs.main_gui import MainGUI
 from quicknxs.qreduce import NXSData, Reflectivity
 
 dot=QLocale().decimalPoint()
-if not isinstance(dot, basestring):
-  dot=dot.toAscii()
+if not isinstance(dot, str):
+  dot=str(dot)
 
 TEST_DATASET=os.path.join(os.path.dirname(os.path.abspath(__file__)), u'test1_histo.nxs')
 statepath=os.path.join(os.path.expanduser('~/.quicknxs'), 'run_state.dat')

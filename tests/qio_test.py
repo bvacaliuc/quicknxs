@@ -30,20 +30,20 @@ class FakeData():
 class HeaderTest(FakeData, unittest.TestCase):
   def test_creation(self):
     header=HeaderCreator([self.ref1, self.ref2])
-    self.assertTrue(type(header.get_data_header(['a', 'b', 'c'], ['', '', ''])) is unicode)
-    ignore=unicode(header)
+    self.assertTrue(isinstance(header.get_data_header(['a', 'b', 'c'], ['', '', '']), str))
+    ignore=str(header)
 
   def test_creation_event(self):
     ds=NXSData(TEST_EVENT)
     ref=Reflectivity(ds[0])
     ref2=Reflectivity(ds[0], normalization=ref)
     header=HeaderCreator([ref2, self.ref1, self.ref2])
-    self.assertTrue(type(header.get_data_header(['a', 'b', 'c'], ['', '', ''])) is unicode)
-    ignore=unicode(header)
+    self.assertTrue(isinstance(header.get_data_header(['a', 'b', 'c'], ['', '', '']), str))
+    ignore=str(header)
 
   def test_recreation(self):
     header=HeaderCreator([self.ref1, self.ref2])
-    parser=HeaderParser(unicode(header), parse_meta=False)
+    parser=HeaderParser(str(header), parse_meta=False)
     self._process=None
     parser.parse(callback=self._cb_test)
     self.assertFalse(self._process is None)
@@ -66,7 +66,7 @@ class HeaderTest(FakeData, unittest.TestCase):
     ref=Reflectivity(ds[0])
     ref2=Reflectivity(ds[0], normalization=ref)
     header=HeaderCreator([ref2, self.ref1, self.ref2])
-    parser=HeaderParser(unicode(header), parse_meta=False)
+    parser=HeaderParser(str(header), parse_meta=False)
     parser.parse()
     prefl=parser.refls[0]
     for key, value in self.ref1.options.items():
@@ -133,7 +133,7 @@ class ExportTest(FakeData, unittest.TestCase):
     os.remove(expfile)
 
   def test_write_consistent(self):
-    exporter=Exporter([self.ds.keys()[0]], [self.ref1])
+    exporter=Exporter([list(self.ds.keys())[0]], [self.ref1])
     exporter.extract_reflectivity()
     expfile=os.path.join(tempfile.gettempdir(), 'testexport.dat')
     exporter.export_data(tempfile.gettempdir(), 'testexport.dat',
