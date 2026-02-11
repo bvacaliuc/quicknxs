@@ -1,0 +1,58 @@
+[project]
+name = "quicknxs-v1"
+description = "QuickNXS v1 - Magnetism Reflectometer data reduction"
+version = "1.1.6"
+requires-python = ">=3.10,<3.13"
+
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools>=68.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["quicknxs*"]
+
+[tool.pixi.workspace]
+platforms = ["linux-64"]
+channels = ["conda-forge"]
+
+[tool.pixi.dependencies]
+python = ">=3.10,<3.13"
+pyqt = ">=5.15,<6"
+qtpy = "*"
+numpy = "*"
+matplotlib = ">=3.8"
+h5py = "*"
+scipy = "*"
+
+[tool.pixi.pypi-dependencies]
+quicknxs-v1 = { path = ".", editable = true }
+
+[tool.pixi.feature.test.dependencies]
+pytest = ">=8"
+pytest-cov = "*"
+pytest-qt = ">=4.4.0"
+pytest-xvfb = ">=3.1.1"
+
+[tool.pixi.feature.dev.dependencies]
+ruff = "*"
+
+[tool.pixi.environments]
+default = { features = ["dev", "test"], solve-group = "default" }
+
+[tool.pixi.tasks]
+test = { cmd = "pytest", description = "Run the test suite" }
+test-core = { cmd = "pytest tests/qreduce_test.py tests/qcalc_test.py tests/qio_test.py -v", description = "Run non-GUI tests" }
+test-gui = { cmd = "pytest tests/main_gui_test.py -v", description = "Run GUI tests" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests/"]
+python_files = ["*_test.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+"quicknxs/icons_rc.py" = ["E501"]
+"quicknxs/default_interface.py" = ["E501"]
+"quicknxs/docked_interface.py" = ["E501"]
