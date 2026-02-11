@@ -1,4 +1,7 @@
-.PHONY: install test test-core test-gui lint clean
+.PHONY: gui install test test-core test-gui lint clean
+
+gui: install
+	pixi run python scripts/quicknxs
 
 install:
 	pixi install
