@@ -30,7 +30,7 @@ from xml.dom import minidom
 # ignore zero devision error
 #seterr(invalid='ignore')
 
-from logging import debug, info, warn #@Reimport
+from logging import debug, info, warning as warn #@Reimport
 from .config import instrument
 from .decorators import log_call, log_input, log_both
 from .ipython_tools import AttributePloter, StringRepr, NiceDict
