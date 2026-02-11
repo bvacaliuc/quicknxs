@@ -13,7 +13,7 @@ import atexit
 import logging
 import traceback
 import inspect
-from cStringIO import StringIO
+from io import StringIO
 from numpy import seterr, seterrcall
 from .version import str_version
 from .config import paths, misc, proxy
@@ -33,7 +33,7 @@ elif misc.debug_mode:
 else:
   _log_levels=misc.default_log_levels
 for item, level in _log_levels.items():
-  exec '%s_LEVEL=logging.%s'%(item, level)
+  globals()['%s_LEVEL'%item] = getattr(logging, level)
 
 def excepthook_overwrite(*exc_info):
   logging.critical('python error', exc_info=exc_info)
@@ -79,7 +79,7 @@ def pid_exists(pid):
         return False
     try:
         os.kill(pid, 0)
-    except OSError, e:
+    except OSError as e:
         return e.errno==errno.EPERM
     else:
         return True

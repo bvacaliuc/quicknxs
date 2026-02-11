@@ -6,7 +6,7 @@ import sys
 import inspect
 import logging
 from time import time
-from StringIO import StringIO
+from io import StringIO
 
 
 #
@@ -26,18 +26,23 @@ def getinfo(func):
       - dict (the function __dict__ : str)
     """
     assert inspect.ismethod(func) or inspect.isfunction(func)
-    regargs, varargs, varkwargs, defaults=inspect.getargspec(func)
+    regargs, varargs, varkwargs, defaults=inspect.getfullargspec(func)[:4]
     argnames=list(regargs)
     if varargs:
         argnames.append(varargs)
     if varkwargs:
         argnames.append(varkwargs)
-    signature=inspect.formatargspec(regargs, varargs, varkwargs, defaults,
-                                      formatvalue=lambda value: "")[1:-1]
+    # Build signature string (inspect.formatargspec removed in Python 3.11)
+    sig_parts = list(regargs)
+    if varargs:
+        sig_parts.append('*' + varargs)
+    if varkwargs:
+        sig_parts.append('**' + varkwargs)
+    signature = ', '.join(sig_parts)
     output=dict(name=func.__name__, argnames=argnames, signature=signature,
-                defaults=func.func_defaults, doc=func.__doc__,
+                defaults=func.__defaults__, doc=func.__doc__,
                 module=func.__module__, dict=func.__dict__,
-                globals=func.func_globals, closure=func.func_closure)
+                globals=func.__globals__, closure=func.__closure__)
     return output
 
 def update_wrapper(wrapper, wrapped, create=False):
@@ -65,7 +70,7 @@ def update_wrapper(wrapper, wrapped, create=False):
     wrapper.__doc__=infodict['doc']
     wrapper.__module__=infodict['module']
     wrapper.__dict__.update(infodict['dict'])
-    wrapper.func_defaults=infodict['defaults']
+    wrapper.__defaults__=infodict['defaults']
     return wrapper
 
 
@@ -133,10 +138,10 @@ logger.addHandler(null_handler)
 logging.setLoggerClass(old_class)
 
 def _logformat(msg, decname, func):
-  if hasattr(func, 'im_func'):
-    co=func.im_func.func_code
+  if hasattr(func, '__func__'):
+    co=func.__func__.__code__
   else:
-    co=func.func_code
+    co=func.__code__
   fname=co.co_filename
   lno=co.co_firstlineno
   logger.debug(msg, extra={'func': '@'+decname, 'name': fname, 'lno': lno})
@@ -163,7 +168,7 @@ def log_input(func, *args, **kw):
   '''
   if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
   infodict=getinfo(func)
-  if hasattr(func, 'im_func'):
+  if hasattr(func, '__func__'):
     logstr=' call %s.%s('%(args[0].__class__.__name__, infodict['name'])
     method=True
     info_len=len('%s.%s('%(args[0].__class__.__name__, infodict['name']))
@@ -226,7 +231,7 @@ def log_both(func, *args, **kw):
   '''
   if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
   infodict=getinfo(func)
-  if hasattr(func, 'im_func'):
+  if hasattr(func, '__func__'):
     logstr=' call %s.%s('%(args[0].__class__.__name__, infodict['name'])
     method=True
     info_len=len('%s.%s('%(args[0].__class__.__name__, infodict['name']))
@@ -315,9 +320,9 @@ class check_input(object):
         src+='\n    try:'
         src+='\n      %s=%s(%s)'%(argnames[i], typei.__name__, argnames[i])
         src+='\n    except:'
-        src+='\n      raise ValueError, "type of %s is not %s"'%(argnames[i], typei.__name__)
+        src+='\n      raise ValueError("type of %s is not %s")'%(argnames[i], typei.__name__)
       else:
-        src+='\n    raise ValueError, "type of %s is not %s"'%(argnames[i], typei.__name__)
+        src+='\n    raise ValueError("type of %s is not %s")'%(argnames[i], typei.__name__)
     src+='\n  return _func_(%(signature)s)'%infodict
     exec_dict=dict(_func_=func, _call_=self.__call__)
     exec(src, exec_dict)

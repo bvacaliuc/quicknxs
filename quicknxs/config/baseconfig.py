@@ -16,7 +16,7 @@ import os
 import atexit
 import re
 import sys
-from .configobj import ConfigObj, ConfigObjError
+from configobj import ConfigObj, ConfigObjError
 from ..decorators import log_call, log_input
 
 
@@ -154,7 +154,7 @@ class ConfigProxy(object):
       if cpath in self.configs and self.configs[cpath] in self.path_configs:
         cpath=self.configs[cpath]
       else:
-        raise KeyError, 'Config path %s is not defined'%cpath
+        raise KeyError('Config path %s is not defined'%cpath)
     # save the current config to a file
     # remove constants for storage
     for ignore, config in self.storages[cpath].items():
@@ -196,7 +196,7 @@ class ConfigProxy(object):
       if cpath in self.configs and self.configs[cpath] in self.path_configs:
         cpath=self.configs[cpath]
       else:
-        raise KeyError, 'Config path %s is not defined'%cpath
+        raise KeyError('Config path %s is not defined'%cpath)
     return self.path_configs[cpath][0]['config_files']
 
   def get_current_path_config(self, cpath):
@@ -204,7 +204,7 @@ class ConfigProxy(object):
       if cpath in self.configs and self.configs[cpath] in self.path_configs:
         cpath=self.configs[cpath]
       else:
-        raise KeyError, 'Config path %s is not defined'%cpath
+        raise KeyError('Config path %s is not defined'%cpath)
     return self.path_configs[cpath][0]['last_file']
 
   @log_input
@@ -215,7 +215,7 @@ class ConfigProxy(object):
     :returns: The corresponding :class:`ConfigHolder` object.
     '''
     if not config in self.configs:
-      raise KeyError, 'no configuration named %s found'%config
+      raise KeyError('no configuration named %s found'%config)
     self.aliases[alias]=config
     return self[config]
 
@@ -243,19 +243,19 @@ class ConfigProxy(object):
       ccopts.write()
 
   def __getitem__(self, name):
-    if isinstance(name, basestring):
+    if isinstance(name, str):
       if name in self.configs or name in self.aliases:
         return ConfigHolder(self, name)
-      raise KeyError, "%s is no known configuration"%name
+      raise KeyError("%s is no known configuration"%name)
     else:
-      raise KeyError, "Only strings are allowed as keys"
+      raise KeyError("Only strings are allowed as keys")
 
   def get_config_item(self, config, item):
     """Called by :class:`ConfigHolder` to retreive an item"""
     if config in self.aliases:
       config=self.aliases[config]
     if not config in self.configs:
-      raise KeyError, "%s is no known configuration"%config
+      raise KeyError("%s is no known configuration"%config)
     storage=self.configs[config]
     # special convenience methods to switch the config file with the config object
     if storage in self.path_configs and item=='get_configs':
@@ -270,7 +270,7 @@ class ConfigProxy(object):
       value=self.tmp_storages[storage][config][item]
     else:
       value=self.storages[storage][config][item]
-    if isinstance(value, basestring) and '%' in value and \
+    if isinstance(value, str) and '%' in value and \
           not self.storages[storage][config].get('NO_INTERPOLATION', False):
       # perform interpolation with constants if possible
       value=self.interpolate(config, value)
@@ -320,7 +320,7 @@ class ConfigProxy(object):
     if config in self.aliases:
       config=self.aliases[config]
     if not config in self.configs:
-      raise KeyError, "%s is no known configuration"%config
+      raise KeyError("%s is no known configuration"%config)
     storage=self.configs[config]
     if temporary:
       # store value in temporary dictionary
@@ -333,16 +333,16 @@ class ConfigProxy(object):
     if config in self.aliases:
       config=self.aliases[config]
     if not config in self.configs:
-      raise KeyError, "%s is no known configuration"%config
+      raise KeyError("%s is no known configuration"%config)
     storage=self.configs[config]
-    keys=self.storages[storage][config].keys()
+    keys=list(self.storages[storage][config].keys())
     if storage in self.path_configs:
       keys+=['get_configs', 'switch_config', 'get_current_config']
     return keys
 
   def keys(self):
     """Return the available configurations"""
-    keys=self.configs.keys()+self.aliases.keys()
+    keys=list(self.configs.keys())+list(self.aliases.keys())
     keys.sort()
     return keys
 
@@ -404,7 +404,7 @@ class ConfigHolder(object):
 
   def __setitem__(self, name, value):
     if name==name.upper():
-      raise ValueError, "%s is a constant and thus cannot be altered"%name
+      raise ValueError("%s is a constant and thus cannot be altered"%name)
     self._proxy.set_config_item(self._name, name, value,
                                 temporary=self._storetmp)
 
@@ -428,4 +428,4 @@ class ConfigHolder(object):
     return output
 
   def __dir__(self):
-    return self.__dict__.keys()+self.keys()
+    return list(self.__dict__.keys())+self.keys()

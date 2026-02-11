@@ -24,6 +24,7 @@ numpy = "*"
 matplotlib = ">=3.8"
 h5py = "*"
 scipy = "*"
+configobj = ">=5.0"
 
 [tool.pixi.pypi-dependencies]
 quicknxs-v1 = { path = ".", editable = true }

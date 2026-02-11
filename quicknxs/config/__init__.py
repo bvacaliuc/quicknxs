@@ -43,7 +43,7 @@
 import os as _os
 import pkgutil as _pkgutil
 from .baseconfig import ConfigProxy as _ConfigProxy
-from logging import warn as _warn
+from logging import warning as _warn
 
 _package_dir=_os.path.split(_os.path.abspath(__file__))[0]
 
@@ -72,7 +72,7 @@ def _create_proxy():
       continue
     try:
       modi=__import__('quicknxs.config.'+name, fromlist=[name])
-    except Exception, error:
+    except Exception as error:
       _warn("Could not import module %s,\n %s: %s"%(name, error.__class__.__name__, error))
       continue
     if 'config_path' in modi.__dict__:
@@ -98,7 +98,7 @@ def _create_proxy():
       config_holder=modi #@UnusedVariable
     # add item to the package * import
     __all__.append(name)
-    exec "global %s;%s=config_holder"%(name, name)
+    globals()[name] = config_holder
 
 if proxy is None:
   _create_proxy()
