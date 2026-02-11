@@ -5,9 +5,9 @@
 
 import os
 from numpy import *
-from PyQt5.QtWidgets import QWidget, QFileDialog, QTableWidgetItem, QDialog, QVBoxLayout, QColorDialog
-from PyQt5.QtGui import QColor
-from PyQt5.QtCore import Qt
+from qtpy.QtWidgets import QWidget, QFileDialog, QTableWidgetItem, QDialog, QVBoxLayout, QColorDialog
+from qtpy.QtGui import QColor, QBrush
+from qtpy.QtCore import Qt
 from .compare_widget import Ui_Form
 
 class CompareWidget(QWidget):
@@ -51,8 +51,8 @@ class CompareWidget(QWidget):
       plotlabel=label
     self.ui.compareList.setItem(idx, 0, item)
     item=QTableWidgetItem(color)
-    item.setBackgroundColor(QColor(color))
-    item.setTextColor(QColor('#ffffff'))
+    item.setBackground(QBrush(QColor(color)))
+    item.setForeground(QBrush(QColor('#ffffff')))
     item.setFlags(Qt.ItemIsEnabled)
     self.ui.compareList.setItem(idx, 1, item)
     self.ui.compareList.setItem(idx, 2, QTableWidgetItem(plotlabel))
@@ -92,7 +92,7 @@ class CompareWidget(QWidget):
       result=QColorDialog.getColor(initial=color, parent=self)
       if result.isValid():
         color_item.setText(result.name())
-        color_item.setBackgroundColor(result)
+        color_item.setBackground(QBrush(result))
 
 class CompareDialog(QDialog):
   '''

@@ -5,7 +5,10 @@
 '''
 
 import os
+os.environ["QT_API"] = "pyqt5"
 import sys
+import matplotlib
+matplotlib.use("QtAgg")
 
 # if script was run from commandline
 try:
@@ -18,9 +21,9 @@ except NameError:
 from quicknxs.gui_logging import setup_system, check_runstate
 
 def _run(argv=[]):
-  from PyQt5.QtWidgets import QApplication, QSplashScreen
-  from PyQt5.QtGui import QPixmap
-  from PyQt5.QtCore import Qt
+  from qtpy.QtWidgets import QApplication, QSplashScreen
+  from qtpy.QtGui import QPixmap
+  from qtpy.QtCore import Qt
   app=QApplication(argv)
   from quicknxs import icons_rc, version  #@UnusedImport
   splash=QSplashScreen(QPixmap(u':/General/logo_hq.png'))
@@ -48,7 +51,7 @@ if __name__=='__main__':
   if check_runstate():
     # make sure the debug.log is not overwritten and only one version
     # of the program per user is running
-    print "Another instance is already running"
+    print("Another instance is already running")
     sys.exit(0)
   setup_system()
   if 'QuickNXS.app' in sys.argv[0]: sys.argv.pop(-1)

@@ -10,8 +10,8 @@ import numpy
 import atexit
 from numpy import sin, pi, where
 
-from cPickle import dumps, loads
-from threading import Thread, Event, _Event
+from pickle import dumps, loads
+from threading import Thread, Event
 from xml.etree import ElementTree
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -20,25 +20,26 @@ from matplotlib.gridspec import GridSpec
 from matplotlib import cm, colors
 cmap=colors.LinearSegmentedColormap.from_list('default',
                   ['#0000ff', '#00ff00', '#ffff00', '#ff0000', '#bd7efc', '#000000'], N=256)
-cm.register_cmap('default', cmap=cmap)
+from matplotlib import colormaps
+colormaps.register(cmap, name='default')
 from matplotlib.colors import LogNorm
 
 from . import database, qreduce, qcalc, console_logging
 from .config import instrument
 from .version import str_version
 
-class GroupEvent(_Event):
+class GroupEvent(Event):
   '''
   A threading Event that will also trigger a root event when it is set.
   This is useful to wait for any of several events to get triggered.
   '''
   def __init__(self, root_event):
     self.root_event=root_event
-    _Event.__init__(self)
+    Event.__init__(self)
 
   def set(self):
     self.root_event.set()
-    _Event.set(self)
+    Event.set(self)
 
 class FileCom(Thread):
   '''
@@ -129,7 +130,7 @@ class FileCom(Thread):
     open(self.bind_path, 'w').write('\n')
     self.last_com=os.path.getmtime(self.bind_path)
     try:
-      os.chmod(self.bind_path, 0666)
+      os.chmod(self.bind_path, 0o666)
     except OSError:
       pass
 
@@ -154,7 +155,7 @@ class FileCom(Thread):
     logging.debug('Sending data')
     xml.write(cls.bind_path)
     try:
-      os.chmod(cls.bind_path, 0666)
+      os.chmod(cls.bind_path, 0o666)
     except OSError:
       pass
     logging.debug('Communication finished')
@@ -473,10 +474,10 @@ class ReflectivityBuilder(Thread):
     '''
     if start_idx is None:
       if not os.path.exists(instrument.LIVE_DATA):
-        raise RuntimeError, 'Cannont create automatic reflectivity without live data present'
+        raise RuntimeError('Cannont create automatic reflectivity without live data present')
       live_ds=qreduce.NXSData(instrument.LIVE_DATA, use_caching=False)
       if live_ds is None:
-        raise RuntimeError, 'Cannont create automatic reflectivity, live data is not readable'
+        raise RuntimeError('Cannont create automatic reflectivity, live data is not readable')
       self.current_index=live_ds.number
       self.live_data_idx=live_ds.number
       last_ai=self.get_ai(live_ds)

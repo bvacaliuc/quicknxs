@@ -5,8 +5,8 @@ measurements of the direct beam.
 '''
 
 from numpy import where, ones_like, array, sqrt, hstack, argsort, float64, savetxt
-from PyQt5.QtWidgets import QDialog, QTableWidgetItem, QFileDialog, QInputDialog
-from polarization_dialog import Ui_Dialog
+from qtpy.QtWidgets import QDialog, QTableWidgetItem, QFileDialog, QInputDialog
+from .polarization_dialog import Ui_Dialog
 from .qreduce import Reflectivity
 from .mpfit import mpfit
 
@@ -208,7 +208,7 @@ class PolarizationDialog(QDialog):
       Fa_all=[]
       Fp_all=[]
     for i, (no, I, ignore) in enumerate(self._WLitems):
-      lamda=I.values()[0].lamda
+      lamda=list(I.values())[0].lamda
       reg=((lamda>=float(self.ui.wlTable.item(i, 1).text()))&
            (lamda<=float(self.ui.wlTable.item(i, 2).text())))
       if len(I)==4:
@@ -293,7 +293,7 @@ class PolarizationDialog(QDialog):
     name=QFileDialog.getSaveFileName(parent=self, caption=u'Select export file prefix',
                                      filter='ASCII files (*.dat);;All files (*.*)')
     if name!='':
-      name=unicode(name)
+      name=str(name)
       if name.endswith('.dat'):
         prefix=name[:-4]
       else:
@@ -319,7 +319,7 @@ class PolarizationDialog(QDialog):
     name=QFileDialog.getSaveFileName(parent=self, caption=u'Select export file name',
                                      filter='ASCII files (*.dat);;All files (*.*)')
     if name!='':
-      name=unicode(name)
+      name=str(name)
       if not name.endswith('.dat'):
         name+=u'.dat'
       lamdas=[]
@@ -328,7 +328,7 @@ class PolarizationDialog(QDialog):
       FR2s=[]
       dFR2s=[]
       for i, (ignore, I, ignore) in enumerate(self._WLitems):
-        lamda=I.values()[0].lamda
+        lamda=list(I.values())[0].lamda
         reg=((lamda>=float(self.ui.wlTable.item(i, 1).text()))&
              (lamda<=float(self.ui.wlTable.item(i, 2).text())))
         lamdas.append(lamda[reg])
@@ -363,13 +363,13 @@ class PolarizationDialog(QDialog):
     name=QFileDialog.getSaveFileName(parent=self, caption=u'Select export file name',
                                      filter='ASCII files (*.dat);;All files (*.*)')
     if name!='':
-      name=unicode(name)
+      name=str(name)
     else:
       return
     f=open(name, 'w')
     f.write('## Pixel dependence of flipping ratio\n# lambda, X, FR1, dFR1\n')
     for ignore, I, xpos in self._Xitems:
-      lamda=I.values()[0].lamda
+      lamda=list(I.values())[0].lamda
       fr, dfr=self.calc_fr(I['++'], I['+-'])
       reg=I['++'].Rraw>0
       savetxt(f, array([ones_like(fr[reg])*xpos, lamda[reg], fr[reg], dfr[reg]]).T)
@@ -420,7 +420,7 @@ class PolarizationDialog(QDialog):
     Xs=[]
     FRs=[]
     for ignore, I, xpos in self._Xitems:
-      lamda=I.values()[0].lamda
+      lamda=list(I.values())[0].lamda
       lamdas.append(lamda)
       FRs.append(I['++'].Rraw/I['+-'].Rraw)
       Xs.append(ones_like(lamda)*xpos)

@@ -7,7 +7,7 @@
 import os, sys
 from tempfile import gettempdir
 from zipfile import ZipFile, ZIP_DEFLATED
-from cStringIO import StringIO
+from io import BytesIO
 from time import sleep, time
 from numpy import hstack, array, where, histogram2d, log10, meshgrid, sqrt
 from logging import warning, debug, info
@@ -19,9 +19,9 @@ from email.mime.image import MIMEImage
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 
-from PyQt5.QtWidgets import QDialog, QMessageBox, QFileDialog, QVBoxLayout, QLabel, QProgressBar, \
+from qtpy.QtWidgets import QDialog, QMessageBox, QFileDialog, QVBoxLayout, QLabel, QProgressBar, \
                         QApplication, QSizePolicy, QListWidgetItem
-from PyQt5.QtCore import QThread, pyqtSignal
+from qtpy.QtCore import QThread, Signal as pyqtSignal
 
 from matplotlib.lines import Line2D
 from matplotlib.patches import Ellipse
@@ -370,7 +370,7 @@ class Reducer(object):
       exported_files=self.exporter.exported_files_all
     if email.ZIPData:
       # create an in-memory zip file which gets attached to the mail
-      fobj=StringIO()
+      fobj=BytesIO()
       zipfile=ZipFile(fobj, 'w', ZIP_DEFLATED)
       for item in exported_files:
         zipfile.write(item, arcname=os.path.basename(item))
@@ -405,7 +405,7 @@ class Reducer(object):
       debug('Trying to send data via smtp.ornl.gov')
       smtp=smtplib.SMTP(misc.SMTP_SERVER, timeout=10)
       smtp.sendmail(msg['From'],
-                    map(unicode.strip, msg['To'].split(',')+msg['CC'].split(',')),
+                    [s.strip() for s in msg['To'].split(',')+msg['CC'].split(',')],
                     msg.as_string())
       smtp.quit()
     except:
@@ -451,7 +451,7 @@ class ReduceDialog(QDialog, Reducer):
       Run the dialog and perform reflectivity extraction.
     '''
     if QDialog.exec_(self):
-      foldername=unicode(self.ui.directoryEntry.text())
+      foldername=str(self.ui.directoryEntry.text())
       if not os.path.exists(foldername):
         result=QMessageBox.question(self, 'Creat Folder?',
                       'The folder "%s" does not exist. Do you want to create it?'%foldername,
@@ -487,7 +487,7 @@ class ReduceDialog(QDialog, Reducer):
 
   def save_settings(self):
     ui=self.ui
-    paths.results=unicode(ui.directoryEntry.text())
+    paths.results=str(ui.directoryEntry.text())
     # update options from all UI stuff
     opts=self.export_optios
     for key in export.keys(): #@UndefinedVariable
@@ -499,11 +499,11 @@ class ReduceDialog(QDialog, Reducer):
         export[key]=option.value()
         opts[key]=option.value()
       else:
-        export[key]=unicode(option.text())
+        export[key]=str(option.text())
         opts[key]=option.text()
     self.save_email_texts()
-    opts['foldername']=unicode(self.ui.directoryEntry.text())
-    opts['naming']=unicode(self.ui.fileNameEntry.text())
+    opts['foldername']=str(self.ui.directoryEntry.text())
+    opts['naming']=str(self.ui.fileNameEntry.text())
     opts['sampleSize']=self.ui.sampleSize.value()
     opts['export_SA']=self.ui.export_SA.isChecked()
     # remove channels not selected for export

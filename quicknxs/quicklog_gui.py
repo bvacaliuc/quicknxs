@@ -11,9 +11,9 @@ The logformat should be:
 
 import time
 import logging
-from PyQt5.QtWidgets import QMainWindow, QTreeWidgetItem, QFileDialog
-from PyQt5.QtGui import QColor
-from PyQt5.QtCore import Qt, QFileSystemWatcher, QObject, pyqtSignal
+from qtpy.QtWidgets import QMainWindow, QTreeWidgetItem, QFileDialog
+from qtpy.QtGui import QColor, QBrush
+from qtpy.QtCore import Qt, QFileSystemWatcher, QObject, Signal as pyqtSignal
 from .quicklog_window import Ui_MainWindow
 
 class Logfile(QObject):
@@ -43,7 +43,7 @@ class Logfile(QObject):
     text=fh.read()
     self.curpos=fh.tell()
     fh.close()
-    text=unicode(text, encoding=self.encoding)
+    text=text.decode(self.encoding) if isinstance(text, bytes) else text
     return text
 
   def analyze_text(self, text):
@@ -83,7 +83,7 @@ class LogEntry(object):
     :param unicode text: Line or liens of text in the logfile to analyze
     '''
     lines=text.split(u'\n', 1)
-    map(unicode.strip, lines)
+    lines=[line.strip() for line in lines]
 
     if len(lines)==1:
       fline=lines[0]
@@ -98,7 +98,7 @@ class LogEntry(object):
       self.thread=fline_items[2].strip()
       cline=fline_items[3]
     else:
-      raise ValueError, 'Unknown format in line %s'%fline
+      raise ValueError('Unknown format in line %s'%fline)
 
     self.severity=eval('logging.'+fline_items[0].strip(u' []'))
     self.time=time.strptime(fline_items[1].strip(), u'%Y-%m-%d %H:%M:%S,%f')
@@ -182,7 +182,7 @@ class QuicklogWindow(QMainWindow):
     if threads:
       self.ui.filterThread.show()
       self.ui.filterThreadLabel.show()
-      map(self.ui.filterThread.addItem, threads)
+      for t in threads: self.ui.filterThread.addItem(t)
     else:
       self.ui.filterThread.hide()
       self.ui.filterThreadLabel.hide()
@@ -216,11 +216,11 @@ class QuicklogWindow(QMainWindow):
       root=TreeWidgetTimeItem([entry.sseverity, entry.time, ctxt,
                             entry.source_file, str(entry.source_line), entry.source_method], 1)
       if entry.severity>=logging.ERROR:
-        root.setTextColor(0, QColor(255, 0, 0))
+        root.setForeground(0, QBrush(QColor(255, 0, 0)))
       elif entry.severity>=logging.WARN:
-        root.setTextColor(0, QColor(150, 150, 0))
+        root.setForeground(0, QBrush(QColor(150, 150, 0)))
       elif entry.severity<logging.INFO:
-        root.setTextColor(0, QColor(100, 100, 100))
+        root.setForeground(0, QBrush(QColor(100, 100, 100)))
 
       self.ui.logTree.addTopLevelItem(root)
       if entry.comment_text:

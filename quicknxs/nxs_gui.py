@@ -4,7 +4,7 @@ A Widget that displays raw data information of a given .nxs file.
 '''
 
 import h5py
-from PyQt5.QtWidgets import QDialog, QWidget, QVBoxLayout, QTreeWidgetItem
+from qtpy.QtWidgets import QDialog, QWidget, QVBoxLayout, QTreeWidgetItem
 from numpy import maximum
 from .nxs_widget import Ui_NXSWidget
 
@@ -127,7 +127,7 @@ class NXSDialog(QDialog):
   def __init__(self, parent=None, active_file=None):
     QDialog.__init__(self, parent)
     vbox=QVBoxLayout(self)
-    vbox.setMargin(0)
+    vbox.setContentsMargins(0, 0, 0, 0)
     if active_file is not None:
       self.setWindowTitle(u'NXS Browser - %s'%active_file)
     self.nxs_widget=NXSWidget(self, active_file)

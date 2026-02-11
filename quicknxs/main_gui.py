@@ -8,9 +8,9 @@ import sys
 from glob import glob
 from numpy import where, pi, newaxis, log10, savetxt, array
 from matplotlib.lines import Line2D
-from PyQt5 import QtWidgets, QtGui, QtCore
+from qtpy import QtWidgets, QtGui, QtCore
 try:
-  from PyQt5 import QtWebKit
+  from qtpy import QtWebKit
 except ImportError:
   QtWebKit=None
 
@@ -40,7 +40,7 @@ class gisansCalcThread(QtCore.QThread):
   '''
   Perform GISANS scattering calculations in the background.
   '''
-  updateProgress=QtCore.pyqtSignal(float)
+  updateProgress=QtCore.Signal(float)
   gisans=None
 
   def __init__(self, dataset, options):
@@ -109,10 +109,10 @@ class MainGUI(QtWidgets.QMainWindow):
     self._refl=value
   ##### for IPython mode, keep namespace up to date ######
 
-  fileLoaded=QtCore.pyqtSignal()
-  initiateProjectionPlot=QtCore.pyqtSignal(bool)
-  initiateReflectivityPlot=QtCore.pyqtSignal(bool)
-  reflectivityUpdated=QtCore.pyqtSignal(bool)
+  fileLoaded=QtCore.Signal()
+  initiateProjectionPlot=QtCore.Signal(bool)
+  initiateReflectivityPlot=QtCore.Signal(bool)
+  reflectivityUpdated=QtCore.Signal(bool)
 
   def __init__(self, argv=[], parent=None):
     if parent is None:
@@ -122,7 +122,7 @@ class MainGUI(QtWidgets.QMainWindow):
 
     self.auto_change_active=True
     if gui.interface!='default':
-      exec 'from .%s_interface import Ui_MainWindow'%gui.interface
+      exec('from .%s_interface import Ui_MainWindow'%gui.interface)
     self.ui=Ui_MainWindow()
     self.ui.setupUi(self)
     install_gui_handler(self)
@@ -207,7 +207,7 @@ class MainGUI(QtWidgets.QMainWindow):
     if len(argv)>0:
       if sys.version_info[0]<3:
         # if non ascii character in filenames interprete it as utf8
-        argv=[unicode(argi, 'utf8', 'ignore') for argi in argv]
+        argv=[argi if isinstance(argi, str) else argi.decode('utf8', 'ignore') for argi in argv]
       # delay action to be run within event loop, this allows the error handling to work
       if argv[0][-4:]=='.dat':
         self.trigger('loadExtraction', argv[0])
@@ -237,7 +237,7 @@ class MainGUI(QtWidgets.QMainWindow):
     '''
       Just for testing of loggin etc.
     '''
-    raise RuntimeError, 'Test error from GUI'
+    raise RuntimeError('Test error from GUI')
 
   def set_debug(self):
     '''
@@ -315,8 +315,8 @@ class MainGUI(QtWidgets.QMainWindow):
       script_info=[sline.strip('# ') for sline in stxt.splitlines()[1:4]]
       if script_info[0]!=('QuickNXS script version '+misc.SCRIPT_VERSION):
         return None
-      name=unicode(script_info[1].split('Name:', 1)[1].strip(), 'utf8', 'replace')
-      info=unicode(script_info[2].split('Info:', 1)[1].strip(), 'utf8', 'replace')
+      name=script_info[1].split('Name:', 1)[1].strip()
+      info=script_info[2].split('Info:', 1)[1].strip()
     except:
       debug("Can't parse script header:", exc_info=True)
       return None
@@ -329,7 +329,7 @@ class MainGUI(QtWidgets.QMainWindow):
     '''
     Open a new datafile and plot the data.
     '''
-    print filename
+    print(filename)
     folder, base=os.path.split(filename)
     if folder!=self.active_folder:
       self.onPathChanged(base, folder)
@@ -1186,7 +1186,7 @@ class MainGUI(QtWidgets.QMainWindow):
                                                directory=self.active_folder,
                                                filter=filter_)[0]
     if filenames:
-      filenames=map(unicode, filenames)
+      filenames=[str(f) for f in filenames]
       if len(filenames)==1:
         self.fileOpen(filenames[0])
       else:
@@ -1207,7 +1207,7 @@ class MainGUI(QtWidgets.QMainWindow):
                                                directory=self.active_folder,
                                                filter=filter_)
     if filenames:
-      filenames=map(unicode, filenames)
+      filenames=[str(f) for f in filenames]
       self.fileOpenSum(filenames)
 
   @log_call
@@ -1218,7 +1218,7 @@ class MainGUI(QtWidgets.QMainWindow):
     if self.auto_change_active:
       return
     item=self.ui.file_list.currentItem()
-    name=unicode(item.text())
+    name=str(item.text())
     # only reload if filename was actually changed or file was modified
     self.fileOpen(os.path.join(self.active_folder, name))
 
@@ -1272,7 +1272,7 @@ class MainGUI(QtWidgets.QMainWindow):
 
     self.clearRefList(do_plot=False)
     if self._pending_header is None:
-      text=unicode(open(filename, 'rb').read(), 'utf8')
+      text=open(filename, 'rb').read().decode('utf8')
       header=[]
       for line in text.splitlines():
         if not line.startswith('#'):
@@ -1615,20 +1615,20 @@ class MainGUI(QtWidgets.QMainWindow):
       idx=sorted(self.ref_norm.keys()).index(number)
       self.ui.normalizeTable.insertRow(idx)
       item=QtWidgets.QTableWidgetItem(number)
-      item.setTextColor(QtGui.QColor(100, 0, 0))
-      item.setBackgroundColor(QtGui.QColor(200, 200, 200))
+      item.setForeground(QtGui.QBrush(QtGui.QColor(100, 0, 0)))
+      item.setBackground(QtGui.QBrush(QtGui.QColor(200, 200, 200)))
       self.ui.normalizeTable.setItem(idx, 0, QtWidgets.QTableWidgetItem(item))
       self.ui.normalizeTable.setItem(idx, 1, QtWidgets.QTableWidgetItem(str(lamda)))
       item=QtWidgets.QTableWidgetItem(str(opts['x_pos']))
-      item.setBackgroundColor(QtGui.QColor(200, 200, 200))
+      item.setBackground(QtGui.QBrush(QtGui.QColor(200, 200, 200)))
       self.ui.normalizeTable.setItem(idx, 2, QtWidgets.QTableWidgetItem(item))
       self.ui.normalizeTable.setItem(idx, 3, QtWidgets.QTableWidgetItem(str(opts['x_width'])))
       item=QtWidgets.QTableWidgetItem(str(opts['y_pos']))
-      item.setBackgroundColor(QtGui.QColor(200, 200, 200))
+      item.setBackground(QtGui.QBrush(QtGui.QColor(200, 200, 200)))
       self.ui.normalizeTable.setItem(idx, 4, QtWidgets.QTableWidgetItem(item))
       self.ui.normalizeTable.setItem(idx, 5, QtWidgets.QTableWidgetItem(str(opts['y_width'])))
       item=QtWidgets.QTableWidgetItem(str(opts['bg_pos']))
-      item.setBackgroundColor(QtGui.QColor(200, 200, 200))
+      item.setBackground(QtGui.QBrush(QtGui.QColor(200, 200, 200)))
       self.ui.normalizeTable.setItem(idx, 6, QtWidgets.QTableWidgetItem(item))
       self.ui.normalizeTable.setItem(idx, 7, QtWidgets.QTableWidgetItem(str(opts['bg_width'])))
       self.ui.normalizationLabel.setText(u",".join(map(str, sorted(self.ref_norm.keys()))))
@@ -1775,8 +1775,8 @@ class MainGUI(QtWidgets.QMainWindow):
     self.auto_change_active=True
 
     item=QtWidgets.QTableWidgetItem(opts['number'])
-    item.setTextColor(QtGui.QColor(100, 0, 0))
-    item.setBackgroundColor(QtGui.QColor(200, 200, 200))
+    item.setForeground(QtGui.QBrush(QtGui.QColor(100, 0, 0)))
+    item.setBackground(QtGui.QBrush(QtGui.QColor(200, 200, 200)))
     self.ui.reductionTable.setItem(idx, 0, item)
     self.ui.reductionTable.setItem(idx, 1,
                                    QtWidgets.QTableWidgetItem("%.4f"%(opts['scale'])))
@@ -1785,17 +1785,17 @@ class MainGUI(QtWidgets.QMainWindow):
     self.ui.reductionTable.setItem(idx, 3,
                                    QtWidgets.QTableWidgetItem(str(opts['PN'])))
     item=QtWidgets.QTableWidgetItem(str(opts['x_pos']))
-    item.setBackgroundColor(QtGui.QColor(200, 200, 200))
+    item.setBackground(QtGui.QBrush(QtGui.QColor(200, 200, 200)))
     self.ui.reductionTable.setItem(idx, 4, item)
     self.ui.reductionTable.setItem(idx, 5,
                                    QtWidgets.QTableWidgetItem(str(opts['x_width'])))
     item=QtWidgets.QTableWidgetItem(str(opts['y_pos']))
-    item.setBackgroundColor(QtGui.QColor(200, 200, 200))
+    item.setBackground(QtGui.QBrush(QtGui.QColor(200, 200, 200)))
     self.ui.reductionTable.setItem(idx, 6, item)
     self.ui.reductionTable.setItem(idx, 7,
                                    QtWidgets.QTableWidgetItem(str(opts['y_width'])))
     item=QtWidgets.QTableWidgetItem(str(opts['bg_pos']))
-    item.setBackgroundColor(QtGui.QColor(200, 200, 200))
+    item.setBackground(QtGui.QBrush(QtGui.QColor(200, 200, 200)))
     self.ui.reductionTable.setItem(idx, 8, item)
     self.ui.reductionTable.setItem(idx, 9,
                                    QtWidgets.QTableWidgetItem(str(opts['bg_width'])))
@@ -1984,7 +1984,7 @@ class MainGUI(QtWidgets.QMainWindow):
     name=QtWidgets.QFileDialog.getSaveFileName(parent=self, caption=u'Select export file name',
                                      filter='ASCII files (*.dat);;All files (*.*)')
     if name!='':
-      name=unicode(name)
+      name=str(name)
     else:
       return
     refl=self.refl
@@ -2214,7 +2214,7 @@ class MainGUI(QtWidgets.QMainWindow):
     sfile=open(paths.STATE_FILE, 'wb')
     sfile.write((u'Running PID %i\n'%os.getpid()).encode('utf8'))
     if len(self.reduction_list)>0:
-      sfile.write(unicode(HeaderCreator(self.reduction_list)).encode('utf8'))
+      sfile.write(str(HeaderCreator(self.reduction_list)).encode('utf8'))
     sfile.close()
 
   @log_call
@@ -2427,7 +2427,7 @@ Do you want to try to restore the working reduction list?""",
     if names:
       filtered_points=[]
       for name in names:
-        text=unicode(open(name, 'rb').read(), 'utf8')
+        text=open(name, 'rb').read().decode('utf8')
         header=[]
         for line in text.splitlines():
           if not line.startswith('#'):
@@ -2460,11 +2460,11 @@ Do you want to try to restore the working reduction list?""",
   @log_call
   def run_script(self):
     trigger=self.sender()
-    name=unicode(trigger.text())
+    name=str(trigger.text())
     info(u'Executing script "%s"...'%name)
     code=self._extension_scripts[name]
     gls={'app': QtWidgets.QApplication.instance(), 'gui': self, 'data': self.active_data}
-    exec code in gls
+    exec(code, gls)
 
   def helpDialog(self):
     '''
@@ -2495,8 +2495,8 @@ Do you want to try to restore the working reduction list?""",
     from h5py.version import version as h5pyversion
     from h5py.version import hdf5_version as hdf5version
     try:
-      from PyQt5.pyqtconfig import Configuration
-      pyqtversion=Configuration().pyqt_version_str
+      from qtpy.QtCore import PYQT_VERSION_STR
+      pyqtversion=PYQT_VERSION_STR
     except ImportError:
       pyqtversion='Unknown'
 

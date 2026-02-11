@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 import os
 import tempfile
-from PyQt5 import QtGui, QtCore, QtWidgets
+from qtpy import QtGui, QtCore, QtWidgets
+from qtpy.QtPrintSupport import QPrinter, QPrintPreviewDialog
 import matplotlib.cm
 import matplotlib.colors
 from . import icons_rc #@UnusedImport
 from .config import plotting
 
 # set the default backend to be compatible with Qt in case someone uses pylab from IPython console
-matplotlib.use('Qt5Agg')
+matplotlib.use('QtAgg')
 def _set_default_rc():
   matplotlib.rc('font', **plotting.font)
   matplotlib.rc('savefig', **plotting.savefig)
@@ -16,15 +17,15 @@ _set_default_rc()
 
 cmap=matplotlib.colors.LinearSegmentedColormap.from_list('default',
                   ['#0000ff', '#00ff00', '#ffff00', '#ff0000', '#bd7efc', '#000000'], N=256)
-matplotlib.cm.register_cmap('default', cmap=cmap)
+matplotlib.colormaps.register(cmap, name='default')
 
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5 import NavigationToolbar2QT
-from matplotlib.cbook import Stack
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt import NavigationToolbar2QT
+from matplotlib.cbook import _Stack as Stack
 from matplotlib.colors import LogNorm, Normalize
 from matplotlib.figure import Figure
 try:
-    import matplotlib.backends.qt4_editor.figureoptions as figureoptions
+    import matplotlib.backends.qt_editor.figureoptions as figureoptions
 except ImportError:
     figureoptions=None
 
@@ -190,12 +191,11 @@ class NavigationToolbar(NavigationToolbar2QT):
       Save the plot to a temporary png file and show a preview dialog also used for printing.
     '''
     filetypes=self.canvas.get_supported_filetypes_grouped()
-    sorted_filetypes=filetypes.items()
-    sorted_filetypes.sort()
+    sorted_filetypes=sorted(filetypes.items())
 
     filename=os.path.join(tempfile.gettempdir(), u"quicknxs_print.png")
     self.canvas.print_figure(filename, dpi=600)
-    imgpix=QtWidgets.QPixmap(filename)
+    imgpix=QtGui.QPixmap(filename)
     os.remove(filename)
 
     imgobj=QtWidgets.QLabel()
@@ -207,20 +207,19 @@ class NavigationToolbar(NavigationToolbar2QT):
       imgobj.render(printer)
 
 
-    printer=QtGui.QPrinter()
+    printer=QPrinter()
     printer.setPrinterName('mrac4a_printer')
-    printer.setPageSize(QtGui.QPrinter.Letter)
+    printer.setPageSize(QPrinter.Letter)
     printer.setResolution(600)
-    printer.setOrientation(QtGui.QPrinter.Landscape)
+    printer.setOrientation(QPrinter.Landscape)
 
-    pd=QtWidgets.QPrintPreviewDialog(printer)
+    pd=QPrintPreviewDialog(printer)
     pd.paintRequested.connect(getPrintData)
     pd.exec_()
 
   def save_figure(self, *args):
       filetypes=self.canvas.get_supported_filetypes_grouped()
-      sorted_filetypes=filetypes.items()
-      sorted_filetypes.sort()
+      sorted_filetypes=sorted(filetypes.items())
       default_filetype=self.canvas.get_default_filetype()
 
       start="image."+default_filetype
@@ -237,11 +236,11 @@ class NavigationToolbar(NavigationToolbar2QT):
       fname=QtWidgets.QFileDialog.getSaveFileName(self, u"Choose a filename to save to", start, filters)
       if fname:
           try:
-              self.canvas.print_figure(unicode(fname))
-          except Exception, e:
+              self.canvas.print_figure(str(fname))
+          except Exception as e:
               QtWidgets.QMessageBox.critical(
                   self, "Error saving file", str(e),
-                  QtWidgets.QMessageBox.Ok, QtWidgets.QMessageBox.NoButton)
+                  QtWidgets.QMessageBox.Ok)
 
   def toggle_log(self, *args):
     ax=self.canvas.ax

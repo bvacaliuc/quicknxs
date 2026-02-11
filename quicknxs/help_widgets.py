@@ -4,9 +4,9 @@
 '''
 
 import re
-from PyQt5.QtWidgets import QSpinBox, QWidget, QHBoxLayout, QLabel, QPushButton, QTableWidget
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import pyqtSlot, pyqtSignal
+from qtpy.QtWidgets import QSpinBox, QWidget, QHBoxLayout, QLabel, QPushButton, QTableWidget
+from qtpy.QtGui import QIcon
+from qtpy.QtCore import Slot as pyqtSlot, Signal as pyqtSignal
 from .filter_widget import Ui_FilterWidget
 
 class LimitingSpinBox(QSpinBox):
@@ -67,7 +67,7 @@ class FilterWidget(QWidget):
 
     if not self.checkEntry():
       return
-    value=ctype(unicode(self.ui.filterEntry.text()))
+    value=ctype(str(self.ui.filterEntry.text()))
 
     # Go through the cases given by the type of entry and the user selection
     # for the comparison operators to be used.
@@ -115,7 +115,7 @@ class FilterWidget(QWidget):
     Test if the current entry is valid for 
     '''
     ctype=self.columns[self.ui.filterColumn.currentIndex()][1]
-    txt=unicode(self.ui.filterEntry.text())
+    txt=str(self.ui.filterEntry.text())
     if txt.strip()=='':
       return False
       self.ui.filterEntry.setStyleSheet('QLineEdit{background: white;}')
@@ -141,7 +141,7 @@ class FilterWidget(QWidget):
     '''
     Hide or show comboboxes corresponding to the data type of the selected column.
     '''
-    if self.columns[column][1] in [str, unicode]:
+    if self.columns[column][1] in [str]:
       self.ui.strCompare.show()
       self.ui.numberCompare.hide()
     else:
@@ -161,7 +161,7 @@ class ActiveFilter(QWidget):
     self.value=value
 
     hbox=QHBoxLayout(self)
-    hbox.setMargin(0)
+    hbox.setContentsMargins(0, 0, 0, 0)
 
     hbox.addWidget(QLabel(text%value))
 

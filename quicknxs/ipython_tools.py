@@ -52,7 +52,7 @@ class PlottableArray(ndarray):
 
   def _repr_png_(self):
     # to prevent problems with other modules import needed stuff on the fly
-    from cStringIO import StringIO
+    from io import BytesIO as StringIO
     from matplotlib.colors import LogNorm
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -121,4 +121,4 @@ class AttributePloter(object):
       return PlottableArray(getattr(self._parent, name))
 
   def __dir__(self):
-    return self.__dict__.keys()+self._attrs
+    return list(self.__dict__.keys())+self._attrs

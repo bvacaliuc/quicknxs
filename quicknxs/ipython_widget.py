@@ -8,7 +8,7 @@ author: Paweł Jarosz, Artur Glavic
 
 import atexit
 
-from PyQt5 import QtCore, QtGui
+from qtpy import QtCore, QtGui, QtWidgets
 
 DEFAULT_INSTANCE_ARGS=['qtconsole', '--pylab=inline', '--colors=linux']
 
@@ -117,7 +117,7 @@ class IPythonConsoleQtWidget(RichIPythonWidget):
       ip.set_custom_exc((Exception,), ip_excepthook_overwrite)
       self.namespace=ip.user_ns
       self.namespace['IP']=self
-      self.namespace['app']=QtGui.QApplication.instance()
+      self.namespace['app']=QtWidgets.QApplication.instance()
       self.namespace['gui']=parent
       self.namespace['plot']=self._plot
       if silenced:

@@ -4,7 +4,7 @@
 '''
 
 from numpy import *
-from PyQt5.QtWidgets import QDialog
+from qtpy.QtWidgets import QDialog
 from .rawcompare_dialog import Ui_RawDat
 from .qreduce import Reflectivity
 

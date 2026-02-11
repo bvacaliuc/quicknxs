@@ -6,8 +6,8 @@ A dialog to browse through the sample database created by the autorefl script.
 import tempfile
 import os
 import atexit
-from PyQt5.QtWidgets import QDialog, QWidget, QVBoxLayout, QTableWidgetItem
-from PyQt5.QtCore import pyqtSignal
+from qtpy.QtWidgets import QDialog, QWidget, QVBoxLayout, QTableWidgetItem
+from qtpy.QtCore import Signal as pyqtSignal
 
 from .config import instrument as config
 from . import database
@@ -24,7 +24,7 @@ atexit.register(clear_tmp)
 
 class DatabaseWidget(QWidget):
   last_result=None
-  datasetSelected=pyqtSignal(unicode)
+  datasetSelected=pyqtSignal(str)
 
   def __init__(self, *args, **opts):
     QWidget.__init__(self, *args, **opts)
@@ -73,7 +73,7 @@ class DatabaseWidget(QWidget):
     
     if self.ui.searchColumn.currentText()!='':
       column=str(self.ui.searchColumn.currentText())
-      search_str=unicode(self.ui.searchEntry.text()).encode('utf8')
+      search_str=str(self.ui.searchEntry.text())
       selection=[r for r in selection if search_str in str(eval('r.'+column))]
     
     numitems=min(len(selection), self.ui.maxResults.value())
@@ -85,11 +85,11 @@ class DatabaseWidget(QWidget):
       for j, column in enumerate(columns):
         value=eval('_record.'+column)
         if type(value) is str:
-          tbl.setItem(i, j, QTableWidgetItem(unicode(value, 'utf8', 'ignore')))
+          tbl.setItem(i, j, QTableWidgetItem(value if isinstance(value, str) else value.decode('utf8', 'ignore')))
         elif type(value) is float:
           tbl.setItem(i, j, QTableWidgetItem('%.6g'%value))
         else:
-          tbl.setItem(i, j, QTableWidgetItem(unicode(value)))
+          tbl.setItem(i, j, QTableWidgetItem(str(value)))
     self.last_result=selection[-numitems:]
 
     self.ui.resultLabel.setText('Results: %i/%i'%(numitems, len(selection)))
@@ -100,7 +100,7 @@ class DatabaseWidget(QWidget):
     self.datasetSelected.emit(self.last_result[idx].file_path)
 
 class DatabaseDialog(QDialog):
-  datasetSelected=pyqtSignal(unicode)
+  datasetSelected=pyqtSignal(str)
 
   def __init__(self, *args, **opts):
     QDialog.__init__(self, *args, **opts)

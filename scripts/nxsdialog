@@ -5,7 +5,10 @@
 '''
 
 import os
+os.environ["QT_API"] = "pyqt5"
 import sys
+import matplotlib
+matplotlib.use("QtAgg")
 
 # if script was run from commandline
 try:
@@ -18,8 +21,9 @@ except NameError:
 from quicknxs.gui_logging import setup_system, check_runstate
 
 def _run(argv=[]):
-  from PyQt4.QtGui import QApplication, QPixmap
-  from PyQt4.QtCore import Qt
+  from qtpy.QtWidgets import QApplication
+  from qtpy.QtGui import QPixmap
+  from qtpy.QtCore import Qt
   app=QApplication(argv)
   from quicknxs import icons_rc, version  #@UnusedImport
 

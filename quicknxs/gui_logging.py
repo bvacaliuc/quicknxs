@@ -169,7 +169,7 @@ class QtHandler(logging.Handler):
     '''
       Warning messages display a dialog to the user.
     '''
-    from PyQt5.QtWidgets import QMessageBox
+    from qtpy.QtWidgets import QMessageBox
     if record.exc_info:
       msg=u'%s\nError Message:\n%s:   %s'%(record.msg, record.exc_info[0].__name__, record.exc_info[1])
       QMessageBox.warning(self.main_window, 'QuickNXS '+record.levelname, msg)
@@ -180,8 +180,8 @@ class QtHandler(logging.Handler):
     '''
       More urgent error messages allow to send a bug report.
     '''
-    from PyQt5.QtWidgets import QMessageBox
-    from PyQt5.QtCore import Qt
+    from qtpy.QtWidgets import QMessageBox
+    from qtpy.QtCore import Qt
     mbox=QMessageBox(self.main_window)
     mbox.setIcon(QMessageBox.Critical)
     mbox.setTextFormat(Qt.RichText)
