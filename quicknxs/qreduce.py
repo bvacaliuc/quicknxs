@@ -21,6 +21,7 @@ import base64
 import traceback
 from copy import deepcopy
 from glob import glob
+import builtins as _builtins
 from numpy import *
 from numpy.version import version as npversion
 from platform import node
@@ -268,37 +269,39 @@ class NXSData(object, metaclass=OptionsDocMeta):
     else:
       is_ancient=False
     try:
-      max_counts=max([nxs[channel][u'total_counts'].value[0] for channel in channels])
+      max_counts=max([nxs[channel][u'total_counts'][()][0] for channel in channels])
     except KeyError:
       warn('total_counts not defined in channels')
       return False
     for channel in list(channels):
-      if nxs[channel][u'total_counts'].value[0]<(self.COUNT_THREASHOLD*max_counts):
+      if nxs[channel][u'total_counts'][()][0]<(self.COUNT_THREASHOLD*max_counts):
         channels.remove(channel)
     if len(channels)==0:
       debug('No valid channels in file')
       return False
     try:
-      ana=nxs[channels[0]]['instrument/analyzer/AnalyzerLift/value'].value[0]
-      pol=nxs[channels[0]]['instrument/polarizer/PolLift/value'].value[0]
+      ana=nxs[channels[0]]['instrument/analyzer/AnalyzerLift/value'][()][0]
+      pol=nxs[channels[0]]['instrument/polarizer/PolLift/value'][()][0]
     except KeyError:
       ana=-1.e10
       pol=-1.e10
 
     try:
-      ana_trans=nxs[channels[0]]['instrument/analyzer/AnalyzerTrans/value'].value[0]
+      ana_trans=nxs[channels[0]]['instrument/analyzer/AnalyzerTrans/value'][()][0]
     except KeyError:
       ana_trans=-1.e10
 
     try:
-      smpt=nxs[channels[0]]['DASlogs/SMPolTrans/value'].value[0]
+      smpt=nxs[channels[0]]['DASlogs/SMPolTrans/value'][()][0]
     except KeyError:
       smpt=0.
 
     # select the type of measurement that has been used
     # Skip the labels, since the conditions defining the polarizer/analyzer positions
     # have changed substantially since the DAS upgrade.
-    start_time_str = nxs[channels[0]]['start_time'].value[0]
+    start_time_str = nxs[channels[0]]['start_time'][()][0]
+    if isinstance(start_time_str, bytes):
+      start_time_str = start_time_str.decode('utf-8')
     assign_labels = True
     try:
         date_str = start_time_str.split('T')[0]
@@ -754,16 +757,16 @@ class MRDataset(object):
     except KeyError:
       warn('Error while collecting metadata:\n\n'+traceback.format_exc())
 
-    output.tof_edges=data['bank1/time_of_flight'].value
+    output.tof_edges=data['bank1/time_of_flight'][()]
     # the data arrays
-    output.data=data['bank1/data'].value.astype(float) # 3D dataset
-    output.xydata=data['bank1']['data_x_y'].value.transpose().astype(float) # 2D dataset
-    output.xtofdata=data['bank1']['data_x_time_of_flight'].value.astype(float) # 2D dataset
+    output.data=data['bank1/data'][()].astype(float) # 3D dataset
+    output.xydata=data['bank1']['data_x_y'][()].transpose().astype(float) # 2D dataset
+    output.xtofdata=data['bank1']['data_x_time_of_flight'][()].astype(float) # 2D dataset
 
     try:
-      mon_tof_from=data['monitor1']['time_of_flight'].value.astype(float)*\
+      mon_tof_from=data['monitor1']['time_of_flight'][()].astype(float)*\
                                             output.dist_mod_det/output.dist_mod_mon
-      mon_I_from=data['monitor1']['data'].value.astype(float)
+      mon_I_from=data['monitor1']['data'][()].astype(float)
       mod_data=histogram((mon_tof_from[:-1]+mon_tof_from[1:])/2., output.tof_edges,
                          weights=mon_I_from)[0]
       output.mon_data=mod_data
@@ -785,9 +788,9 @@ class MRDataset(object):
       warn('Error while collecting metadata:\n\n'+traceback.format_exc())
 
     # first ToF edge is 0, prevent that
-    output.tof_edges=data['bank1/time_of_flight'].value[1:]
+    output.tof_edges=data['bank1/time_of_flight'][()][1:]
     # the data arrays
-    output.data=data['bank1/data'].value.astype(float)[:, :, 1:] # 3D dataset
+    output.data=data['bank1/data'][()].astype(float)[:, :, 1:] # 3D dataset
     output.xydata=output.data.sum(axis=2).transpose()
     output.xtofdata=output.data.sum(axis=1)
     return output
@@ -815,7 +818,7 @@ class MRDataset(object):
       warn('Error while collecting metadata:\n\n'+traceback.format_exc())
 
     if tof_overwrite is None:
-      lcenter=data['DASlogs/LambdaRequest/value'].value[0]
+      lcenter=data['DASlogs/LambdaRequest/value'][()][0]
       # ToF region for this specific central wavelength
       tmin=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter-1.6)*1e-4
       tmax=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter+1.6)*1e-4
@@ -832,16 +835,16 @@ class MRDataset(object):
 
     # Histogram the data
     # create ToF edges for the binning and correlate pixel indices with pixel position
-    tof_ids=array(data['bank1_events/event_id'].value, dtype=int)
-    tof_time=data['bank1_events/event_time_offset'].value
+    tof_ids=array(data['bank1_events/event_id'][()], dtype=int)
+    tof_time=data['bank1_events/event_time_offset'][()]
     # read the corresponding proton charge of each pulse
-    tof_pc=data['DASlogs/proton_charge/value'].value
+    tof_pc=data['DASlogs/proton_charge/value'][()]
     if read_options['event_split_bins']:
       split_bins=read_options['event_split_bins']
       split_index=read_options['event_split_index']
       # read the relative time in seconds from measurement start to event
-      tof_real_time=data['bank1_events/event_time_zero'].value
-      tof_idx_to_id=data['bank1_events/event_index'].value
+      tof_real_time=data['bank1_events/event_time_zero'][()]
+      tof_idx_to_id=data['bank1_events/event_index'][()]
       if total_duration is None:
         split_step=float(tof_real_time[-1]+0.01)/split_bins
       else:
@@ -1031,7 +1034,7 @@ class MRDataset(object):
     if 'DASlogs' in data:  # the old format does not include the DAS logs
       if 'proton_charge' in data['DASlogs']: # some intermediate format has DASlogs but no pc
         # get an array of all pulses to make it possible to correlate values with states
-        stimes=data['DASlogs/proton_charge/time'].value
+        stimes=data['DASlogs/proton_charge/time'][()]
         stimes=stimes[::10] # reduce the number of items to speed up the correlation
         # use only values that are not directly before or after a state change
         stimesl, stimesc, stimesr=stimes[:-2], stimes[1:-1], stimes[2:]
@@ -1046,13 +1049,13 @@ class MRDataset(object):
             self.log_units[motor]=item['value'].attrs['units'].decode('utf8') if isinstance(item['value'].attrs['units'], bytes) else str(item['value'].attrs['units'])
           else:
             self.log_units[motor]=u''
-          val=item['value'].value
+          val=item['value'][()]
           if val.shape[0]==1:
             self.logs[motor]=val[0]
             self.log_minmax[motor]=(val[0], val[0])
           else:
             if stimes is not None:
-              vtime=item['time'].value
+              vtime=item['time'][()]
               sidx=searchsorted(vtime, stimes, side='right')
               sidx=maximum(sidx-1, 0)
               val=val[sidx]
@@ -1064,42 +1067,42 @@ class MRDataset(object):
               self.log_minmax[motor]=(val.min(), val.max())
         except:
           continue
-      self.lambda_center=data['DASlogs/LambdaRequest/value'].value[0]
-    self.dangle=data['instrument/bank1/DANGLE/value'].value[0]
+      self.lambda_center=data['DASlogs/LambdaRequest/value'][()][0]
+    self.dangle=data['instrument/bank1/DANGLE/value'][()][0]
     if 'instrument/bank1/DANGLE0' in data: # compatibility for ancient file format
-      self.dangle0=data['instrument/bank1/DANGLE0/value'].value[0]
-      self.dpix=data['instrument/bank1/DIRPIX/value'].value[0]
-      self.slit1_width=data['instrument/aperture1/S1HWidth/value'].value[0]
-      self.slit2_width=data['instrument/aperture2/S2HWidth/value'].value[0]
-      self.slit3_width=data['instrument/aperture3/S3HWidth/value'].value[0]
+      self.dangle0=data['instrument/bank1/DANGLE0/value'][()][0]
+      self.dpix=data['instrument/bank1/DIRPIX/value'][()][0]
+      self.slit1_width=data['instrument/aperture1/S1HWidth/value'][()][0]
+      self.slit2_width=data['instrument/aperture2/S2HWidth/value'][()][0]
+      self.slit3_width=data['instrument/aperture3/S3HWidth/value'][()][0]
     else:
-      self.slit1_width=data['instrument/aperture1/RSlit1/value'].value[0]-\
-                      data['instrument/aperture1/LSlit1/value'].value[0]
-      self.slit2_width=data['instrument/aperture2/RSlit2/value'].value[0]-\
-                      data['instrument/aperture2/LSlit2/value'].value[0]
-      self.slit3_width=data['instrument/aperture3/RSlit3/value'].value[0]-\
-                      data['instrument/aperture3/LSlit3/value'].value[0]
-    self.slit1_dist=-data['instrument/aperture1/distance'].value[0]*1000.
-    self.slit2_dist=-data['instrument/aperture2/distance'].value[0]*1000.
-    self.slit3_dist=-data['instrument/aperture3/distance'].value[0]*1000.
+      self.slit1_width=data['instrument/aperture1/RSlit1/value'][()][0]-\
+                      data['instrument/aperture1/LSlit1/value'][()][0]
+      self.slit2_width=data['instrument/aperture2/RSlit2/value'][()][0]-\
+                      data['instrument/aperture2/LSlit2/value'][()][0]
+      self.slit3_width=data['instrument/aperture3/RSlit3/value'][()][0]-\
+                      data['instrument/aperture3/LSlit3/value'][()][0]
+    self.slit1_dist=-data['instrument/aperture1/distance'][()][0]*1000.
+    self.slit2_dist=-data['instrument/aperture2/distance'][()][0]*1000.
+    self.slit3_dist=-data['instrument/aperture3/distance'][()][0]*1000.
 
-    self.sangle=data['sample/SANGLE/value'].value[0]
+    self.sangle=data['sample/SANGLE/value'][()][0]
 
-    self.proton_charge=data['proton_charge'].value[0]
-    self.total_counts=data['total_counts'].value[0]
-    self.total_time=data['duration'].value[0]
+    self.proton_charge=data['proton_charge'][()][0]
+    self.total_counts=data['total_counts'][()][0]
+    self.total_time=data['duration'][()][0]
 
-    self.dist_sam_det=data['instrument/bank1/SampleDetDis/value'].value[0]*1e-3
-    self.dist_mod_det=data['instrument/moderator/ModeratorSamDis/value'].value[0]*1e-3+self.dist_sam_det
-    self.dist_mod_mon=data['instrument/moderator/ModeratorSamDis/value'].value[0]*1e-3-2.75
-    self.det_size_x=data['instrument/bank1/origin/shape/size'].value[0]
-    self.det_size_y=data['instrument/bank1/origin/shape/size'].value[1]
+    self.dist_sam_det=data['instrument/bank1/SampleDetDis/value'][()][0]*1e-3
+    self.dist_mod_det=data['instrument/moderator/ModeratorSamDis/value'][()][0]*1e-3+self.dist_sam_det
+    self.dist_mod_mon=data['instrument/moderator/ModeratorSamDis/value'][()][0]*1e-3-2.75
+    self.det_size_x=data['instrument/bank1/origin/shape/size'][()][0]
+    self.det_size_y=data['instrument/bank1/origin/shape/size'][()][1]
 
-    self.experiment=str(data['experiment_identifier'].value[0])
-    self.number=int(data['run_number'].value[0])
-    self.merge_warnings=str(data['SNSproblem_log_geom/data'].value[0])
+    self.experiment=str(data['experiment_identifier'][()][0])
+    self.number=int(data['run_number'][()][0])
+    self.merge_warnings=str(data['SNSproblem_log_geom/data'][()][0])
 
-    detector_id=str(data['instrument/SNSgeometry_file_name'].value[0])
+    detector_id=str(data['instrument/SNSgeometry_file_name'][()][0])
     if detector_id in instrument.DETECTOR_REGION:
       self.active_area_x=instrument.DETECTOR_REGION[detector_id][0]
       self.active_area_y=instrument.DETECTOR_REGION[detector_id][1]
@@ -1323,8 +1326,8 @@ def time_from_header(filename, nxs=None):
   stime=1.e30
   etime=0.
   for item in nxs.values():
-    sstr=item['start_time'].value[0].decode()
-    estr=item['end_time'].value[0].decode()
+    sstr=item['start_time'][()][0].decode()
+    estr=item['end_time'][()][0].decode()
     if '.' in sstr:
       start_str, start_sub=sstr.split('.', 1)
       start_sub=start_sub.split('-')[0]
@@ -1337,8 +1340,8 @@ def time_from_header(filename, nxs=None):
       start_time=mktime(strptime(start_str, '%Y-%m-%dT%H:%M:%S'))
       end_str, end_sub=estr.rsplit('-', 1)
       end_time=mktime(strptime(end_str, '%Y-%m-%dT%H:%M:%S'))
-    stime=min(stime, start_time)
-    etime=max(etime, end_time)
+    stime=_builtins.min(stime, start_time)
+    etime=_builtins.max(etime, end_time)
   if close:
     nxs.close()
   return etime-stime
@@ -1825,7 +1828,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
       tof_edges=dataset.tof_edges
       for fnt in fast_n_tof:
         channel=where((tof_edges[1:]>=fnt)&(tof_edges[:-1]<=fnt))[0]
-        if not channel:
+        if channel.size == 0:
           continue
         self.BG[channel]=self.BGraw[channel]
         self.dBG[channel]=self.dBGraw[channel]

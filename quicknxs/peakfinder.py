@@ -12,7 +12,7 @@ try:
   from scipy.stats.mstats import mquantiles
 except (ImportError, RuntimeError):
   # use the slightly slower quantiles function that does not rely on scipy
-  def mquantiles(data, prob, *ignore): return quantile(data, prob)
+  def mquantiles(data, prob, *ignore): return numpy.atleast_1d(quantile(data, prob))
 
 class PeakFinder(object):
   '''
@@ -124,7 +124,7 @@ class PeakFinder(object):
     minimum_noise=float(minimum_noise_level*mquantiles(
                         noise_cwt,
                         0.95,
-                        3./8., 3./8.))
+                        3./8., 3./8.)[0])
     for info in ridge_info:
       scale=max(3, info[2]) # get a minimal width of 30 items for noise calculation
       signal=info[3]
@@ -132,9 +132,9 @@ class PeakFinder(object):
       base_right=int(info[1]+scale*5)
       noise=mquantiles(noise_cwt[base_left:base_right+1],
                        0.95,
-                       3./8., 3./8.)
-      noise=numpy.nan_to_num(noise)
-      noise=float(max([minimum_noise, noise]))
+                       3./8., 3./8.)[0]
+      noise=float(numpy.nan_to_num(noise))
+      noise=max(minimum_noise, noise)
       info.append(signal/noise)
 
   def _find_local_max(self, data, steps=3):

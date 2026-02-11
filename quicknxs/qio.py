@@ -666,9 +666,8 @@ class Exporter(object):
         Qx, Qz, ki_z, kf_z, S, dS=(offspec.Qx, offspec.Qz, offspec.ki_z, offspec.kf_z,
                                    offspec.S, offspec.dS)
 
-        rdata=np.array([Qx[:, PN:P0], Qz[:, PN:P0], ki_z[:, PN:P0], kf_z[:, PN:P0],
-                      ki_z[:, PN:P0]-kf_z[:, PN:P0], S[:, PN:P0], dS[:, PN:P0]],
-                    copy=False).transpose((1, 2, 0))
+        rdata=np.asarray([Qx[:, PN:P0], Qz[:, PN:P0], ki_z[:, PN:P0], kf_z[:, PN:P0],
+                      ki_z[:, PN:P0]-kf_z[:, PN:P0], S[:, PN:P0], dS[:, PN:P0]]).transpose((1, 2, 0))
         output_data[channel].append(rdata)
         ki_max=max(ki_max, ki_z.max())
     output_data['ki_max']=ki_max
@@ -707,9 +706,8 @@ class Exporter(object):
         debug('sum(S) before '+repr(S.sum()))
         S=corrector(S)
         debug('sum(S) after '+repr(S.sum()))
-        rdata=np.array([Qx[:, PN:P0], Qz[:, PN:P0], ki_z[:, PN:P0], kf_z[:, PN:P0],
-                      ki_z[:, PN:P0]-kf_z[:, PN:P0], S[:, PN:P0], dS[:, PN:P0]],
-                    copy=False).transpose((1, 2, 0))
+        rdata=np.asarray([Qx[:, PN:P0], Qz[:, PN:P0], ki_z[:, PN:P0], kf_z[:, PN:P0],
+                      ki_z[:, PN:P0]-kf_z[:, PN:P0], S[:, PN:P0], dS[:, PN:P0]]).transpose((1, 2, 0))
         output_data[channel].append(rdata)
         ki_max=max(ki_max, ki_z.max())
     output_data['ki_max']=ki_max

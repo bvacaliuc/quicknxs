@@ -3,6 +3,7 @@
 Module for calculations used in data reduction and automatic algorithms.
 '''
 
+import builtins as _builtins
 from numpy import *
 from logging import debug, info #@Reimport
 from .decorators import log_input, log_both
@@ -76,7 +77,7 @@ def get_scaling(refl1, refl2, add_points=0, polynom=3):
     # if either reflectivity has only zero intensity, return a scaling factor of 1.
     return 1., array([refl1.Q[0], refl2.Q[-1]]), array([0., 0.])
   try:
-    reg1=max(0, where(Q1<=Q2.max())[0][0]-add_points)
+    reg1=_builtins.max(0, where(Q1<=Q2.max())[0][0]-add_points)
     reg2=where(Q2>=Q1.min())[0][-1]+1+add_points
   except IndexError:
     # take at least one point, if no overlap
@@ -150,7 +151,7 @@ def get_xpos(data, dangle0_overwrite=None, direct_pixel_overwrite=-1,
     # refine position with gaussian after background subtraction, FWHM=2.355*sigma
     # use limited range around the peak to avoid fitting into a different peak
     fit_halfwidth=int(wpeak)
-    fit_data=(xproj-median(xproj))[max(0, x_peak-fit_halfwidth):x_peak+fit_halfwidth+1]
+    fit_data=(xproj-median(xproj))[_builtins.max(0, x_peak-fit_halfwidth):x_peak+fit_halfwidth+1]
     x_peak=refine_gauss(fit_data, fit_halfwidth, wpeak)-fit_halfwidth+x_peak
   if return_pf:
     return float(x_peak), pf
@@ -196,7 +197,7 @@ def get_BGscale(data, pos, width, bg_pos, bg_width):
   :returns: scaling factor
   """
   xproj=data.xdata
-  refI=xproj[max(0, int(bg_pos-bg_width/2)):int(bg_pos+bg_width/2)].mean()
+  refI=xproj[_builtins.max(0, int(bg_pos-bg_width/2)):int(bg_pos+bg_width/2)].mean()
   bgI=(xproj[int(round(pos-1.5*width)):int(round(pos-0.5*width))].mean()+
        xproj[int(round(pos+0.5*width)):int(round(pos+1.5*width))].mean())/2.
   return bgI/refI
@@ -213,7 +214,7 @@ def refine_gauss(data, pos, width, return_params=False):
   '''
   if pos<0 or pos>(len(data)-1):
     pos=len(data)/2
-  p0=[data[int(pos)], pos, max(1., width)]
+  p0=[data[int(pos)], pos, _builtins.max(1., width)]
   parinfo=[{'value': p0[i], 'fixed':0, 'limited':[0, 0],
             'limits':[0., 0.]} for i in range(3)]
   parinfo[0]['limited']=[True, False]

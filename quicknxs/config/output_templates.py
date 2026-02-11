@@ -102,4 +102,8 @@ DICTIZE_CHANNELS={
                  '--': 'downdown',
                  '+-': 'updown',
                  '-+': 'downup',
+                 'Off_Off': 'upup',
+                 'On_On': 'downdown',
+                 'Off_On': 'updown',
+                 'On_Off': 'downup',
                  }
