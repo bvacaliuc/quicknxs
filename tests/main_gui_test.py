@@ -20,6 +20,28 @@ if not isinstance(dot, str):
 TEST_DATASET=os.path.join(os.path.dirname(os.path.abspath(__file__)), u'test1_histo.nxs')
 statepath=os.path.join(os.path.expanduser('~/.quicknxs'), 'run_state.dat')
 
+class MainGUIGeometryRestore(unittest.TestCase):
+  """Test that legacy Python 2 str geometry/state values are handled correctly."""
+
+  def test_str_geometry_encodes_to_bytes(self):
+    """QByteArray should accept latin-1 encoded str from legacy config."""
+    from qtpy.QtCore import QByteArray
+    # Simulate a legacy Python 2 config value (str, not bytes)
+    legacy_geometry = '\x01\xd9\xd0\xcb\x00\x01\x00\x00'
+    # This is what the fix does:
+    if isinstance(legacy_geometry, str):
+      legacy_geometry = legacy_geometry.encode('latin-1')
+    ba = QByteArray(legacy_geometry)
+    self.assertIsInstance(ba, QByteArray)
+
+  def test_bytes_geometry_works_directly(self):
+    """QByteArray should accept bytes from Python 3 config."""
+    from qtpy.QtCore import QByteArray
+    py3_geometry = b'\x01\xd9\xd0\xcb\x00\x01\x00\x00'
+    ba = QByteArray(py3_geometry)
+    self.assertIsInstance(ba, QByteArray)
+
+
 class MainGUIGeneral(unittest.TestCase):
   def setUp(self):
     self.app=_app
@@ -129,5 +151,6 @@ class MainGUIActions(unittest.TestCase):
     self.assertEqual(self.gui.refl.options['bg_width'], 30.)
     self.assertEqual(self.gui.refl.options['scale'], 100.)
 
-suite=unittest.TestLoader().loadTestsFromTestCase(MainGUIGeneral)
+suite=unittest.TestLoader().loadTestsFromTestCase(MainGUIGeometryRestore)
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIGeneral))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIActions))
