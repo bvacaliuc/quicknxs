@@ -1,8 +1,8 @@
 # quicknxsv1 instructions
 
-This project requires attention.
-It is desired to use make and pixi to automate tasks and git to maintain source code.
-It needs a Makefile to understand the way to run and test code.
+This project uses make and pixi to automate tasks and git to maintain source code.
+Read Makefile to understand the way to run ant test code.
+Read the git log to understand the evolution of the code.
 
 ## Capabilites and Role
 
