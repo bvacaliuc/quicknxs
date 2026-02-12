@@ -3,6 +3,7 @@
 This project uses make and pixi to automate tasks and git to maintain source code.
 Read Makefile to understand the way to run ant test code.
 Read the git log to understand the evolution of the code.
+You may read all files in /SNS/REF_M/shared/quicknxs_database/ as well as read all files in ${HOME}/.quicknxs/
 
 ## Capabilites and Role
 
