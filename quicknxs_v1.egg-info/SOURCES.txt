@@ -182,7 +182,6 @@ quicknxs/buzhug/buzhug_info.py
 quicknxs/buzhug/conversion_float.py
 quicknxs/config/__init__.py
 quicknxs/config/baseconfig.py
-quicknxs/config/configobj.py
 quicknxs/config/email.py
 quicknxs/config/export.py
 quicknxs/config/gui.py
@@ -277,6 +276,7 @@ quicknxs_v1.egg-info/SOURCES.txt
 quicknxs_v1.egg-info/dependency_links.txt
 quicknxs_v1.egg-info/top_level.txt
 tests/__init__.py
+tests/database_test.py
 tests/main_gui_test.py
 tests/qcalc_test.py
 tests/qio_test.py
