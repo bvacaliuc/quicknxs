@@ -320,6 +320,9 @@ class Base:
         self.pos_name = os.path.join(basename,'__pos__')
         for (c_obj,c_file) in self.types_map:
                 self._register_class(c_obj,c_file)
+        # Python 2 compatibility: alias legacy type names to Python 3 equivalents
+        self.types['unicode'] = str
+        self.types['long'] = int
         # from_string[_class] is the function used to convert a string
         # into an instance of _class
         self.from_string = { str:lambda x:x, int:int,

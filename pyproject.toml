@@ -45,6 +45,7 @@ default = { features = ["dev", "test"], solve-group = "default" }
 test = { cmd = "pytest", description = "Run the test suite" }
 test-core = { cmd = "pytest tests/qreduce_test.py tests/qcalc_test.py tests/qio_test.py -v", description = "Run non-GUI tests" }
 test-gui = { cmd = "pytest tests/main_gui_test.py -v", description = "Run GUI tests" }
+test-db = { cmd = "pytest tests/database_test.py -v", description = "Run database tests" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
