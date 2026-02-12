@@ -1,1 +1,40 @@
+# Prompts used in this development
+
+## Prompt #1
+
 Please plan the quicknxsv1 project development. Refer to the quicknxsv2 project. Review the changes in quicknxsv1:upstream/py3_qt5 branch. The goal is to refactor the quicknxsv1 code such that the python and QT5 versions referenced by the quicknxsv2 project are used. This will require the code in quicknxsv1 to be translated from QT4 to QT5 and for Python2 usage to be translated to work in Python3. This work was begun on the quicknxsv1:upstream/py3_qt5 branch. Important is the abilty to run the existing tests in quicknxsv1 to verify that every change functions correctly. Create a good plan for project development that several agents can work on together. Please use your best judgement on how to organize this plan to give future Claude agent teams the best chance of success.
+
+## Prompt #2
+
+Please investigate a problem in the quicknxsv1 project. The problem occurs when running the gui on the production system that has access to the actual quicknxs_database. I have enabled you to see those files on this machine and verified the error occurs. Read the TODO.md file in the project folder for details on the error. Please investigate the problem thoroughly, plan the code development needed and use your best judgement.
+
+### Contents of TODO.md
+```
+# Fix error at startup
+
+This error is obtained when performing `pixi run python scripts/quicknxs`:
+```
+[INFO] - 2026-02-12 07:43:50,305 - gui_logging.py:115:setup_system *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging started ***
+[CRITICAL] - 2026-02-12 07:43:51,752 - gui_logging.py:39:excepthook_overwrite python error
+Traceback (most recent call last):
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/scripts/quicknxs", line 58, in <module>
+    sys.exit(_run(sys.argv[1:]))
+             ^^^^^^^^^^^^^^^^^^
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/scripts/quicknxs", line 45, in _run
+    window=MainGUI(argv)
+           ^^^^^^^^^^^^^
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 180, in __init__
+    self.readSettings()
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 2296, in readSettings
+    if gui.geometry is not None: self.restoreGeometry(QtCore.QByteArray(gui.geometry))
+                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: arguments did not match any overloaded call:
+  QByteArray(): too many arguments
+  QByteArray(size: int, c: str): argument 1 has unexpected type 'str'
+  QByteArray(a: Union[QByteArray, bytes, bytearray]): argument 1 has unexpected type 'str'
+[INFO] - 2026-02-12 07:44:01,804 - gui_logging.py:45:goodby *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging ended ***
+```
+
+The error only occured on the production system when /SNS/REF_M/shared/quicknxs_database/ was referenced and/or ${HOME}/.quicknxs were modified.
+```
+
