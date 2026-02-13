@@ -226,7 +226,11 @@ class MainGUI(QtWidgets.QMainWindow):
       Startup the IPython console within the program.
     '''
     info('Start IPython console')
-    from .ipython_widget import IPythonConsoleQtWidget
+    try:
+      from .ipython_widget import IPythonConsoleQtWidget
+    except ImportError:
+      info('IPython is not installed, cannot open console.')
+      return
     self.ipython=IPythonConsoleQtWidget(self)
     self.ui.plotTab.addTab(self.ipython, 'IPython')
     self.ipython.namespace['data']=self.active_data
@@ -1289,6 +1293,9 @@ class MainGUI(QtWidgets.QMainWindow):
     info('Reloading data from information in file header...')
     parser.parse(callback=self.updateEventReadout)
     info('Data loaded')
+    if not parser.refls:
+      info('No datasets found in header to restore.')
+      return
     # updating GUI and attributes
     for norm, norm_data in zip(parser.norms, parser.norm_data):
       self.refl=norm
@@ -2481,21 +2488,30 @@ Do you want to try to restore the working reduction list?""",
     dia.setWindowTitle(u'QuickNXS Manual')
     verticalLayout=QtWidgets.QVBoxLayout(dia)
     dia.setLayout(verticalLayout)
-    webview=QtWebKit.QWebView(dia)
-    webview.load(QtCore.QUrl.fromLocalFile(paths.DOC_INDEX))
+    if QtWebKit is not None:
+      webview=QtWebKit.QWebView(dia)
+      webview.load(QtCore.QUrl.fromLocalFile(paths.DOC_INDEX))
+    else:
+      webview=QtWidgets.QTextBrowser(dia)
+      try:
+        with open(paths.DOC_INDEX, 'r') as fh:
+          webview.setHtml(fh.read())
+      except Exception:
+        webview.setPlainText('Documentation not available.')
     verticalLayout.addWidget(webview)
     # set width of the page to fit the document and height to the same as the main window
     dia.resize(700, self.height())
     pos=-700
-    dw=QtWidgets.QDesktopWidget()
-    for i in range(dw.screenCount()):
-      pos+=dw.screenGeometry(i).width()
+    screens=QtWidgets.QApplication.screens()
+    for screen in screens:
+      pos+=screen.geometry().width()
       if pos>self.pos().x():
         break
     dia.move(pos, dia.pos().y())
     dia.show()
 
   def aboutDialog(self):
+    import qtpy
     from numpy.version import version as npversion
     from matplotlib import __version__ as mplversion
     from h5py.version import version as h5pyversion
@@ -2519,4 +2535,4 @@ Library Versions:
   H5py %s
   HDF5 %s
 '''%(str_version, sys.version, npversion, mplversion,
-     QtCore.QT_VERSION_STR, pyqtversion, h5pyversion, hdf5version))
+     qtpy.QT_VERSION, pyqtversion, h5pyversion, hdf5version))

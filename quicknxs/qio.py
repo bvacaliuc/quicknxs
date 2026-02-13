@@ -456,10 +456,16 @@ class HeaderParser(object):
     Evaluate given sections with their default values.
     '''
     self.section_data={}
-    self.section_data['Direct Beam Runs']=self._evaluate_section('Direct Beam Runs',
-                                                                 self.direct_beam_defaults)
-    self.section_data['Data Runs']=self._evaluate_section('Data Runs',
-                                                          self.dataset_defaults)
+    if 'Direct Beam Runs' in self.sections:
+      self.section_data['Direct Beam Runs']=self._evaluate_section('Direct Beam Runs',
+                                                                   self.direct_beam_defaults)
+    else:
+      self.section_data['Direct Beam Runs']=[]
+    if 'Data Runs' in self.sections:
+      self.section_data['Data Runs']=self._evaluate_section('Data Runs',
+                                                            self.dataset_defaults)
+    else:
+      self.section_data['Data Runs']=[]
     if 'Event Mode Options' in self.sections:
       self.section_data['Event Mode Options']=self._evaluate_section(
                         'Event Mode Options', self.event_defaults)

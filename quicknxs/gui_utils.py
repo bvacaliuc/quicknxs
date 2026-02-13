@@ -1045,7 +1045,7 @@ class ProgressDialog(QDialog):
 
   def progress(self, value):
     param=value*100+self.add
-    self.progressBar.setValue(param)
+    self.progressBar.setValue(int(param))
     app=QApplication.instance()
     app.processEvents()
 
@@ -1073,11 +1073,14 @@ class DelayedTrigger(QThread):
 
   def run(self):
     while self.stay_alive:
-      for name, items in self.actions.items():
+      to_activate=[]
+      for name, items in list(self.actions.items()):
         ti, args=items
         if time()-ti>self.delay:
-          self.activate.emit(name, args)
-          del(self.actions[name])
+          to_activate.append((name, args))
+      for name, args in to_activate:
+        self.actions.pop(name, None)
+        self.activate.emit(name, args)
       sleep(self.refresh)
 
   def __call__(self, action, *args):

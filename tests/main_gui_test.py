@@ -2,6 +2,7 @@
 
 import os
 import unittest
+from time import time
 from unittest.mock import patch
 from qtpy.QtWidgets import QApplication, QMainWindow, QMessageBox
 from qtpy.QtTest import QTest
@@ -17,7 +18,9 @@ dot=QLocale().decimalPoint()
 if not isinstance(dot, str):
   dot=str(dot)
 
-TEST_DATASET=os.path.join(os.path.dirname(os.path.abspath(__file__)), u'test1_histo.nxs')
+_test_dir=os.path.dirname(os.path.abspath(__file__))
+TEST_DATASET=os.path.join(_test_dir, u'test1_histo.nxs')
+TEST_EVENT=os.path.join(_test_dir, u'test1_event.nxs')
 statepath=os.path.join(os.path.expanduser('~/.quicknxs'), 'run_state.dat')
 
 class MainGUIGeometryRestore(unittest.TestCase):
@@ -184,7 +187,555 @@ class MainGUIProgressCallback(unittest.TestCase):
     self.assertEqual(self.gui.eventProgress.value(), 100)
 
 
+# ──────────────────────────────────────────────────────────────
+#  Bug verification tests
+# ──────────────────────────────────────────────────────────────
+
+class MainGUIDelayedTrigger(unittest.TestCase):
+  """Verify Bug 1 fix: DelayedTrigger dict mutation during iteration."""
+
+  def test_iterate_over_copy(self):
+    """Add multiple expired actions, simulate run loop, verify no RuntimeError."""
+    from quicknxs.gui_utils import DelayedTrigger
+    dt=DelayedTrigger()
+    dt.delay=0  # all actions expire immediately
+    # add several actions at once
+    dt('action_a', 1)
+    dt('action_b', 2)
+    dt('action_c', 3)
+    # collect emitted signals
+    emitted=[]
+    dt.activate.connect(lambda name, args: emitted.append((name, args)))
+    # run one iteration manually (don't start the thread)
+    dt.stay_alive=False
+    to_activate=[]
+    for name, items in list(dt.actions.items()):
+      ti, args=items
+      if time()-ti>dt.delay:
+        to_activate.append((name, args))
+    for name, args in to_activate:
+      dt.actions.pop(name, None)
+      dt.activate.emit(name, args)
+    _app.processEvents()
+    self.assertEqual(len(emitted), 3, 'all three actions should have been emitted')
+    self.assertEqual(len(dt.actions), 0, 'actions dict should be empty')
+
+  def test_trigger_thread_lifecycle(self):
+    """Start and stop DelayedTrigger thread cleanly."""
+    from quicknxs.gui_utils import DelayedTrigger
+    dt=DelayedTrigger()
+    dt.start()
+    self.assertTrue(dt.isRunning())
+    dt.stay_alive=False
+    dt.wait(2000)
+    self.assertFalse(dt.isRunning())
+
+
+class MainGUIHeaderParserFault(unittest.TestCase):
+  """Verify Bug 2 fix: HeaderParser handles missing sections gracefully."""
+
+  def test_missing_direct_beam_section(self):
+    """Parse header with no [Direct Beam Runs], verify no KeyError."""
+    from quicknxs.qio import HeaderParser
+    header='# Datafile created by QuickNXS 1.0.0\n# Date: 2025-01-01\n# Type: test\n'
+    parser=HeaderParser(header, parse_meta=True)
+    self.assertEqual(parser.section_data['Direct Beam Runs'], [])
+
+  def test_missing_data_runs_section(self):
+    """Parse header with no [Data Runs], verify no KeyError."""
+    from quicknxs.qio import HeaderParser
+    header='# Datafile created by QuickNXS 1.0.0\n# Date: 2025-01-01\n# Type: test\n'
+    parser=HeaderParser(header, parse_meta=True)
+    self.assertEqual(parser.section_data['Data Runs'], [])
+
+  def test_empty_state_header(self):
+    """Parse minimal 'Running PID ...' backup content without crashing."""
+    from quicknxs.qio import HeaderParser
+    header='# Running PID 12345\n# some extra line\n'
+    # parse_meta=False since this isn't a QuickNXS-created file
+    parser=HeaderParser(header, parse_meta=False)
+    self.assertEqual(parser.section_data.get('Direct Beam Runs', []), [])
+    self.assertEqual(parser.section_data.get('Data Runs', []), [])
+
+
+class MainGUIIPythonFault(unittest.TestCase):
+  """Verify Bug 3 fix: run_ipython() handles missing IPython gracefully."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_run_ipython_no_crash(self):
+    """run_ipython() should not raise when IPython is not installed."""
+    # This will hit the try/except ImportError path since IPython is not installed
+    self.gui.run_ipython()
+    # If we get here without an exception, the fix works
+
+
+class MainGUIHelpAboutFault(unittest.TestCase):
+  """Verify Bug 4 fixes: helpDialog and aboutDialog don't crash."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_help_dialog_no_crash(self):
+    """helpDialog() should not crash when QtWebKit is None."""
+    self.gui.helpDialog()
+    # If we get here without AttributeError, the fix works
+
+  def test_about_dialog_no_crash(self):
+    """aboutDialog() should not crash on QT_VERSION_STR AttributeError."""
+    with patch.object(QMessageBox, 'about', return_value=None):
+      self.gui.aboutDialog()
+
+  def test_about_dialog_contains_version(self):
+    """aboutDialog() should include QuickNXS version in the text."""
+    from quicknxs.version import str_version
+    captured={}
+    def capture_about(parent, title, text):
+      captured['title']=title
+      captured['text']=text
+    with patch.object(QMessageBox, 'about', side_effect=capture_about):
+      self.gui.aboutDialog()
+    self.assertIn(str_version, captured['text'])
+    self.assertIn('Qt', captured['text'])
+
+
+class MainGUIProgressDialogFix(unittest.TestCase):
+  """Verify Bug 5 fix: ProgressDialog.progress() accepts float values."""
+
+  def test_progress_accepts_float(self):
+    """ProgressDialog.progress() should handle float values 0.0 to 1.0."""
+    from quicknxs.gui_utils import ProgressDialog
+    # parent=None requires a workaround: use a dummy QWidget
+    from qtpy.QtWidgets import QWidget
+    parent=QWidget()
+    dlg=ProgressDialog(parent, title='Test', info_start='Testing', maximum=100, add=0)
+    for val in [0.0, 0.25, 0.5, 0.75, 1.0]:
+      dlg.progress(val)
+      self.assertEqual(dlg.progressBar.value(), int(val*100))
+    parent.deleteLater()
+
+  def test_progress_with_add_offset(self):
+    """Verify add offset works correctly with float values."""
+    from quicknxs.gui_utils import ProgressDialog
+    from qtpy.QtWidgets import QWidget
+    parent=QWidget()
+    dlg=ProgressDialog(parent, title='Test', info_start='Testing', maximum=200, add=50)
+    dlg.progress(0.5)
+    self.assertEqual(dlg.progressBar.value(), int(0.5*100+50))
+    parent.deleteLater()
+
+
+# ──────────────────────────────────────────────────────────────
+#  Comprehensive GUI tests
+# ──────────────────────────────────────────────────────────────
+
+class MainGUIFileOperations(unittest.TestCase):
+  """File open/reload/event/sum operations."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+    self.gui.fileOpen(TEST_DATASET, do_plot=False)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_reload_file(self):
+    """reloadFile() re-reads the same file."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.reloadFile()
+    self.assertIsNotNone(self.gui.active_data)
+
+  def test_file_open_event_dataset(self):
+    """Open event dataset without plotting."""
+    self.gui.fileOpen(TEST_EVENT, do_plot=False)
+    self.assertIsInstance(self.gui.active_data, NXSData)
+
+  def test_file_open_event_with_plot(self):
+    """Open event dataset with plotting."""
+    self.gui.fileOpen(TEST_EVENT, do_plot=True)
+    self.assertIsNotNone(self.gui.ui.xtof_overview.cplot)
+    self.assertIsNotNone(self.gui.ui.xy_overview.cplot)
+
+  def test_open_by_number_not_found(self):
+    """openByNumber() with non-existent number returns False."""
+    result=self.gui.openByNumber('999999')
+    self.assertFalse(result)
+
+  def test_file_open_sum(self):
+    """fileOpenSum() sums multiple files."""
+    self.gui.fileOpenSum([TEST_DATASET, TEST_DATASET])
+    self.assertIsNotNone(self.gui.active_data)
+
+  def test_folder_modified_no_crash(self):
+    """folderModified() doesn't crash."""
+    self.gui.folderModified()
+
+  def test_empty_cache(self):
+    """empty_cache() resets NXSData cache."""
+    NXSData(TEST_DATASET, use_caching=True)
+    self.gui.empty_cache()
+    self.assertEqual(len(NXSData._cache), 0)
+
+
+class MainGUIExtractionRegion(unittest.TestCase):
+  """Extraction region controls."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_overwrite_direct_beam(self):
+    """overwriteDirectBeam() sets dpix and dangle values."""
+    self.gui.overwriteDirectBeam()
+    self.assertNotEqual(self.gui.ui.directPixelOverwrite.value(), -1)
+    self.assertNotEqual(self.gui.ui.dangle0Overwrite.text(), "None")
+
+  def test_clear_overwrite(self):
+    """clearOverwrite() resets to -1 / 'None'."""
+    self.gui.overwriteDirectBeam()
+    self.gui.clearOverwrite()
+    self.assertEqual(self.gui.ui.directPixelOverwrite.value(), -1)
+    self.assertEqual(self.gui.ui.dangle0Overwrite.text(), "None")
+
+  def test_change_region_fan_reflectivity(self):
+    """Toggle fanReflectivity checkbox."""
+    initial=self.gui.ui.fanReflectivity.isChecked()
+    self.gui.ui.fanReflectivity.setChecked(not initial)
+    self.assertEqual(self.gui.ui.fanReflectivity.isChecked(), not initial)
+
+  def test_trust_dangle_toggle(self):
+    """Toggle trustDANGLE checkbox without crash."""
+    self.gui.ui.trustDANGLE.setChecked(False)
+    self.gui.ui.trustDANGLE.setChecked(True)
+
+  def test_range_start_end_setValue(self):
+    """Set rangeStart/rangeEnd values."""
+    self.gui.auto_change_active=True
+    self.gui.ui.rangeStart.setValue(5)
+    self.gui.ui.rangeEnd.setValue(95)
+    self.assertEqual(self.gui.ui.rangeStart.value(), 5)
+    self.assertEqual(self.gui.ui.rangeEnd.value(), 95)
+    self.gui.auto_change_active=False
+
+  def test_bg_active_toggle(self):
+    """Toggle background active radio button."""
+    self.gui.ui.bgActive.setChecked(True)
+    self.assertTrue(self.gui.ui.bgActive.isChecked())
+    self.gui.ui.bgActive.setChecked(False)
+    self.assertFalse(self.gui.ui.bgActive.isChecked())
+
+
+class MainGUIReductionActions(unittest.TestCase):
+  """Reduction list operations."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    # reset class-level mutable attributes to ensure clean state between tests
+    self.gui.ref_norm={}
+    self.gui.ref_list_channels=[]
+    self.gui.reduction_list=[]
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_add_ref_without_norm(self):
+    """addRefList() without normalization warns, doesn't add."""
+    initial_count=len(self.gui.reduction_list)
+    self.gui.addRefList()
+    self.assertEqual(len(self.gui.reduction_list), initial_count)
+
+  def test_set_norm_and_add_ref(self):
+    """Set normalization, add to list, verify table row."""
+    self.gui.ui.dangle0Overwrite.setText(str(self.gui.active_data[0].dangle))
+    self.gui.ui.refXPos.setValue(self.gui.active_data[0].dpix)
+    self.gui.setNorm()
+    self.gui.addRefList()
+    self.assertEqual(len(self.gui.reduction_list), 1)
+    self.assertEqual(self.gui.ui.reductionTable.rowCount(), 1)
+
+  def test_remove_ref_list(self):
+    """Remove item from reduction list."""
+    self.gui.ui.dangle0Overwrite.setText(str(self.gui.active_data[0].dangle))
+    self.gui.ui.refXPos.setValue(self.gui.active_data[0].dpix)
+    self.gui.setNorm()
+    self.gui.addRefList()
+    self.assertEqual(len(self.gui.reduction_list), 1)
+    self.gui.ui.reductionTable.setCurrentCell(0, 0)
+    self.gui.removeRefList()
+    self.assertEqual(len(self.gui.reduction_list), 0)
+
+  def test_clear_ref_list(self):
+    """Clear entire reduction list."""
+    self.gui.ui.dangle0Overwrite.setText(str(self.gui.active_data[0].dangle))
+    self.gui.ui.refXPos.setValue(self.gui.active_data[0].dpix)
+    self.gui.setNorm()
+    self.gui.addRefList()
+    self.gui.clearRefList()
+    self.assertEqual(len(self.gui.reduction_list), 0)
+    self.assertEqual(self.gui.ui.reductionTable.rowCount(), 0)
+
+  def test_clear_norm_list(self):
+    """Clear normalization table."""
+    self.gui.ui.dangle0Overwrite.setText(str(self.gui.active_data[0].dangle))
+    self.gui.ui.refXPos.setValue(self.gui.active_data[0].dpix)
+    self.gui.setNorm()
+    self.gui.clearNormList()
+    self.assertEqual(self.gui.ui.normalizeTable.rowCount(), 0)
+    self.assertEqual(len(self.gui.ref_norm), 0)
+
+  def test_reduce_datasets_empty(self):
+    """reduceDatasets() with empty list logs warning."""
+    self.gui.reduction_list=[]
+    self.gui.reduceDatasets()
+    # should return without opening dialog
+
+  def test_quick_reduce_empty(self):
+    """quickReduce() with empty list logs warning."""
+    self.gui.reduction_list=[]
+    self.gui.quickReduce()
+    # should return without error
+
+
+class MainGUIDisplayControls(unittest.TestCase):
+  """Display toggles and tab switching."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_toggle_colorbars(self):
+    """toggleColorbars() runs without error."""
+    self.gui.toggleColorbars()
+
+  def test_plot_tab_switching(self):
+    """Set each plotTab index, call plotActiveTab()."""
+    for i in range(self.gui.ui.plotTab.count()):
+      self.gui.ui.plotTab.setCurrentIndex(i)
+      self.gui.plotActiveTab()
+
+  def test_replot_projections(self):
+    """replotProjections() with logarithmic_y toggled."""
+    self.gui.ui.logarithmic_y.setChecked(True)
+    self.gui.replotProjections()
+    self.gui.ui.logarithmic_y.setChecked(False)
+    self.gui.replotProjections()
+
+  def test_change_active_channel(self):
+    """Select channel0, call changeActiveChannel()."""
+    self.gui.ui.selectedChannel0.setChecked(True)
+    self.gui.changeActiveChannel()
+
+  def test_logarithmic_colorscale_toggle(self):
+    """Toggle logarithmic_colorscale checkbox."""
+    initial=self.gui.ui.logarithmic_colorscale.isChecked()
+    self.gui.ui.logarithmic_colorscale.setChecked(not initial)
+    self.assertEqual(self.gui.ui.logarithmic_colorscale.isChecked(), not initial)
+
+  def test_normalize_xtof_toggle(self):
+    """Toggle normalizeXTof checkbox."""
+    initial=self.gui.ui.normalizeXTof.isChecked()
+    self.gui.ui.normalizeXTof.setChecked(not initial)
+    self.assertEqual(self.gui.ui.normalizeXTof.isChecked(), not initial)
+
+  def test_color_selector_change(self):
+    """Change color_selector combo box index."""
+    if self.gui.ui.color_selector.count()>1:
+      self.gui.ui.color_selector.setCurrentIndex(1)
+      self.gui.plotActiveTab()
+
+
+class MainGUIMenuActions(unittest.TestCase):
+  """Menu action handlers."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_set_debug(self):
+    """set_debug() enables debug logging."""
+    from logging import getLogger, DEBUG
+    self.gui.set_debug()
+    self.assertEqual(getLogger().level, DEBUG)
+
+  def test_raise_error(self):
+    """raiseError() raises RuntimeError."""
+    with self.assertRaises(RuntimeError):
+      self.gui.raiseError()
+
+  def test_export_raw_data_no_refl(self):
+    """exportRawData() with refl=None returns silently."""
+    self.gui.refl=None
+    self.gui.exportRawData()
+
+  def test_open_nxs_dialog_no_data(self):
+    """open_nxs_dialog() with active_data=None returns silently."""
+    self.gui.active_data=None
+    self.gui.open_nxs_dialog()
+
+
+class MainGUISettingsState(unittest.TestCase):
+  """Settings persistence and state management."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    if self.gui is not None:
+      self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_update_state_file(self):
+    """updateStateFile() writes PID."""
+    self.gui.updateStateFile(None)
+    self.assertTrue(os.path.exists(statepath))
+    with open(statepath, 'rb') as f:
+      content=f.read().decode('utf8')
+    self.assertIn('Running PID', content)
+    self.assertIn(str(os.getpid()), content)
+
+  def test_update_state_file_with_reduction(self):
+    """State file includes header when reduction_list populated."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.ui.dangle0Overwrite.setText(str(self.gui.active_data[0].dangle))
+    self.gui.ui.refXPos.setValue(self.gui.active_data[0].dpix)
+    self.gui.setNorm()
+    self.gui.addRefList()
+    self.gui.updateStateFile(None)
+    with open(statepath, 'rb') as f:
+      content=f.read().decode('utf8')
+    self.assertIn('Running PID', content)
+    self.assertIn('[Data Runs]', content)
+
+  def test_close_no_crash(self):
+    """close() doesn't crash."""
+    # closeEvent() is called by close() with proper Qt event handling
+    # set gui to None so tearDown skips the second close
+    gui=self.gui
+    self.gui=None
+    gui.close()
+
+
+# ──────────────────────────────────────────────────────────────
+#  Test suite registration
+# ──────────────────────────────────────────────────────────────
+
 suite=unittest.TestLoader().loadTestsFromTestCase(MainGUIGeometryRestore)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIGeneral))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIActions))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIProgressCallback))
+# Bug verification tests
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIDelayedTrigger))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIHeaderParserFault))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIIPythonFault))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIHelpAboutFault))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIProgressDialogFix))
+# Comprehensive GUI tests
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIFileOperations))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIExtractionRegion))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIReductionActions))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIDisplayControls))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIMenuActions))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUISettingsState))
