@@ -84,3 +84,11 @@ TypeError: setValue(self, value: int): argument 1 has unexpected type 'float'
 [INFO] - 2026-02-13 04:17:17,623 - gui_logging.py:45:goodby *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging ended ***
 ```
 
+## Prompt 5
+
+Please review the test suite of the quicknxsv1 project. Pay particular attention to the QT user interface. Read the TODO.md file. There are several faults that occur when using UI elements. Investigate, repair and add tests according to best practices. Conduct an audit of all GUI elements and generate a comprehensive set of tests to add to the test-gui tool. Read the git history of the project branch feature/pixi_py3_qt5 to understand the problems and resolutions so far. The goal is to identify and create tests for as many problems that can arise from interacting with any GUI elements. Please be thorough and systematic and cover all user interactions defined in the QT user interface. Plan your work so that future Claude agent teams are successful.
+
+### Contents of TODO.md
+
+The contents of the `TODO.md` file are referenced in the prompt are available in [prompt-5-todo.md](plan/prompt-5-todo.md).
+
