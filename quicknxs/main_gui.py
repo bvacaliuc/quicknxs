@@ -2200,7 +2200,7 @@ class MainGUI(QtWidgets.QMainWindow):
     When reading event mode data this is the callback
     used after each finished channel to indicate the progress.
     '''
-    self.eventProgress.setValue(progress*100)
+    self.eventProgress.setValue(int(progress*100))
     # make sure the update is shown in the interface
     self.eventProgress.update()
 

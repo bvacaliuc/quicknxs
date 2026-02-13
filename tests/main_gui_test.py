@@ -151,6 +151,40 @@ class MainGUIActions(unittest.TestCase):
     self.assertEqual(self.gui.refl.options['bg_width'], 30.)
     self.assertEqual(self.gui.refl.options['scale'], 100.)
 
+class MainGUIProgressCallback(unittest.TestCase):
+  """Test that updateEventReadout accepts float progress values (Qt5 compat)."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    with patch.object(QMessageBox, 'warning', return_value=QMessageBox.No):
+      self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_updateEventReadout_accepts_float(self):
+    """setValue() requires int in Qt5; float progress values must be cast."""
+    for progress in [0., 0.1, 0.5, 0.9, 1.0]:
+      self.gui.updateEventReadout(progress)
+      self.assertEqual(self.gui.eventProgress.value(), int(progress*100))
+
+  def test_callback_through_nxsdata(self):
+    """Verify the callback works end-to-end when reading a histogram file."""
+    data=NXSData(TEST_DATASET, use_caching=False,
+                 callback=self.gui.updateEventReadout)
+    self.assertIsNotNone(data)
+    # After a successful read the progress should be at 100%
+    self.assertEqual(self.gui.eventProgress.value(), 100)
+
+
 suite=unittest.TestLoader().loadTestsFromTestCase(MainGUIGeometryRestore)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIGeneral))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIActions))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIProgressCallback))
