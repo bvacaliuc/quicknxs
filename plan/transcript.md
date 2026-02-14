@@ -128,3 +128,9 @@ Traceback (most recent call last):
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 TypeError: ReduceDialog.__init__() takes 3 positional arguments but 4 were given
 ```
+
+## Prompt 7
+
+The previous work created a test that hangs on or after the 49th test in tests/main_gui_test.py when running 'make test'. Please review the test system to ensure that any individual test is time limited and fails when that time is exceeded so that the testing always completes. Be thorough. Determine what the expected time to complete for any test should be and set an appropriate threshold, according to best statistical practices. Plan your work to make efficient use of your time by utilizing agents as appropriate. The primary goal is to comprehensively overhaul the test system to ensure that it always completes. The secondary goal is to determine the correct thresholds. The tertiary goal is to identify and resolve the reason for the hang in the tests/main_gui_test.py.
+
+
