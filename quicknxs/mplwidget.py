@@ -21,6 +21,7 @@ matplotlib.colormaps.register(cmap, name='default')
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt import NavigationToolbar2QT
+from matplotlib.backend_tools import Cursors as _Cursors
 from matplotlib.cbook import _Stack as Stack
 from matplotlib.colors import LogNorm, Normalize
 from matplotlib.figure import Figure
@@ -334,7 +335,7 @@ class MPLWidget(QtWidgets.QWidget):
     '''
     if self.toolbar:
       QtWidgets.QApplication.restoreOverrideCursor()
-      self.toolbar._last_cursor=None
+      self.toolbar._last_cursor=_Cursors.POINTER
     return QtWidgets.QWidget.leaveEvent(self, event)
 
   def set_config(self, config):

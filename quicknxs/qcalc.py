@@ -291,6 +291,8 @@ def smooth_data(settings, x, y, I, sigmas=3.,
       Pij=exp(-0.5*rij[take])
       Pij/=Pij.sum()
       Iout[i, j]=(Pij*I[take]).sum()
+  if callback is not None:
+    callback(1.0)
   return Xout, Yout, Iout
 
 ######## helper functions ###############

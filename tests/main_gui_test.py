@@ -845,6 +845,89 @@ class ToolbarModeFix(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────────
+#  SmoothDialog cursor fix tests
+# ──────────────────────────────────────────────────────────────
+
+class MPLWidgetCursorFix(unittest.TestCase):
+  """Verify leaveEvent sets _last_cursor to valid Cursors value, not None."""
+
+  def test_leave_event_sets_valid_cursor(self):
+    """leaveEvent() should set _last_cursor to Cursors.POINTER, not None."""
+    from quicknxs.mplwidget import MPLWidget
+    from matplotlib.backend_tools import Cursors
+    w=MPLWidget()
+    if w.toolbar is not None:
+      # Simulate a leave event
+      from qtpy.QtCore import QEvent
+      event=QEvent(QEvent.Leave)
+      w.leaveEvent(event)
+      self.assertIsNotNone(w.toolbar._last_cursor)
+      self.assertEqual(w.toolbar._last_cursor, Cursors.POINTER)
+    w.deleteLater()
+
+  def test_canvas_draw_after_leave_event(self):
+    """canvas.draw() should work after leaveEvent fires (no ValueError)."""
+    from quicknxs.mplwidget import MPLWidget
+    w=MPLWidget()
+    if w.toolbar is not None:
+      from qtpy.QtCore import QEvent
+      event=QEvent(QEvent.Leave)
+      w.leaveEvent(event)
+      # This should not raise ValueError
+      w.canvas.draw()
+    w.deleteLater()
+
+
+class SmoothDialogDrawPlotFix(unittest.TestCase):
+  """Verify drawPlot() resets self.drawing even on error."""
+
+  def test_drawing_reset_on_error(self):
+    """drawPlot() should reset self.drawing=False even if draw() raises."""
+    import numpy as np
+    from quicknxs.gui_utils import SmoothDialog
+    ny, nx=5, 10
+    item=np.zeros((ny, nx, 6))
+    item[:, :, 2]=np.linspace(0.001, 0.01, nx)
+    item[:, :, 3]=np.linspace(0.001, 0.01, nx)
+    item[:, :, 5]=np.random.rand(ny, nx)
+    data=[item]
+    parent=QMainWindow()
+    dia=SmoothDialog(parent, data)
+    # Patch plot.draw to raise, then call drawPlot
+    with patch.object(dia.ui.plot, 'draw', side_effect=ValueError('test error')):
+      try:
+        dia.drawPlot()
+      except ValueError:
+        pass
+    self.assertFalse(dia.drawing)
+    dia.destroy()
+    parent.deleteLater()
+
+
+class SmoothDataCallbackFix(unittest.TestCase):
+  """Verify smooth_data callback reaches 1.0 on completion."""
+
+  def test_callback_reaches_one(self):
+    """smooth_data should call callback(1.0) after loop completes."""
+    import numpy as np
+    from quicknxs.qcalc import smooth_data
+    progress_values=[]
+    def cb(v):
+      progress_values.append(v)
+    settings={
+      'grid': (3, 3),
+      'sigma': (0.001, 0.001),
+      'region': (-0.001, 0.001, 0., 0.01),
+    }
+    x=np.array([0., 0.0005, -0.0005])
+    y=np.array([0.002, 0.005, 0.008])
+    I=np.array([1., 2., 3.])
+    smooth_data(settings, x, y, I, callback=cb)
+    self.assertGreater(len(progress_values), 0)
+    self.assertAlmostEqual(progress_values[-1], 1.0)
+
+
+# ──────────────────────────────────────────────────────────────
 #  Test suite registration
 # ──────────────────────────────────────────────────────────────
 
@@ -869,3 +952,7 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUISettingsState))
 # Matplotlib API compatibility tests
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MatplotlibEllipseFix))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ToolbarModeFix))
+# SmoothDialog cursor fix tests
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MPLWidgetCursorFix))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDialogDrawPlotFix))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDataCallbackFix))

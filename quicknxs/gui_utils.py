@@ -641,92 +641,94 @@ class SmoothDialog(QDialog):
       Plot the unsmoothed data.
     '''
     self.drawing=True
-    data=self.data
-    plot=self.ui.plot
-    plot.clear()
-    Qzmax=0.001
-    for item in data:
-      Qx=item[:, :, 0]
-      Qz=item[:, :, 1]
-      ki_z=item[:, :, 2]
-      kf_z=item[:, :, 3]
-      I=item[:, :, 5]
+    try:
+      data=self.data
+      plot=self.ui.plot
+      plot.clear()
+      Qzmax=0.001
+      for item in data:
+        Qx=item[:, :, 0]
+        Qz=item[:, :, 1]
+        ki_z=item[:, :, 2]
+        kf_z=item[:, :, 3]
+        I=item[:, :, 5]
 
-      Qzmax=max(ki_z.max()*2., Qzmax)
+        Qzmax=max(ki_z.max()*2., Qzmax)
+        if self.ui.kizmkfzVSqz.isChecked():
+          plot.pcolormesh((ki_z-kf_z), Qz, I, log=True,
+                          imin=1e-6, imax=1., shading='gouraud')
+        elif self.ui.qxVSqz.isChecked():
+          plot.pcolormesh(Qx, Qz, I, log=True,
+                          imin=1e-6, imax=1., shading='gouraud')
+        else:
+          plot.pcolormesh(ki_z, kf_z, I, log=True,
+                          imin=1e-6, imax=1., shading='gouraud')
       if self.ui.kizmkfzVSqz.isChecked():
-        plot.pcolormesh((ki_z-kf_z), Qz, I, log=True,
-                        imin=1e-6, imax=1., shading='gouraud')
+        plot.canvas.ax.set_xlim([-0.035, 0.035])
+        plot.canvas.ax.set_ylim([0., Qzmax*1.01])
+        plot.set_xlabel(u'k$_{i,z}$-k$_{f,z}$ [Å$^{-1}$]')
+        plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
+        x1=-0.03
+        x2=0.03
+        y1=0.
+        y2=Qzmax
+        sigma_pos=(0., Qzmax/3.)
+        sigma_ang=0.
+        self.ui.sigmasCoupled.setChecked(True)
+        self.ui.sigmaY.setEnabled(False)
+        self.ui.sigmaX.setValue(0.0005)
+        self.ui.sigmaY.setValue(0.0005)
       elif self.ui.qxVSqz.isChecked():
-        plot.pcolormesh(Qx, Qz, I, log=True,
-                        imin=1e-6, imax=1., shading='gouraud')
+        plot.canvas.ax.set_xlim([-0.0005, 0.0005])
+        plot.canvas.ax.set_ylim([0., Qzmax*1.01])
+        plot.set_xlabel(u'Q$_x$ [Å$^{-1}$]')
+        plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
+        x1=-0.0002
+        x2=0.0002
+        y1=0.
+        y2=Qzmax
+        sigma_pos=(0., Qzmax/3.)
+        sigma_ang=0.
+        self.ui.sigmasCoupled.setChecked(False)
+        self.ui.sigmaY.setEnabled(True)
+        self.ui.sigmaX.setValue(0.00001)
+        self.ui.sigmaY.setValue(0.0005)
       else:
-        plot.pcolormesh(ki_z, kf_z, I, log=True,
-                        imin=1e-6, imax=1., shading='gouraud')
-    if self.ui.kizmkfzVSqz.isChecked():
-      plot.canvas.ax.set_xlim([-0.035, 0.035])
-      plot.canvas.ax.set_ylim([0., Qzmax*1.01])
-      plot.set_xlabel(u'k$_{i,z}$-k$_{f,z}$ [Å$^{-1}$]')
-      plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
-      x1=-0.03
-      x2=0.03
-      y1=0.
-      y2=Qzmax
-      sigma_pos=(0., Qzmax/3.)
-      sigma_ang=0.
-      self.ui.sigmasCoupled.setChecked(True)
-      self.ui.sigmaY.setEnabled(False)
-      self.ui.sigmaX.setValue(0.0005)
-      self.ui.sigmaY.setValue(0.0005)
-    elif self.ui.qxVSqz.isChecked():
-      plot.canvas.ax.set_xlim([-0.0005, 0.0005])
-      plot.canvas.ax.set_ylim([0., Qzmax*1.01])
-      plot.set_xlabel(u'Q$_x$ [Å$^{-1}$]')
-      plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
-      x1=-0.0002
-      x2=0.0002
-      y1=0.
-      y2=Qzmax
-      sigma_pos=(0., Qzmax/3.)
-      sigma_ang=0.
-      self.ui.sigmasCoupled.setChecked(False)
-      self.ui.sigmaY.setEnabled(True)
-      self.ui.sigmaX.setValue(0.00001)
-      self.ui.sigmaY.setValue(0.0005)
-    else:
-      plot.canvas.ax.set_xlim([0., Qzmax/2.*1.01])
-      plot.canvas.ax.set_ylim([0., Qzmax/2.*1.01])
-      plot.set_xlabel(u'k$_{i,z}$ [Å$^{-1}$]')
-      plot.set_ylabel(u'k$_{f,z}$ [Å$^{-1}$]')
-      x1=0.0
-      x2=Qzmax/2.
-      y1=0.
-      y2=Qzmax/2.
-      sigma_pos=(Qzmax/6., Qzmax/6.)
-      sigma_ang=0.#-45.
-      self.ui.sigmasCoupled.setChecked(True)
-      self.ui.sigmaX.setValue(0.0005)
-      self.ui.sigmaY.setValue(0.0005)
-    if plot.cplot is not None:
-      plot.cplot.set_clim([1e-6, 1.])
-    self.rect_region=Line2D([x1, x1, x2, x2, x1], [y1, y2, y2, y1, y1])
-    self.sigma_1=Ellipse(sigma_pos, self.ui.sigmaX.value()*2, self.ui.sigmaY.value()*2,
-                            angle=sigma_ang, fill=False)
-    self.sigma_2=Ellipse(sigma_pos, self.ui.sigmaX.value()*4, self.ui.sigmaY.value()*4,
-                            angle=sigma_ang, fill=False)
-    self.sigma_3=Ellipse(sigma_pos, self.ui.sigmaX.value()*6, self.ui.sigmaY.value()*6,
-                            angle=sigma_ang, fill=False)
-    plot.canvas.ax.add_line(self.rect_region)
-    plot.canvas.ax.add_artist(self.sigma_1)
-    plot.canvas.ax.add_artist(self.sigma_2)
-    plot.canvas.ax.add_artist(self.sigma_3)
-    plot.draw()
-    # set parameter values
-    self.ui.gridXmin.setValue(x1)
-    self.ui.gridXmax.setValue(x2)
-    self.ui.gridYmin.setValue(y1)
-    self.ui.gridYmax.setValue(y2)
-    self.updateGrid()
-    self.drawing=False
+        plot.canvas.ax.set_xlim([0., Qzmax/2.*1.01])
+        plot.canvas.ax.set_ylim([0., Qzmax/2.*1.01])
+        plot.set_xlabel(u'k$_{i,z}$ [Å$^{-1}$]')
+        plot.set_ylabel(u'k$_{f,z}$ [Å$^{-1}$]')
+        x1=0.0
+        x2=Qzmax/2.
+        y1=0.
+        y2=Qzmax/2.
+        sigma_pos=(Qzmax/6., Qzmax/6.)
+        sigma_ang=0.#-45.
+        self.ui.sigmasCoupled.setChecked(True)
+        self.ui.sigmaX.setValue(0.0005)
+        self.ui.sigmaY.setValue(0.0005)
+      if plot.cplot is not None:
+        plot.cplot.set_clim([1e-6, 1.])
+      self.rect_region=Line2D([x1, x1, x2, x2, x1], [y1, y2, y2, y1, y1])
+      self.sigma_1=Ellipse(sigma_pos, self.ui.sigmaX.value()*2, self.ui.sigmaY.value()*2,
+                              angle=sigma_ang, fill=False)
+      self.sigma_2=Ellipse(sigma_pos, self.ui.sigmaX.value()*4, self.ui.sigmaY.value()*4,
+                              angle=sigma_ang, fill=False)
+      self.sigma_3=Ellipse(sigma_pos, self.ui.sigmaX.value()*6, self.ui.sigmaY.value()*6,
+                              angle=sigma_ang, fill=False)
+      plot.canvas.ax.add_line(self.rect_region)
+      plot.canvas.ax.add_artist(self.sigma_1)
+      plot.canvas.ax.add_artist(self.sigma_2)
+      plot.canvas.ax.add_artist(self.sigma_3)
+      plot.draw()
+      # set parameter values
+      self.ui.gridXmin.setValue(x1)
+      self.ui.gridXmax.setValue(x2)
+      self.ui.gridYmin.setValue(y1)
+      self.ui.gridYmax.setValue(y2)
+      self.updateGrid()
+    finally:
+      self.drawing=False
 
   def updateSettings(self):
     if self.drawing:
