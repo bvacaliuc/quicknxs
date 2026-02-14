@@ -276,6 +276,7 @@ quicknxs_v1.egg-info/SOURCES.txt
 quicknxs_v1.egg-info/dependency_links.txt
 quicknxs_v1.egg-info/top_level.txt
 tests/__init__.py
+tests/conftest.py
 tests/database_test.py
 tests/main_gui_test.py
 tests/qcalc_test.py

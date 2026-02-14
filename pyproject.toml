@@ -33,6 +33,7 @@ quicknxs-v1 = { path = ".", editable = true }
 pytest = ">=8"
 pytest-cov = "*"
 pytest-qt = ">=4.4.0"
+pytest-timeout = ">=2.3"
 pytest-xvfb = ">=3.1.1"
 
 [tool.pixi.feature.dev.dependencies]
@@ -50,6 +51,8 @@ test-db = { cmd = "pytest tests/database_test.py -v", description = "Run databas
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
 python_files = ["*_test.py"]
+timeout = 30
+timeout_method = "signal"
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]

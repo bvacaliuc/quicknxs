@@ -643,10 +643,10 @@ class MainGUIDisplayControls(unittest.TestCase):
     self.gui.toggleColorbars()
 
   def test_plot_tab_switching(self):
-    """Set each plotTab index, call plotActiveTab()."""
+    """Set each plotTab index; plotActiveTab() is triggered via currentChanged signal."""
     for i in range(self.gui.ui.plotTab.count()):
       self.gui.ui.plotTab.setCurrentIndex(i)
-      self.gui.plotActiveTab()
+      self.app.processEvents()
 
   def test_replot_projections(self):
     """replotProjections() with logarithmic_y toggled."""
