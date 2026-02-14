@@ -197,3 +197,55 @@ Traceback (most recent call last):
 TypeError: Ellipse.__init__() takes 4 positional arguments but 5 were given
 [INFO] - 2026-02-14 13:17:22,733 - gui_logging.py:45:goodby *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging ended ***
 ```
+
+## Prompt 9
+
+You are working with the quicknxsv1 project, on the feature/pixi_py3_qt5 branch. Please investigate and resolve two errors that occur when performing reducton using the ReduceDialog(). The first error occurs in the Smoothing dialog when "Qx vs Qz" plot is clicked. Read the TODO.md file for details on this error. The second error occurs after acknowledging the Smoothing dialog and the smoothing progress gets past 99% complete. The UI uses alot of CPU and then aborts. This is a serious error that you should prioritize determining the root cause and eliminiating all possible other ways for this to occur in the code. The previous session left its run state in ~/.quicknxs/run_state.dat, which a 'make gui' command will ask to load in a modal dialog. You know how to interact with the GUI elements in this project from previous sessions. You may access files in /SNS/REF_M/ as needed. Please be thorough. If you need to add new tests to check for the errors that you discover, do so.
+
+### Contents of TODO.md
+
+# Fix error in smoothing
+
+This error is obtained when selecting 'Qx vs Qz' from a Smoothing dialog:
+```
+[INFO] - 2026-02-14 14:16:24,581 - gui_logging.py:115:setup_system *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging started ***
+[INFO] - 2026-02-14 14:16:31,122 - main_gui.py:1293:loadExtraction Reloading data from information in file header...
+[INFO] - 2026-02-14 14:16:31,125 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23737_histo.nxs
+[INFO] - 2026-02-14 14:16:31,968 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23738_histo.nxs
+[INFO] - 2026-02-14 14:16:32,789 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23739_histo.nxs
+[INFO] - 2026-02-14 14:16:33,613 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23740_histo.nxs
+[INFO] - 2026-02-14 14:16:35,864 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23741_histo.nxs
+[INFO] - 2026-02-14 14:16:38,211 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23742_histo.nxs
+[INFO] - 2026-02-14 14:16:40,179 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23743_histo.nxs
+[INFO] - 2026-02-14 14:16:42,267 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23744_histo.nxs
+[INFO] - 2026-02-14 14:16:44,663 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23745_histo.nxs
+[INFO] - 2026-02-14 14:16:46,876 - qio.py:494:_get_dataset Reading /SNS/REF_M/IPTS-15829/data/REF_M_23746_histo.nxs
+[INFO] - 2026-02-14 14:16:49,003 - main_gui.py:1295:loadExtraction Data loaded
+[INFO] - 2026-02-14 14:16:49,018 - main_gui.py:355:fileOpen Reading file /SNS/REF_M/IPTS-15829/data/REF_M_23746_histo.nxs...
+[INFO] - 2026-02-14 14:16:49,018 - main_gui.py:412:_fileOpenDone /SNS/REF_M/IPTS-15829/data/REF_M_23746_histo.nxs loaded
+[INFO] - 2026-02-14 14:17:18,152 - gui_utils.py:88:execute Re-reading all datasets...
+[INFO] - 2026-02-14 14:17:18,153 - gui_utils.py:92:execute Extracting reflectivity...
+[INFO] - 2026-02-14 14:17:23,793 - gui_utils.py:95:execute Extracting off-specular data...
+[INFO] - 2026-02-14 14:17:29,594 - gui_utils.py:98:execute Extracting corrected off-specular data...
+[CRITICAL] - 2026-02-14 14:17:49,599 - gui_logging.py:39:excepthook_overwrite python error
+Traceback (most recent call last):
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 722, in drawPlot
+    plot.draw()
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/mplwidget.py", line 356, in draw
+    self.canvas.draw()
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_agg.py", line 380, in draw
+    with (self.toolbar._wait_cursor_for_draw_cm() if self.toolbar
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backend_bases.py", line 2928, in _wait_cursor_for_draw_cm
+    self.canvas.set_cursor(self._last_cursor)
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_qt.py", line 284, in set_cursor
+    self.setCursor(_api.check_getitem(cursord, cursor=cursor))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/_api/__init__.py", line 198, in check_getitem
+    raise ValueError(
+ValueError: None is not a valid value for cursor; supported values are <Cursors.MOVE: 4>, <Cursors.HAND: 2>, <Cursors.POINTER: 1>, <Cursors.SELECT_REGION: 3>, <Cursors.WAIT: 5>, <Cursors.RESIZE_HORIZONTAL: 6>, <Cursors.RESIZE_VERTICAL: 7>
+```
+
+After acknowledging this error and pressing OK, the smoothing operation continues. When it reaches 99%, the UI hangs, CPU utilization peaks and the application eventually silently aborts.
