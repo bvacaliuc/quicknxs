@@ -85,51 +85,58 @@ class Reducer(object):
     self.exporter=Exporter(self.channels, self.refls,
                            sample_length=opts['sampleSize'],
                            spin_asymmetry=opts['export_SA'])
-    info('Re-reading all datasets...')
-    self.exporter.read_data()
+    try:
+      # All extraction steps that need raw_data
+      if opts['exportSpecular']:
+        info('Extracting reflectivity...')
+        self.exporter.extract_reflectivity()
+      if opts['exportOffSpecular'] or opts['exportOffSpecularSmoothed']:
+        info('Extracting off-specular data...')
+        self.exporter.extract_offspecular()
+      if opts['exportOffSpecularCorr']:
+        info('Extracting corrected off-specular data...')
+        self.exporter.extract_offspecular_corr()
+      if opts['exportGISANS']:
+        self.extract_gisans()
 
-    if opts['exportSpecular']:
-      info('Extracting reflectivity...')
-      self.exporter.extract_reflectivity()
-    if opts['exportOffSpecular'] or opts['exportOffSpecularSmoothed']:
-      info('Extracting off-specular data...')
-      self.exporter.extract_offspecular()
-    if opts['exportOffSpecularCorr']:
-      info('Extracting corrected off-specular data...')
-      self.exporter.extract_offspecular_corr()
-    if opts['exportOffSpecularSmoothed']:
-      self.smooth_offspec()
-      if not opts['exportOffSpecular']:
-        del(self.exporter.output_data['OffSpec'])
-    if opts['exportGISANS']:
-      self.extract_gisans()
+      # Raw data no longer needed — release it before memory-intensive smoothing
+      self.exporter.release_raw_data()
 
-    self.exporter.export_data(
-                              opts['foldername'], opts['naming'],
-                              multi_ascii=opts['multiAscii'],
-                              combined_ascii=opts['combinedAscii'],
-                              matlab_data=opts['matlab'],
-                              numpy_data=opts['numpy'],
-                              check_exists=self.check_exists,
-                              )
-    if opts['mantidplot'] and FROM_MANTID:
-      self.push_to_mantidplot()
-    if opts['gnuplot']:
-      info('Creating gnuplot scripts...')
-      self.exporter.create_gnuplot_scripts(opts['foldername'], opts['naming'])
-    if opts['genx']:
-      info('Creating genx file...')
-      self.exporter.create_genx_file(opts['foldername'], opts['naming'])
-    if opts['plot']:
-      info('Plotting...')
-      for title, output_data in self.exporter.output_data.items():
-        self.plot_result(output_data, title)
+      # Memory-intensive smoothing runs with raw_data freed
+      if opts['exportOffSpecularSmoothed']:
+        self.smooth_offspec()
+        if not opts['exportOffSpecular']:
+          del(self.exporter.output_data['OffSpec'])
 
-    if opts['emailSend']:
-      self.send_email()
-    for tmp in self.tempfiles:
-      os.remove(tmp)
-    info('Finished')
+      self.exporter.export_data(
+                                opts['foldername'], opts['naming'],
+                                multi_ascii=opts['multiAscii'],
+                                combined_ascii=opts['combinedAscii'],
+                                matlab_data=opts['matlab'],
+                                numpy_data=opts['numpy'],
+                                check_exists=self.check_exists,
+                                )
+      if opts['mantidplot'] and FROM_MANTID:
+        self.push_to_mantidplot()
+      if opts['gnuplot']:
+        info('Creating gnuplot scripts...')
+        self.exporter.create_gnuplot_scripts(opts['foldername'], opts['naming'])
+      if opts['genx']:
+        info('Creating genx file...')
+        self.exporter.create_genx_file(opts['foldername'], opts['naming'])
+      if opts['plot']:
+        info('Plotting...')
+        for title, output_data in self.exporter.output_data.items():
+          self.plot_result(output_data, title)
+
+      if opts['emailSend']:
+        self.send_email()
+      for tmp in self.tempfiles:
+        os.remove(tmp)
+      info('Finished')
+    finally:
+      if hasattr(self, 'exporter') and hasattr(self.exporter, 'raw_data'):
+        self.exporter.release_raw_data()
 
   @log_call
   def check_exists(self, filename):
@@ -225,8 +232,10 @@ class Reducer(object):
                       info_start=pbinfo+self.channels[0],
                       maximum=100*len(self.channels))
     pb.show()
-    self.exporter.smooth_offspec(settings, pb)
-    pb.destroy()
+    try:
+      self.exporter.smooth_offspec(settings, pb)
+    finally:
+      pb.destroy()
 
   @log_call
   def push_to_mantidplot(self):
@@ -1038,6 +1047,7 @@ class ProgressDialog(QDialog):
   def __init__(self, parent, title='', info_start='', maximum=100, add=0):
     QDialog.__init__(self, parent)
     self.add=add
+    self._last_process_time=0
     self.setWindowTitle(title)
     vbox=QVBoxLayout()
     self.info=QLabel(self)
@@ -1052,8 +1062,11 @@ class ProgressDialog(QDialog):
   def progress(self, value):
     param=value*100+self.add
     self.progressBar.setValue(int(param))
-    app=QApplication.instance()
-    app.processEvents()
+    now=time()
+    if now - self._last_process_time > 0.2:
+      app=QApplication.instance()
+      app.processEvents()
+      self._last_process_time=now
 
 class DelayedTrigger(QThread):
   '''

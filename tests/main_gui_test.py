@@ -904,6 +904,69 @@ class SmoothDialogDrawPlotFix(unittest.TestCase):
     parent.deleteLater()
 
 
+class SmoothOffspecProgressCleanup(unittest.TestCase):
+  """Verify ProgressDialog is destroyed even if smooth_offspec raises."""
+
+  def test_progress_destroyed_on_error(self):
+    """pb.destroy() should be called even when exporter.smooth_offspec raises."""
+    from quicknxs.gui_utils import Reducer, ProgressDialog
+    from quicknxs.qreduce import NXSData, Reflectivity
+    from qtpy.QtWidgets import QWidget
+    import numpy as np
+
+    parent=QMainWindow()
+    parent.color='jet'
+    ds=NXSData(TEST_DATASET)
+    norm=Reflectivity(ds[0])
+    ref1=Reflectivity(ds[0], normalization=norm)
+    ds[0].read_options=dict(ds[0].read_options)
+    reducer=Reducer(parent, list(ds.keys()), [ref1])
+    from quicknxs.qio import Exporter
+    reducer.exporter=Exporter(list(ds.keys()), [ref1])
+    reducer.exporter.extract_offspecular()
+    # Patch SmoothDialog to auto-accept and return valid settings
+    with patch('quicknxs.gui_utils.SmoothDialog') as MockDia:
+      mock_dia=MockDia.return_value
+      mock_dia.exec_.return_value=True
+      mock_dia.getOptions.return_value={
+        'grid': (5, 5), 'sigma': (3., 3.), 'sigmas': 3.,
+        'region': (10, 90, 5, 95), 'xy_column': 0,
+      }
+      # Patch exporter.smooth_offspec to raise
+      with patch.object(reducer.exporter, 'smooth_offspec', side_effect=RuntimeError('test')):
+        with patch.object(ProgressDialog, 'destroy') as mock_destroy:
+          with patch.object(ProgressDialog, 'show'):
+            try:
+              reducer.smooth_offspec()
+            except RuntimeError:
+              pass
+            mock_destroy.assert_called_once()
+    parent.deleteLater()
+
+
+class ProgressDialogThrottle(unittest.TestCase):
+  """Verify processEvents() is throttled in ProgressDialog.progress()."""
+
+  def test_throttle_reduces_calls(self):
+    """Rapid progress() calls should not call processEvents() every time."""
+    from quicknxs.gui_utils import ProgressDialog
+    from qtpy.QtWidgets import QWidget
+    parent=QWidget()
+    dlg=ProgressDialog(parent, title='Test', info_start='Testing', maximum=100, add=0)
+    call_count=[0]
+    orig_processEvents=QApplication.processEvents
+    def counting_processEvents():
+      call_count[0]+=1
+      orig_processEvents()
+    with patch.object(QApplication, 'processEvents', side_effect=counting_processEvents):
+      # Call progress many times rapidly
+      for i in range(50):
+        dlg.progress(i/100.0)
+    # With 200ms throttle and rapid calls, processEvents should be called far fewer than 50 times
+    self.assertLess(call_count[0], 50)
+    parent.deleteLater()
+
+
 class SmoothDataCallbackFix(unittest.TestCase):
   """Verify smooth_data callback reaches 1.0 on completion."""
 
@@ -955,4 +1018,6 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ToolbarModeFix))
 # SmoothDialog cursor fix tests
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MPLWidgetCursorFix))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDialogDrawPlotFix))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothOffspecProgressCleanup))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ProgressDialogThrottle))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDataCallbackFix))

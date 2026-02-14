@@ -607,6 +607,11 @@ class Exporter(object):
     self.ind_str="+".join(map(str, self.indices))
     self.ipts_str=list(self.raw_data.values())[0].experiment
 
+  def release_raw_data(self):
+    '''Release raw data to free memory after all extractions are complete.'''
+    self.raw_data.clear()
+    import gc; gc.collect()
+
   @log_call
   def extract_reflectivity(self):
     '''
@@ -758,9 +763,11 @@ class Exporter(object):
         output_data['column_names']=['ki_z', 'kf_z', 'I']
         axis_sigma_scaling=3
         xysigma0=Qzmax/6.
+      del data  # release hstack copy before smoothing
       x, y, I=smooth_data(settings, x, y, I, callback=(pb and pb.progress), sigmas=settings['sigmas'],
                           axis_sigma_scaling=axis_sigma_scaling, xysigma0=xysigma0)
       output_data[channel]=[np.array([x, y, I]).transpose((1, 2, 0))]
+      del x, y, I  # release before next channel iteration
     output_data['ki_max']=self.output_data['OffSpec']['ki_max']
     self.output_data['OffSpecSmooth']=output_data
 

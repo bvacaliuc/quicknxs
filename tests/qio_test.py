@@ -132,6 +132,29 @@ class ExportTest(FakeData, unittest.TestCase):
     exporter.create_genx_file(tempfile.gettempdir(), 'testexport.dat')
     os.remove(expfile)
 
+  def test_release_raw_data(self):
+    exporter=Exporter(self.ds.keys(), [self.ref1, self.ref2])
+    exporter.extract_reflectivity()
+    exporter.extract_offspecular()
+    self.assertGreater(len(exporter.raw_data), 0)
+    exporter.release_raw_data()
+    self.assertEqual(len(exporter.raw_data), 0)
+
+  def test_smooth_after_release(self):
+    exporter=Exporter(self.ds.keys(), [self.ref1, self.ref2])
+    exporter.extract_offspecular()
+    exporter.release_raw_data()
+    self.assertEqual(len(exporter.raw_data), 0)
+    # Smoothing should succeed — it only uses output_data, not raw_data
+    exporter.smooth_offspec({
+                           'grid': (20, 20),
+                           'sigma': (3., 3.),
+                           'sigmas': 3.,
+                           'region': (10, 90, 5 , 95),
+                           'xy_column': 0,
+                           })
+    self.assertIn('OffSpecSmooth', exporter.output_data)
+
   def test_write_consistent(self):
     exporter=Exporter([list(self.ds.keys())[0]], [self.ref1])
     exporter.extract_reflectivity()
