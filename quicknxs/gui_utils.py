@@ -63,11 +63,15 @@ class Reducer(object):
   export_optios.update(export)
   _overwrite_all=False
 
-  def __init__(self, parent, channels, refls):
-    self._parent_window=parent
-    self.cmap=parent.color
-    self.channels=list(channels) # make sure we don't alter the original list
-    self.refls=refls
+  def __init__(self, parent=None, channels=None, refls=None, **kwargs):
+    super().__init__(**kwargs)
+    if parent is not None:
+      self._parent_window=parent
+      self.cmap=parent.color
+    if channels is not None:
+      self.channels=list(channels) # make sure we don't alter the original list
+    if refls is not None:
+      self.refls=refls
     self.tempfiles=[]
     self._gisans_plots=[]
 

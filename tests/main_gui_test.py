@@ -354,6 +354,61 @@ class MainGUIProgressDialogFix(unittest.TestCase):
     parent.deleteLater()
 
 
+class MainGUIReduceDialogFix(unittest.TestCase):
+  """Verify Bug 6 fix: ReduceDialog instantiation with Python 3 cooperative MRO."""
+
+  def test_reduce_dialog_instantiation(self):
+    """ReduceDialog(parent, channels, refls) should not raise TypeError."""
+    from quicknxs.gui_utils import ReduceDialog
+    parent=QMainWindow()
+    parent.color='jet'
+    channels=['x']
+    refls=[]
+    dialog=ReduceDialog(parent, channels, refls)
+    self.assertIsNotNone(dialog)
+    self.assertEqual(dialog.channels, ['x'])
+    self.assertEqual(dialog.refls, [])
+    self.assertEqual(dialog._parent_window, parent)
+    dialog.destroy()
+    parent.deleteLater()
+
+  def test_reducer_standalone(self):
+    """Reducer(parent, channels, refls) still works as standalone."""
+    from quicknxs.gui_utils import Reducer
+    parent=QMainWindow()
+    parent.color='jet'
+    channels=['x', 'y']
+    refls=['dummy']
+    reducer=Reducer(parent, channels, refls)
+    self.assertEqual(reducer.channels, ['x', 'y'])
+    self.assertEqual(reducer.refls, ['dummy'])
+    self.assertEqual(reducer._parent_window, parent)
+    parent.deleteLater()
+
+  def test_reduce_datasets_with_data(self):
+    """reduceDatasets() with populated reduction list opens ReduceDialog without error."""
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    with patch.object(QMessageBox, 'warning', return_value=QMessageBox.No):
+      gui=MainGUI([])
+    gui.trigger.stay_alive=False
+    gui.trigger.wait()
+    gui.trigger=lambda action, *args: gui.processDelayedTrigger(action, args)
+    gui.fileOpen(TEST_DATASET, do_plot=True)
+    gui.ui.dangle0Overwrite.setText(str(gui.active_data[0].dangle))
+    gui.ui.refXPos.setValue(gui.active_data[0].dpix)
+    gui.setNorm()
+    gui.addRefList()
+    self.assertGreater(len(gui.reduction_list), 0)
+    # Patch QDialog.exec_ to avoid blocking, and simulate cancel
+    with patch('quicknxs.gui_utils.QDialog.exec_', return_value=False):
+      gui.reduceDatasets()
+    # If we get here without TypeError, the fix works
+    gui.close()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+
 # ──────────────────────────────────────────────────────────────
 #  Comprehensive GUI tests
 # ──────────────────────────────────────────────────────────────
@@ -732,6 +787,7 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIHeaderParserFau
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIIPythonFault))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIHelpAboutFault))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIProgressDialogFix))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIReduceDialogFix))
 # Comprehensive GUI tests
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIFileOperations))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIExtractionRegion))
