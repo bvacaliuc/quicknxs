@@ -774,6 +774,77 @@ class MainGUISettingsState(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────────
+#  Matplotlib API compatibility tests
+# ──────────────────────────────────────────────────────────────
+
+class MatplotlibEllipseFix(unittest.TestCase):
+  """Verify Ellipse angle parameter is passed as keyword (matplotlib >=3.8)."""
+
+  def test_ellipse_with_angle_keyword(self):
+    """Ellipse(xy, width, height, angle=...) should not raise TypeError."""
+    from matplotlib.patches import Ellipse
+    e=Ellipse((0.5, 0.5), 0.1, 0.2, angle=45., fill=False)
+    self.assertIsNotNone(e)
+    self.assertAlmostEqual(e.angle, 45.)
+    self.assertAlmostEqual(e.width, 0.1)
+    self.assertAlmostEqual(e.height, 0.2)
+
+  def test_smooth_dialog_instantiation(self):
+    """SmoothDialog.__init__() should not crash (exercises Ellipse + drawPlot)."""
+    import numpy as np
+    from quicknxs.gui_utils import SmoothDialog
+    # Create minimal off-specular data: list of arrays with shape (ny, nx, 6)
+    # columns: Qx, Qz, ki_z, kf_z, (unused), I
+    ny, nx=5, 10
+    item=np.zeros((ny, nx, 6))
+    item[:, :, 2]=np.linspace(0.001, 0.01, nx)  # ki_z
+    item[:, :, 3]=np.linspace(0.001, 0.01, nx)  # kf_z
+    item[:, :, 5]=np.random.rand(ny, nx)  # I
+    data=[item]
+    parent=QMainWindow()
+    dia=SmoothDialog(parent, data)
+    self.assertIsNotNone(dia)
+    self.assertIsNotNone(dia.sigma_1)
+    self.assertIsNotNone(dia.sigma_2)
+    self.assertIsNotNone(dia.sigma_3)
+    dia.destroy()
+    parent.deleteLater()
+
+
+class ToolbarModeFix(unittest.TestCase):
+  """Verify toolbar.mode replaces deprecated toolbar._active."""
+
+  def test_toolbar_has_mode(self):
+    """NavigationToolbar should have mode attribute, not _active."""
+    from quicknxs.mplwidget import MPLWidget
+    w=MPLWidget()
+    if w.toolbar is not None:
+      self.assertTrue(hasattr(w.toolbar, 'mode'))
+      # mode should be falsy when no tool is active
+      self.assertFalse(w.toolbar.mode)
+    w.deleteLater()
+
+  def test_toolbar_mode_no_crash_in_gui(self):
+    """Plot click handlers referencing toolbar.mode should not crash."""
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    with patch.object(QMessageBox, 'warning', return_value=QMessageBox.No):
+      gui=MainGUI([])
+    gui.trigger.stay_alive=False
+    gui.trigger.wait()
+    gui.trigger=lambda action, *args: gui.processDelayedTrigger(action, args)
+    gui.fileOpen(TEST_DATASET, do_plot=True)
+    # Verify toolbar.mode is accessible on overview plots
+    self.assertFalse(gui.ui.x_project.toolbar.mode)
+    self.assertFalse(gui.ui.y_project.toolbar.mode)
+    self.assertFalse(gui.ui.xy_overview.toolbar.mode)
+    self.assertFalse(gui.ui.xtof_overview.toolbar.mode)
+    gui.close()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+
+# ──────────────────────────────────────────────────────────────
 #  Test suite registration
 # ──────────────────────────────────────────────────────────────
 
@@ -795,3 +866,6 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIReductionAction
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIDisplayControls))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIMenuActions))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUISettingsState))
+# Matplotlib API compatibility tests
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MatplotlibEllipseFix))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ToolbarModeFix))

@@ -334,7 +334,7 @@ class MPLWidget(QtWidgets.QWidget):
     '''
     if self.toolbar:
       QtWidgets.QApplication.restoreOverrideCursor()
-      self.toolbar._lastCursor=None
+      self.toolbar._last_cursor=None
     return QtWidgets.QWidget.leaveEvent(self, event)
 
   def set_config(self, config):

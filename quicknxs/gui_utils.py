@@ -710,11 +710,11 @@ class SmoothDialog(QDialog):
       plot.cplot.set_clim([1e-6, 1.])
     self.rect_region=Line2D([x1, x1, x2, x2, x1], [y1, y2, y2, y1, y1])
     self.sigma_1=Ellipse(sigma_pos, self.ui.sigmaX.value()*2, self.ui.sigmaY.value()*2,
-                            sigma_ang, fill=False)
+                            angle=sigma_ang, fill=False)
     self.sigma_2=Ellipse(sigma_pos, self.ui.sigmaX.value()*4, self.ui.sigmaY.value()*4,
-                            sigma_ang, fill=False)
+                            angle=sigma_ang, fill=False)
     self.sigma_3=Ellipse(sigma_pos, self.ui.sigmaX.value()*6, self.ui.sigmaY.value()*6,
-                            sigma_ang, fill=False)
+                            angle=sigma_ang, fill=False)
     plot.canvas.ax.add_line(self.rect_region)
     plot.canvas.ax.add_artist(self.sigma_1)
     plot.canvas.ax.add_artist(self.sigma_2)
@@ -765,7 +765,7 @@ class SmoothDialog(QDialog):
     '''
       Plot for y-projection has been clicked.
     '''
-    if event.button==1 and self.ui.plot.toolbar._active is None and \
+    if event.button==1 and not self.ui.plot.toolbar.mode and \
         event.xdata is not None:
       x=event.xdata
       y=event.ydata

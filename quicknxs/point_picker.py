@@ -152,7 +152,7 @@ class PointPicker(QDialog):
     '''
     Callback for mouse button pressed on plot.
     '''
-    if self.ui.plot.toolbar._active is None and event.button==1 and \
+    if not self.ui.plot.toolbar.mode and event.button==1 and \
       event.xdata is not None:
       # no tool is selected and a button was pressed inside the plot
       x=event.xdata
