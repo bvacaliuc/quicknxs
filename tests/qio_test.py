@@ -155,6 +155,61 @@ class ExportTest(FakeData, unittest.TestCase):
                            })
     self.assertIn('OffSpecSmooth', exporter.output_data)
 
+  def test_extract_offspecular_corr_also_uncorrected(self):
+    exporter=Exporter(self.ds.keys(), [self.ref1, self.ref2])
+    exporter.extract_offspecular_corr(also_uncorrected=True)
+    self.assertIn('OffSpecCorr', exporter.output_data)
+    self.assertIn('OffSpec', exporter.output_data)
+    # Both should have the same channels
+    for channel in self.ds.keys():
+      self.assertIn(channel, exporter.output_data['OffSpecCorr'])
+      self.assertIn(channel, exporter.output_data['OffSpec'])
+      # Same number of datasets
+      self.assertEqual(len(exporter.output_data['OffSpecCorr'][channel]),
+                       len(exporter.output_data['OffSpec'][channel]))
+      for corr_arr, uncorr_arr in zip(exporter.output_data['OffSpecCorr'][channel],
+                                       exporter.output_data['OffSpec'][channel]):
+        # Same shape
+        self.assertEqual(corr_arr.shape, uncorr_arr.shape)
+        # Qx, Qz, ki_z, kf_z, ki_z-kf_z columns (0-4) should be identical
+        testing.assert_array_equal(corr_arr[:, :, :5], uncorr_arr[:, :, :5])
+        # dS column (6) should be identical
+        testing.assert_array_equal(corr_arr[:, :, 6], uncorr_arr[:, :, 6])
+
+  def test_combined_extraction_memory_equivalence(self):
+    # Method A: separate calls
+    exporter_a=Exporter(self.ds.keys(), [self.ref1, self.ref2])
+    exporter_a.extract_offspecular()
+    exporter_a.extract_offspecular_corr()
+    # Method B: combined call
+    exporter_b=Exporter(self.ds.keys(), [self.ref1, self.ref2])
+    exporter_b.extract_offspecular_corr(also_uncorrected=True)
+    # OffSpec results should match
+    for channel in self.ds.keys():
+      for arr_a, arr_b in zip(exporter_a.output_data['OffSpec'][channel],
+                              exporter_b.output_data['OffSpec'][channel]):
+        testing.assert_array_equal(arr_a, arr_b)
+    # OffSpecCorr results should match
+    for channel in self.ds.keys():
+      for arr_a, arr_b in zip(exporter_a.output_data['OffSpecCorr'][channel],
+                              exporter_b.output_data['OffSpecCorr'][channel]):
+        testing.assert_array_equal(arr_a, arr_b)
+
+  def test_smooth_after_corr_only(self):
+    exporter=Exporter(self.ds.keys(), [self.ref1, self.ref2])
+    exporter.extract_offspecular_corr(also_uncorrected=False)
+    exporter.release_raw_data()
+    # Smoothing should use OffSpecCorr when OffSpec is absent
+    exporter.smooth_offspec({
+                           'grid': (20, 20),
+                           'sigma': (3., 3.),
+                           'sigmas': 3.,
+                           'region': (10, 90, 5 , 95),
+                           'xy_column': 0,
+                           })
+    self.assertIn('OffSpecSmooth', exporter.output_data)
+    self.assertNotIn('OffSpec', exporter.output_data)
+
   def test_write_consistent(self):
     exporter=Exporter([list(self.ds.keys())[0]], [self.ref1])
     exporter.extract_reflectivity()

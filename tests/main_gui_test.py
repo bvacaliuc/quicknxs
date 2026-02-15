@@ -952,6 +952,97 @@ class SmoothOffspecProgressCleanup(unittest.TestCase):
     parent.deleteLater()
 
 
+class ExecuteCombinedOffspec(unittest.TestCase):
+  """Verify execute() uses combined extraction when both OffSpec and OffSpecCorr are selected."""
+
+  def test_combined_path_when_both_selected(self):
+    """When both exportOffSpecular and exportOffSpecularCorr are True,
+    extract_offspecular() should NOT be called, and
+    extract_offspecular_corr(also_uncorrected=True) should be called."""
+    from quicknxs.gui_utils import Reducer
+    from quicknxs.qreduce import NXSData, Reflectivity
+
+    parent=QMainWindow()
+    parent.color='jet'
+    ds=NXSData(TEST_DATASET)
+    norm=Reflectivity(ds[0])
+    ref1=Reflectivity(ds[0], normalization=norm)
+    ds[0].read_options=dict(ds[0].read_options)
+    reducer=Reducer(parent, list(ds.keys()), [ref1])
+    reducer.export_optios={
+      'exportSpecular': False,
+      'exportOffSpecular': True,
+      'exportOffSpecularSmoothed': False,
+      'exportOffSpecularCorr': True,
+      'exportGISANS': False,
+      'plot': False,
+      'emailSend': False,
+      'mantidplot': False,
+      'gnuplot': False,
+      'genx': False,
+      'foldername': '/tmp',
+      'naming': 'test.dat',
+      'multiAscii': False,
+      'combinedAscii': False,
+      'matlab': False,
+      'numpy': False,
+      'sampleSize': 10.,
+      'export_SA': False,
+    }
+    from quicknxs.qio import Exporter
+    with patch.object(Exporter, 'extract_offspecular') as mock_offspec, \
+         patch.object(Exporter, 'extract_offspecular_corr') as mock_corr, \
+         patch.object(Exporter, 'release_raw_data'), \
+         patch.object(Exporter, 'export_data'):
+      reducer.execute()
+      mock_offspec.assert_not_called()
+      mock_corr.assert_called_once_with(also_uncorrected=True)
+    parent.deleteLater()
+
+  def test_offspec_only_path(self):
+    """When exportOffSpecular is True but exportOffSpecularCorr is False,
+    extract_offspecular() should be called, not extract_offspecular_corr()."""
+    from quicknxs.gui_utils import Reducer
+    from quicknxs.qreduce import NXSData, Reflectivity
+
+    parent=QMainWindow()
+    parent.color='jet'
+    ds=NXSData(TEST_DATASET)
+    norm=Reflectivity(ds[0])
+    ref1=Reflectivity(ds[0], normalization=norm)
+    ds[0].read_options=dict(ds[0].read_options)
+    reducer=Reducer(parent, list(ds.keys()), [ref1])
+    reducer.export_optios={
+      'exportSpecular': False,
+      'exportOffSpecular': True,
+      'exportOffSpecularSmoothed': False,
+      'exportOffSpecularCorr': False,
+      'exportGISANS': False,
+      'plot': False,
+      'emailSend': False,
+      'mantidplot': False,
+      'gnuplot': False,
+      'genx': False,
+      'foldername': '/tmp',
+      'naming': 'test.dat',
+      'multiAscii': False,
+      'combinedAscii': False,
+      'matlab': False,
+      'numpy': False,
+      'sampleSize': 10.,
+      'export_SA': False,
+    }
+    from quicknxs.qio import Exporter
+    with patch.object(Exporter, 'extract_offspecular') as mock_offspec, \
+         patch.object(Exporter, 'extract_offspecular_corr') as mock_corr, \
+         patch.object(Exporter, 'release_raw_data'), \
+         patch.object(Exporter, 'export_data'):
+      reducer.execute()
+      mock_offspec.assert_called_once()
+      mock_corr.assert_not_called()
+    parent.deleteLater()
+
+
 class ProgressDialogThrottle(unittest.TestCase):
   """Verify processEvents() is throttled in ProgressDialog.progress()."""
 

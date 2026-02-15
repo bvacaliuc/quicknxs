@@ -90,12 +90,14 @@ class Reducer(object):
       if opts['exportSpecular']:
         info('Extracting reflectivity...')
         self.exporter.extract_reflectivity()
-      if opts['exportOffSpecular'] or opts['exportOffSpecularSmoothed']:
+      needs_offspec=opts['exportOffSpecular'] or opts['exportOffSpecularSmoothed']
+      needs_offspec_corr=opts['exportOffSpecularCorr']
+      if needs_offspec and not needs_offspec_corr:
         info('Extracting off-specular data...')
         self.exporter.extract_offspecular()
-      if opts['exportOffSpecularCorr']:
+      elif needs_offspec_corr:
         info('Extracting corrected off-specular data...')
-        self.exporter.extract_offspecular_corr()
+        self.exporter.extract_offspecular_corr(also_uncorrected=needs_offspec)
       if opts['exportGISANS']:
         self.extract_gisans()
 
