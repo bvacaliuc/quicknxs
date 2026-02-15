@@ -278,30 +278,166 @@ Add to `tests/main_gui_test.py`:
 
 ### Current State
 
-The `run_ipython()` method (main_gui.py:224-238) tries to import `quicknxs.ipython_widget`, which in turn imports `IPython`. IPython and qtconsole are **not listed** in `pyproject.toml` or `pixi.toml` dependencies. The current behavior is graceful: it logs "IPython is not installed" and returns.
+The `run_ipython()` method (`main_gui.py:224-238`) tries to import `quicknxs.ipython_widget`, which in turn imports `IPython`. IPython and qtconsole are **not listed** in `pyproject.toml` dependencies. The current behavior is graceful: it logs "IPython is not installed" and returns — but users never see this because it's only in the log file.
 
-### Options (choose one)
+### Root Cause
 
-**Option 1 — Add IPython as a dependency** (if the feature is wanted):
+Two problems:
+
+1. **Missing dependencies**: `ipython` and `qtconsole` are not in `[tool.pixi.dependencies]`.
+2. **Stale import paths**: `ipython_widget.py` uses IPython 1.x–3.x era import paths (`IPython.qt.console`, `IPython.qt.inprocess`). These sub-packages were split out into the standalone `qtconsole` package starting with IPython 4.0 (2015). Modern IPython 8.x+ does not include these modules at all.
+
+### Fix: Add Dependencies and Update Import Paths
+
+#### C1: Add dependencies to `pyproject.toml`
+
 ```toml
-# In pyproject.toml [tool.pixi.dependencies]:
-ipython = "*"
-qtconsole = "*"
+[tool.pixi.dependencies]
+# ... existing deps ...
+ipython = ">=8"
+qtconsole = ">=5"
+ipykernel = "*"
 ```
-Note: the `ipython_widget.py` module uses `IPython.qt.console` import paths from IPython 1.x-3.x era. Modern IPython (8.x+) moved these to the separate `qtconsole` package. The imports in `ipython_widget.py` would need updating:
+
+Both `ipython` (9.10.0) and `qtconsole` (5.7.1) are available on conda-forge. `ipykernel` is needed by the in-process kernel used in `ipython_widget.py`.
+
+#### C2: Rewrite `ipython_widget.py` imports for modern qtconsole
+
+The module currently has two code paths: IPython < 1.0 and IPython >= 1.0. IPython < 1.0 dates from 2013 and is irrelevant. The >= 1.0 path uses `IPython.qt.*` which no longer exists. Replace both with modern `qtconsole` imports.
+
+**Current code (lines 15-27):**
 ```python
-# Old (IPython 1.x-3.x):
-from IPython.qt.console.rich_ipython_widget import RichIPythonWidget
-from IPython.qt.inprocess import QtInProcessKernelManager
-# New (qtconsole 5.x):
+import IPython
+if IPython.__version__<'1.0':
+    from IPython.zmq.ipkernel import IPKernelApp
+    from IPython.lib.kernel import find_connection_file
+    from IPython.frontend.qt.kernelmanager import QtKernelManager
+    from IPython.frontend.qt.console.rich_ipython_widget import RichIPythonWidget
+    from IPython.core.ipapi import get as get_ipython
+else:
+    from IPython.qt.console.rich_ipython_widget import RichIPythonWidget
+    from IPython.qt.inprocess import QtInProcessKernelManager
+    from IPython.lib import guisupport
+    from IPython.core.getipython import get_ipython
+```
+
+**Replace with:**
+```python
 from qtconsole.rich_jupyter_widget import RichJupyterWidget
 from qtconsole.inprocess import QtInProcessKernelManager
+from IPython import get_ipython
 ```
 
-**Option 2 — Improve the user-facing message** (minimal fix):
-Change the `info()` log to a visible `QMessageBox.information()` dialog so users actually see the message instead of it being buried in the log file.
+Key changes:
+- `RichIPythonWidget` → `RichJupyterWidget` (renamed in qtconsole 4.1+)
+- `IPython.qt.inprocess` → `qtconsole.inprocess`
+- `IPython.core.getipython.get_ipython` → `IPython.get_ipython` (public API)
+- Remove the entire `IPython.__version__ < '1.0'` branch and `IPythonLocalKernelApp` class (dead code for 13 years)
 
-**Recommendation**: Option 2 (minimal fix) — the IPython console is a developer/power-user feature. Adding qtconsole as a dependency would bring in significant additional packages. A visible message is better than a silent log entry.
+#### C3: Update `IPythonConsoleQtWidget` class
+
+The class inherits from `RichIPythonWidget`. Update to `RichJupyterWidget`:
+
+**Current (line 86):**
+```python
+class IPythonConsoleQtWidget(RichIPythonWidget):
+```
+
+**Replace with:**
+```python
+class IPythonConsoleQtWidget(RichJupyterWidget):
+```
+
+Also update `__new__` and `__init__`:
+
+**Current (lines 88-89):**
+```python
+def __new__(cls, parent):
+    return RichIPythonWidget.__new__(cls)
+```
+
+**Replace with:**
+```python
+def __new__(cls, parent):
+    return RichJupyterWidget.__new__(cls)
+```
+
+**Current (line 101):**
+```python
+RichIPythonWidget.__init__(self)
+```
+
+**Replace with:**
+```python
+RichJupyterWidget.__init__(self)
+```
+
+Remove the `if IPython.__version__<'1.0':` branch inside `__init__` (lines 105-108) and the entire `connect_kernel` method (lines 126-161) — both are dead code for the IPython < 1.0 path.
+
+The remaining kernel setup (lines 109-114) stays the same but update the `gui` parameter:
+```python
+kernel_manager=QtInProcessKernelManager(config=self.config, gui='qt')
+```
+(`'qt4'` → `'qt'` — the old value was a hint for the old IPython event loop; modern qtconsole uses `'qt'`)
+
+#### C4: Update `traitlets` import
+
+**Current (lines 29-32):**
+```python
+try:
+    from traitlets.config.application import catch_config_error
+except ImportError:
+    from IPython.config.application import catch_config_error
+```
+
+**Replace with:**
+```python
+from traitlets.config.application import catch_config_error
+```
+
+The `IPython.config` fallback was for IPython < 4.0. Modern `qtconsole` depends on `traitlets`, so it will always be available. However, `catch_config_error` is only used by the deleted `IPythonLocalKernelApp` class — so this import can be **removed entirely** if the class is deleted.
+
+#### C5: Keep graceful fallback in `run_ipython()`
+
+The try/except ImportError in `main_gui.py:229-232` should remain — it protects against environments where the optional dependencies are not installed. Optionally upgrade the `info()` to a visible message:
+
+```python
+def run_ipython(self):
+    info('Start IPython console')
+    try:
+        from .ipython_widget import IPythonConsoleQtWidget
+    except ImportError:
+        info('IPython is not installed, cannot open console.')
+        QtWidgets.QMessageBox.information(
+            self, 'IPython Console',
+            'The IPython console requires the ipython and qtconsole packages.\n'
+            'Install them with: pixi add ipython qtconsole ipykernel')
+        return
+    self.ipython=IPythonConsoleQtWidget(self)
+    self.ui.plotTab.addTab(self.ipython, 'IPython')
+    self.ipython.namespace['data']=self.active_data
+    self.trigger('_install_exc')
+```
+
+### Summary of `ipython_widget.py` After Fix
+
+The entire file simplifies from 170 lines to ~50:
+- Remove all `IPython.__version__` branching
+- Remove `IPythonLocalKernelApp` class (lines 36-84)
+- Remove `connect_kernel` method (lines 126-161)
+- Remove stale `catch_config_error` import
+- Update class hierarchy: `RichIPythonWidget` → `RichJupyterWidget`
+- Use modern `qtconsole.*` imports
+
+### Tests for Issue C
+
+Add to `tests/main_gui_test.py`:
+
+1. **`test_ipython_widget_import`**: Verify `from quicknxs.ipython_widget import IPythonConsoleQtWidget` succeeds (no ImportError with dependencies installed).
+
+2. **Update existing `MainGUIIPythonFault.test_run_ipython_no_crash`**: This test currently expects the import to fail. With dependencies now present, it should either:
+   - Verify the IPython tab is added (positive test), OR
+   - Patch the import to fail and verify the QMessageBox is shown instead of just an info log
 
 ---
 
@@ -319,10 +455,10 @@ This is the highest-priority fix. It's mechanical (add `[0]`), affects 9 call si
 
 Move `_init_toolbar()` body into `_customize_toolbar()` called from `__init__`. Delete the dead `_init_toolbar()` method. This fixes the 3rd reported bug.
 
-### Phase 3: IPython message improvement (Issue C)
-**Files:** `main_gui.py`
+### Phase 3: IPython console restoration (Issue C)
+**Files:** `pyproject.toml`, `quicknxs/ipython_widget.py`, `quicknxs/main_gui.py`
 
-Change `info()` to `QMessageBox.information()` for the missing-IPython case. This addresses the 4th reported issue.
+Add `ipython`, `qtconsole`, and `ipykernel` to `[tool.pixi.dependencies]`. Rewrite `ipython_widget.py` to use modern `qtconsole.*` imports, remove all dead IPython < 1.0 code paths, and update the class hierarchy from `RichIPythonWidget` to `RichJupyterWidget`. Add a visible `QMessageBox` fallback in `run_ipython()` for environments without the packages.
 
 ### Phase 4: Tests
 **Files:** `tests/main_gui_test.py`, `tests/qio_test.py`
@@ -339,12 +475,14 @@ Add tests for:
 
 | File | Phase | Changes |
 |------|-------|---------|
-| `quicknxs/main_gui.py` | 1, 3 | Fix 4 QFileDialog calls (lines 1206, 1267, 1987, 2437); improve IPython message |
+| `quicknxs/main_gui.py` | 1, 3 | Fix 4 QFileDialog calls (lines 1206, 1267, 1987, 2437); add QMessageBox fallback in `run_ipython()` |
 | `quicknxs/compare_plots.py` | 1 | Fix 1 QFileDialog call (line 28) |
 | `quicknxs/mplwidget.py` | 1, 2 | Fix 1 QFileDialog call (line 237); rebuild toolbar in `__init__` |
 | `quicknxs/polarization_gui.py` | 1 | Fix 3 QFileDialog calls (lines 293, 319, 363) |
 | `quicknxs/quicklog_gui.py` | 1 | Fix 1 QFileDialog call (line 163) |
-| `tests/main_gui_test.py` | 4 | Add tests for all fixes |
+| `quicknxs/ipython_widget.py` | 3 | Rewrite for modern qtconsole; remove dead IPython < 1.0 code |
+| `pyproject.toml` | 3 | Add `ipython`, `qtconsole`, `ipykernel` dependencies |
+| `tests/main_gui_test.py` | 4 | Add tests for all fixes; update `MainGUIIPythonFault` |
 
 ## Verification
 
@@ -356,6 +494,6 @@ Manual verification:
 1. File → Load Extraction → Cancel → no hang
 2. Tools → Filter Points → Cancel → no crash
 3. Reduce with "Plot" checked → no `labelAction` error, plots appear with custom toolbar
-4. Advanced → IPython Console → user sees informative message dialog
+4. Advanced → IPython Console → IPython tab opens in plotTab with working console
 5. File → Open Sum → Cancel → no crash
 6. Save figure from any plot toolbar → file saved correctly
