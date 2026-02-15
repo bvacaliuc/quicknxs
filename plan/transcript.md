@@ -304,3 +304,7 @@ In your deliberations above, you said "The strace doesn't show the Python app's 
 
 I have added a ~/.quicknxs/run_state.dat file to help you investigate a crash due to memory exhaustion. Please perform a reduction with all options enabled in ReduceDialog, reproducing with strace the error. Analyze the resulting artifacts to verify that the existing fixes have resolved the issue. If problems remain, please make a plan to fix them.
 
+## Prompt 16
+
+In the quicknxsv1 project, I have modified scripts/reduce_headless.py to enable all outputs (even those that require a GUI). When 'make strace-reduce' is executed the OOM error is observed. Would you interpret the strace.* and develop a plan to avoid this on low memory systems?
+

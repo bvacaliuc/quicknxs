@@ -77,17 +77,17 @@ def main():
         'exportTrueSpecular': False,
         'exportOffSpecular': True,
         'exportOffSpecularCorr': True,
-        'exportOffSpecularSmoothed': False,  # requires SmoothDialog (GUI)
-        'exportGISANS': False,               # requires GISANSDialog (GUI)
-        'export_SA': False,
+        'exportOffSpecularSmoothed': True,  # requires SmoothDialog (GUI)
+        'exportGISANS': True,               # requires GISANSDialog (GUI)
+        'export_SA': True,
         'emailSend': False,
         'multiAscii': True,
         'combinedAscii': True,
-        'matlab': False,
-        'mantidplot': False,
-        'gnuplot': False,
+        'matlab': True,
+        'mantidplot': True,
+        'gnuplot': True,
         'numpy': True,
-        'plot': False,                       # requires GUI
+        'plot': True,                       # requires GUI
         'genx': False,
         'sampleSize': 10.,
     }
