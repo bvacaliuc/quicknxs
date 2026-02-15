@@ -1181,8 +1181,9 @@ class MRDataset(object):
     def data(self):
       if MRDataset._cached_object is self:
         return MRDataset._cached_data
-      data=frombuffer(zlib.decompress(self._data_zipped), dtype=self._data_dtype).copy()
-      data=data.reshape(self._data_shape)
+      raw_bytes=zlib.decompress(self._data_zipped)
+      data=frombuffer(raw_bytes, dtype=self._data_dtype).reshape(self._data_shape).copy()
+      del raw_bytes
       MRDataset._cached_data=data
       MRDataset._cached_object=self
       return data

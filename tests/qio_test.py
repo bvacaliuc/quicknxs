@@ -5,7 +5,7 @@ import unittest
 import tempfile
 
 from numpy import float64, float32, loadtxt, array, testing
-from quicknxs.qreduce import NXSData, Reflectivity
+from quicknxs.qreduce import NXSData, MRDataset, Reflectivity
 from quicknxs.qio import HeaderCreator, HeaderParser, Exporter
 
 TEST_DATASET=os.path.join(os.path.dirname(os.path.abspath(__file__)), u'test1_histo.nxs')
@@ -209,6 +209,33 @@ class ExportTest(FakeData, unittest.TestCase):
                            })
     self.assertIn('OffSpecSmooth', exporter.output_data)
     self.assertNotIn('OffSpec', exporter.output_data)
+
+  def test_cache_cleared_on_init(self):
+    # Pre-populate the cache by loading a file
+    NXSData(TEST_DATASET)
+    self.assertGreater(len(NXSData._cache), 0)
+    exporter=Exporter(self.ds.keys(), [self.ref1, self.ref2])
+    # Cache should be cleared after Exporter init
+    self.assertEqual(len(NXSData._cache), 0)
+    # But raw_data should still be populated
+    self.assertGreater(len(exporter.raw_data), 0)
+
+  def test_cache_cleared_on_release(self):
+    exporter=Exporter(self.ds.keys(), [self.ref1, self.ref2])
+    exporter.extract_reflectivity()
+    # After extraction, MRDataset._cached_data should be cleared
+    self.assertIsNone(MRDataset._cached_data)
+    self.assertIsNone(MRDataset._cached_object)
+
+  def test_decompression_cache_cleared_after_extraction(self):
+    exporter=Exporter(self.ds.keys(), [self.ref1, self.ref2])
+    exporter.extract_offspecular()
+    self.assertIsNone(MRDataset._cached_data)
+    exporter.extract_offspecular_corr()
+    self.assertIsNone(MRDataset._cached_data)
+    exporter.release_raw_data()
+    self.assertEqual(len(NXSData._cache), 0)
+    self.assertIsNone(MRDataset._cached_data)
 
   def test_write_consistent(self):
     exporter=Exporter([list(self.ds.keys())[0]], [self.ref1])

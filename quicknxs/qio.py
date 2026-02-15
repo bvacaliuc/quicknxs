@@ -16,7 +16,7 @@ from pickle import loads, dumps
 from .config import paths, instrument, output_templates
 from .decorators import log_call
 from .qcalc import smooth_data, DetectorTailCorrector
-from .qreduce import NXSData, NXSMultiData, Reflectivity, OffSpecular
+from .qreduce import NXSData, NXSMultiData, MRDataset, Reflectivity, OffSpecular
 from .version import str_version
 
 from . import genx_data
@@ -580,6 +580,9 @@ class Exporter(object):
       ref.options.update(self.additional_options)
     self.file_header=HeaderCreator(self.refls)
     self.read_data()
+    # Clear NXSData file cache to free memory from previously browsed files.
+    # Our raw_data dict holds its own references, so our data survives.
+    self._clear_data_caches()
     self.output_data={}
     self.exported_files_all=[]
     self.exported_files_data=[]
@@ -607,10 +610,19 @@ class Exporter(object):
     self.ind_str="+".join(map(str, self.indices))
     self.ipts_str=list(self.raw_data.values())[0].experiment
 
+  @staticmethod
+  def _clear_data_caches():
+    '''Clear class-level caches to free memory.'''
+    import gc
+    NXSData._cache.clear()
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
+    gc.collect()
+
   def release_raw_data(self):
     '''Release raw data to free memory after all extractions are complete.'''
     self.raw_data.clear()
-    import gc; gc.collect()
+    self._clear_data_caches()
 
   @log_call
   def extract_reflectivity(self):
@@ -654,6 +666,8 @@ class Exporter(object):
       d[:, 2]=np.sqrt(p[:, 2]**2*dp_scale**2+m[:, 2]**2*dm_scale**2)
       output_data['SA']=d
     self.output_data['Specular']=output_data
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
 
   @log_call
   def extract_offspecular(self):
@@ -684,6 +698,8 @@ class Exporter(object):
         del Qx, Qz, ki_z, kf_z, S, dS, rdata
     output_data['ki_max']=ki_max
     self.output_data['OffSpec']=output_data
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
 
   @log_call
   def extract_offspecular_corr(self, also_uncorrected=False):
@@ -743,6 +759,8 @@ class Exporter(object):
     if also_uncorrected:
       uncorr_output_data['ki_max']=ki_max
       self.output_data['OffSpec']=uncorr_output_data
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
     gc.collect()
 
   @log_call
