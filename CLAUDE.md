@@ -28,7 +28,7 @@ When investigating crashes caused by memory exhaustion (exit code 137 = SIGKILL 
    wrapper is the lowest). Look at `ls -lhS strace.*` — the largest file is usually the
    Python process.
 
-3. **Analyze the crash:** Read the tail of the Python PID's log file. Look for:
+3. **Analyze the crash:** Read the tail of the Python PID's strace file. Look for:
    - A growing pattern of `mmap(..., MAP_ANONYMOUS)` calls (heap growth)
    - `brk()` calls with increasing addresses (small allocations)
    - The final `+++ killed by SIGKILL +++` or `+++ exited with N +++`
