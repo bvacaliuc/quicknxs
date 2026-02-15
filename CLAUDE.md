@@ -16,10 +16,13 @@ You will use git to organize modifications for each feature that you add.
 
 When investigating crashes caused by memory exhaustion (exit code 137 = SIGKILL from OOM killer):
 
-1. **Reproduce with strace:** Run `make strace` to launch the application under strace with
-   memory-related syscall tracing. This uses `-f -ff` to follow all child processes (critical
+1. **Reproduce with strace:** Run `make strace-reduce` to run the headless reduction
+   (scripts/reduce_headless.py) under strace with memory-related syscall tracing. This loads
+   the state from `~/.quicknxs/run_state.dat` and performs a full reduction with all extraction
+   options enabled. Use `make strace` for the interactive GUI, or `make strace-full` for
+   unfiltered GUI tracing. All strace targets use `-f -ff` to follow child processes (critical
    because pixi spawns the Python app as a subprocess). Output is written to per-PID files
-   `strace.<PID>.log`. Use `make strace-full` for unfiltered tracing.
+   `strace.<PID>.log`.
 
 2. **Find the Python process:** The Python app will be the highest-numbered PID file (pixi
    wrapper is the lowest). Look at `ls -lhS strace.*.log` — the largest file is usually the

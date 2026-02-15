@@ -1,4 +1,4 @@
-.PHONY: gui install test test-core test-gui test-db lint clean
+.PHONY: gui install test test-core test-gui test-db lint clean reduce-headless strace strace-full strace-reduce
 
 gui: install
 	pixi run python scripts/quicknxs
@@ -24,9 +24,13 @@ lint: install
 clean:
 	rm -rf __pycache__ .pytest_cache *.egg-info
 
+reduce-headless: install
+	pixi run python scripts/reduce_headless.py
+
 # Diagnostic targets for memory fault analysis.
 # Usage:
-#   make strace          - trace memory-related syscalls (mmap, brk, madvise, signals)
+#   make strace          - trace memory-related syscalls in the GUI app
+#   make strace-reduce   - trace memory-related syscalls in headless reduction
 #   make strace-full     - trace all syscalls (large output)
 #
 # Output files are written to strace.<PID>.log (one per process).
@@ -42,6 +46,16 @@ STRACE_OPTS = -f -ff -o strace -t -T
 strace: install
 	rm -f strace.*.log
 	strace $(STRACE_OPTS) $(STRACE_MEMORY_TRACE) pixi run python scripts/quicknxs; \
+	echo ""; \
+	echo "=== strace complete (exit $$?) ==="; \
+	echo "Output files:"; \
+	ls -lhS strace.*.log 2>/dev/null || echo "  (no output files found)"; \
+	echo ""; \
+	echo "To analyze: tail -100 strace.<PID>.log"
+
+strace-reduce: install
+	rm -f strace.*.log
+	strace $(STRACE_OPTS) $(STRACE_MEMORY_TRACE) pixi run python scripts/reduce_headless.py; \
 	echo ""; \
 	echo "=== strace complete (exit $$?) ==="; \
 	echo "Output files:"; \
