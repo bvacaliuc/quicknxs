@@ -275,3 +275,8 @@ The contents of the `TODO.md` file are referenced in the prompt are available in
 Claude developed a `PLAN.md` file in the project directory this time ( *previously, Claude would create its plans in ~/.claude/plans/* ).  The plan had an option on Issue C.  Use this prompt to adjust the plan:
 
 adjust the plan for 'Issue C: IPython Console Not Available'. Select 'Option 1 - Add IPython as a dependency' and update.
+
+## Prompt 12
+
+You are working on the quicknxsv1 project in the feature/pixi_py3_qt5 branch. Please investigate a crash that happens after corrected off specular extraction. Read TODO.md and strace.dat. Determine why the program failed. Find the root cause. Identify the structures in the code that are responsible and develop a mitigation plan. Make sure the plan includes a fix for all similar errors that could lead to a similar program abort. Be thorough. Please use your best judgement on how to organize this plan to give future Claude agent teams the best chance of success to implement correctly and completely.
+
