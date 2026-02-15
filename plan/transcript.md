@@ -300,3 +300,7 @@ Curiously, claude did not offer a review of the plan, but simply sailed directly
 
 In your deliberations above, you said "The strace doesn't show the Python app's system calls. We need to think about this differently." Help me implement the correct strace command that shows the Python app's system calls and generates an strace.dat that you can use to better understand and analyze future memory faults. Add this command to the Makefile so that it can be used in the future. Update the CLAUDE.md file with a clause to let future agents understand how to use this skill when needed.
 
+## Prompt 15
+
+I have added a ~/.quicknxs/run_state.dat file to help you investigate a crash due to memory exhaustion. Please perform a reduction with all options enabled in ReduceDialog, reproducing with strace the error. Analyze the resulting artifacts to verify that the existing fixes have resolved the issue. If problems remain, please make a plan to fix them.
+
