@@ -22,10 +22,10 @@ When investigating crashes caused by memory exhaustion (exit code 137 = SIGKILL 
    options enabled. Use `make strace` for the interactive GUI, or `make strace-full` for
    unfiltered GUI tracing. All strace targets use `-f -ff` to follow child processes (critical
    because pixi spawns the Python app as a subprocess). Output is written to per-PID files
-   `strace.<PID>.log`.
+   `strace.<PID>`.
 
 2. **Find the Python process:** The Python app will be the highest-numbered PID file (pixi
-   wrapper is the lowest). Look at `ls -lhS strace.*.log` — the largest file is usually the
+   wrapper is the lowest). Look at `ls -lhS strace.*` — the largest file is usually the
    Python process.
 
 3. **Analyze the crash:** Read the tail of the Python PID's log file. Look for:
