@@ -11,3 +11,30 @@ You are a neutron scattering scientist who is expert at python coding and have a
 You are able to direct agent teams who are expert system programmers and software developers who have a deep understanding of the C/C++ runtime model and how to diagnose and fix memory, concurrency and file system errors.
 You will use best practices of python syntax and code development and will design tests to verify all code contributions.
 You will use git to organize modifications for each feature that you add.
+
+## Diagnosing Memory Faults (OOM / SIGKILL / Exit 137)
+
+When investigating crashes caused by memory exhaustion (exit code 137 = SIGKILL from OOM killer):
+
+1. **Reproduce with strace:** Run `make strace` to launch the application under strace with
+   memory-related syscall tracing. This uses `-f -ff` to follow all child processes (critical
+   because pixi spawns the Python app as a subprocess). Output is written to per-PID files
+   `strace.<PID>.log`. Use `make strace-full` for unfiltered tracing.
+
+2. **Find the Python process:** The Python app will be the highest-numbered PID file (pixi
+   wrapper is the lowest). Look at `ls -lhS strace.*.log` — the largest file is usually the
+   Python process.
+
+3. **Analyze the crash:** Read the tail of the Python PID's log file. Look for:
+   - A growing pattern of `mmap(..., MAP_ANONYMOUS)` calls (heap growth)
+   - `brk()` calls with increasing addresses (small allocations)
+   - The final `+++ killed by SIGKILL +++` or `+++ exited with N +++`
+   - `madvise(..., MADV_DONTNEED)` calls (memory being returned to OS)
+
+4. **Key memory structures in this codebase:**
+   - `NXSData._cache` (qreduce.py) — class-level list caching up to 100 loaded NXS files
+   - `MRDataset._cached_data` (qreduce.py) — class-level ref to last decompressed 3D array (~89 MB)
+   - `MRDataset.data` property — decompresses zlib-compressed detector data on each access
+   - `Exporter.raw_data` (qio.py) — dict of NXSData objects for the current reduction
+   - `Exporter.output_data` (qio.py) — dict of extracted results accumulating during pipeline
+   - `Reducer.execute()` (gui_utils.py) — orchestrates the full extraction/smoothing/export pipeline
