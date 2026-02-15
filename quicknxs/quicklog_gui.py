@@ -160,7 +160,7 @@ class QuicklogWindow(QMainWindow):
 
   def openFile(self, filename=None):
     if filename is None:
-      filename=QFileDialog.getOpenFileName(self, caption=u'Select logfile')
+      filename=QFileDialog.getOpenFileName(self, caption=u'Select logfile')[0]
     self.showLog(Logfile(filename))
     self.logfile_name=filename
 

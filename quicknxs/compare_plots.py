@@ -27,7 +27,7 @@ class CompareWidget(QWidget):
     filter_=u'Reflectivity (*.dat);;All (*.*)'
     names=QFileDialog.getOpenFileNames(self, u'Open reflectivity file...',
                                                directory=self.active_folder,
-                                               filter=filter_)
+                                               filter=filter_)[0]
     if names:
       self.active_folder=os.path.abspath(os.path.dirname(names[0]))
       for name in names:

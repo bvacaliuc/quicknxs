@@ -259,7 +259,7 @@ class MainGUIHeaderParserFault(unittest.TestCase):
 
 
 class MainGUIIPythonFault(unittest.TestCase):
-  """Verify Bug 3 fix: run_ipython() handles missing IPython gracefully."""
+  """Verify IPython console import and fallback behavior."""
 
   def setUp(self):
     self.app=_app
@@ -278,11 +278,19 @@ class MainGUIIPythonFault(unittest.TestCase):
     if os.path.exists(statepath):
       os.remove(statepath)
 
-  def test_run_ipython_no_crash(self):
-    """run_ipython() should not raise when IPython is not installed."""
-    # This will hit the try/except ImportError path since IPython is not installed
-    self.gui.run_ipython()
-    # If we get here without an exception, the fix works
+  def test_ipython_widget_import(self):
+    """ipython_widget module should import successfully with deps installed."""
+    from quicknxs.ipython_widget import IPythonConsoleQtWidget
+    self.assertIsNotNone(IPythonConsoleQtWidget)
+
+  def test_run_ipython_fallback_on_import_error(self):
+    """run_ipython() should show QMessageBox when import fails."""
+    with patch('quicknxs.main_gui.MainGUI.run_ipython',
+               wraps=self.gui.run_ipython):
+      with patch.dict('sys.modules', {'quicknxs.ipython_widget': None}):
+        with patch.object(QMessageBox, 'information') as mock_info:
+          self.gui.run_ipython()
+          mock_info.assert_called_once()
 
 
 class MainGUIHelpAboutFault(unittest.TestCase):
@@ -991,6 +999,103 @@ class SmoothDataCallbackFix(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────────
+#  QFileDialog tuple return fix tests
+# ──────────────────────────────────────────────────────────────
+
+class QFileDialogTupleFix(unittest.TestCase):
+  """Verify QFileDialog return values are correctly unpacked."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_loadExtraction_cancel_no_hang(self):
+    """loadExtraction() should return cleanly when dialog is cancelled."""
+    from qtpy import QtWidgets
+    with patch.object(QtWidgets.QFileDialog, 'getOpenFileName', return_value=('', '')):
+      self.gui.loadExtraction()
+    # If we get here without hanging or raising, the fix works
+
+  def test_open_filter_dialog_cancel_no_crash(self):
+    """open_filter_dialog() should return cleanly when dialog is cancelled."""
+    from qtpy import QtWidgets
+    with patch.object(QtWidgets.QFileDialog, 'getOpenFileNames', return_value=([], '')):
+      self.gui.open_filter_dialog()
+    # If we get here without TypeError, the fix works
+
+  def test_fileOpenSumDialog_cancel_no_crash(self):
+    """fileOpenSumDialog() should return cleanly when dialog is cancelled."""
+    from qtpy import QtWidgets
+    with patch.object(QtWidgets.QFileDialog, 'getOpenFileNames', return_value=([], '')):
+      self.gui.fileOpenSumDialog()
+    # If we get here without error, the fix works
+
+  def test_exportRawData_cancel_no_crash(self):
+    """exportRawData() should return cleanly when dialog is cancelled."""
+    from qtpy import QtWidgets
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.ui.dangle0Overwrite.setText(str(self.gui.active_data[0].dangle))
+    self.gui.ui.refXPos.setValue(self.gui.active_data[0].dpix)
+    self.gui.setNorm()
+    with patch.object(QtWidgets.QFileDialog, 'getSaveFileName', return_value=('', '')):
+      self.gui.exportRawData()
+    # If we get here without error, the fix works
+
+
+# ──────────────────────────────────────────────────────────────
+#  NavigationToolbar labelAction fix tests
+# ──────────────────────────────────────────────────────────────
+
+class NavigationToolbarLabelAction(unittest.TestCase):
+  """Verify NavigationToolbar creates labelAction in __init__."""
+
+  def test_toolbar_has_labelAction(self):
+    """NavigationToolbar should have labelAction attribute."""
+    from quicknxs.mplwidget import MPLWidget
+    w=MPLWidget()
+    self.assertTrue(hasattr(w.toolbar, 'labelAction'))
+    self.assertIsNotNone(w.toolbar.labelAction)
+    w.deleteLater()
+
+  def test_toolbar_labelAction_hidden_by_default(self):
+    """labelAction should be hidden when coordinates=False (default)."""
+    from quicknxs.mplwidget import MPLWidget
+    w=MPLWidget()
+    self.assertFalse(w.toolbar.labelAction.isVisible())
+    w.deleteLater()
+
+  def test_toolbar_has_custom_actions(self):
+    """Toolbar should have Print and Log actions from custom setup."""
+    from quicknxs.mplwidget import MPLWidget
+    w=MPLWidget()
+    action_texts=[a.text() for a in w.toolbar.actions()]
+    self.assertIn('Print', action_texts)
+    self.assertIn('Log', action_texts)
+    w.deleteLater()
+
+  def test_plot_dialog_no_crash(self):
+    """PlotDialog() should not raise AttributeError on labelAction."""
+    from quicknxs.gui_utils import PlotDialog
+    dialog=PlotDialog()
+    self.assertIsNotNone(dialog)
+    self.assertIsNotNone(dialog.plot.toolbar.labelAction)
+    dialog.destroy()
+
+
+# ──────────────────────────────────────────────────────────────
 #  Test suite registration
 # ──────────────────────────────────────────────────────────────
 
@@ -1021,3 +1126,7 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDialogDrawPlotFi
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothOffspecProgressCleanup))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ProgressDialogThrottle))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDataCallbackFix))
+# QFileDialog tuple return fix tests
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(QFileDialogTupleFix))
+# NavigationToolbar labelAction fix tests
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(NavigationToolbarLabelAction))

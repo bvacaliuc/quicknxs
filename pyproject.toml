@@ -25,6 +25,9 @@ matplotlib = ">=3.8"
 h5py = "*"
 scipy = "*"
 configobj = ">=5.0"
+ipython = ">=8"
+qtconsole = ">=5"
+ipykernel = "*"
 
 [tool.pixi.pypi-dependencies]
 quicknxs-v1 = { path = ".", editable = true }

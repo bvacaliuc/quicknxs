@@ -39,12 +39,17 @@ class NavigationToolbar(NavigationToolbar2QT):
   def __init__(self, canvas, parent, coordinates=False):
     NavigationToolbar2QT.__init__(self, canvas, parent, coordinates)
     self.setIconSize(QtCore.QSize(20, 20))
+    self._customize_toolbar()
 
-  def _init_toolbar(self):
-    if not hasattr(self, '_actions'):
-      self._actions={}
-    self.basedir=os.path.join(matplotlib.rcParams[ 'datapath' ], 'images')
+  def _customize_toolbar(self):
+    # Remove default actions built by parent __init__
+    for action in self.actions():
+      self.removeAction(action)
+    # Also remove the locLabel widget the parent may have added
+    if hasattr(self, 'locLabel') and self.locLabel is not None:
+      self.locLabel.setParent(None)
 
+    # Rebuild with custom icons
     icon=QtGui.QIcon()
     icon.addPixmap(QtGui.QPixmap(":/MPL Toolbar/go-home.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
     a=self.addAction(icon, 'Home', self.home)
@@ -92,7 +97,6 @@ class NavigationToolbar(NavigationToolbar2QT):
     a=self.addAction(icon, 'Log', self.toggle_log)
     a.setToolTip('Toggle logarithmic scale')
 
-
     self.buttons={}
 
     # Add the x,y location widget at the right side of the toolbar
@@ -112,80 +116,6 @@ class NavigationToolbar(NavigationToolbar2QT):
 
     # reference holder for subplots_adjust window
     self.adj_window=None
-
-  if matplotlib.__version__<'1.2':
-    def pan(self, *args):
-      'Activate the pan/zoom tool. pan with left button, zoom with right'
-      # set the pointer icon and button press funcs to the
-      # appropriate callbacks
-      if self._auto_toggle:
-        return
-      if self._active=='ZOOM':
-        self._auto_toggle=True
-        self._actions['zoom'].setChecked(False)
-        self._auto_toggle=False
-
-      if self._active=='PAN':
-        self._active=None
-      else:
-        self._active='PAN'
-      if self._idPress is not None:
-        self._idPress=self.canvas.mpl_disconnect(self._idPress)
-        self.mode=''
-
-      if self._idRelease is not None:
-        self._idRelease=self.canvas.mpl_disconnect(self._idRelease)
-        self.mode=''
-
-      if self._active:
-        self._idPress=self.canvas.mpl_connect(
-            'button_press_event', self.press_pan)
-        self._idRelease=self.canvas.mpl_connect(
-            'button_release_event', self.release_pan)
-        self.mode='pan/zoom'
-        self.canvas.widgetlock(self)
-      else:
-        self.canvas.widgetlock.release(self)
-
-      for a in self.canvas.figure.get_axes():
-        a.set_navigate_mode(self._active)
-
-      self.set_message(self.mode)
-
-    def zoom(self, *args):
-      'activate zoom to rect mode'
-      if self._auto_toggle:
-        return
-      if self._active=='PAN':
-        self._auto_toggle=True
-        self._actions['pan'].setChecked(False)
-        self._auto_toggle=False
-
-      if self._active=='ZOOM':
-        self._active=None
-      else:
-        self._active='ZOOM'
-
-      if self._idPress is not None:
-        self._idPress=self.canvas.mpl_disconnect(self._idPress)
-        self.mode=''
-
-      if self._idRelease is not None:
-        self._idRelease=self.canvas.mpl_disconnect(self._idRelease)
-        self.mode=''
-
-      if  self._active:
-        self._idPress=self.canvas.mpl_connect('button_press_event', self.press_zoom)
-        self._idRelease=self.canvas.mpl_connect('button_release_event', self.release_zoom)
-        self.mode='zoom rect'
-        self.canvas.widgetlock(self)
-      else:
-        self.canvas.widgetlock.release(self)
-
-      for a in self.canvas.figure.get_axes():
-        a.set_navigate_mode(self._active)
-
-      self.set_message(self.mode)
 
   def print_figure(self):
     '''
@@ -234,7 +164,7 @@ class NavigationToolbar(NavigationToolbar2QT):
             filters.append(filter_)
       filters=';;'.join(filters)
 
-      fname=QtWidgets.QFileDialog.getSaveFileName(self, u"Choose a filename to save to", start, filters)
+      fname=QtWidgets.QFileDialog.getSaveFileName(self, u"Choose a filename to save to", start, filters)[0]
       if fname:
           try:
               self.canvas.print_figure(str(fname))

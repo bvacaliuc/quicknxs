@@ -230,6 +230,10 @@ class MainGUI(QtWidgets.QMainWindow):
       from .ipython_widget import IPythonConsoleQtWidget
     except ImportError:
       info('IPython is not installed, cannot open console.')
+      QtWidgets.QMessageBox.information(
+          self, 'IPython Console',
+          'The IPython console requires the ipython and qtconsole packages.\n'
+          'Install them with: pixi add ipython qtconsole ipykernel')
       return
     self.ipython=IPythonConsoleQtWidget(self)
     self.ui.plotTab.addTab(self.ipython, 'IPython')
@@ -1205,7 +1209,7 @@ class MainGUI(QtWidgets.QMainWindow):
       filter_=u'Event Nexus (*event.nxs);;All (*.*)'
     filenames=QtWidgets.QFileDialog.getOpenFileNames(self, u'Open NXS file...',
                                                directory=self.active_folder,
-                                               filter=filter_)
+                                               filter=filter_)[0]
     if filenames:
       filenames=[str(f) for f in filenames]
       self.fileOpenSum(filenames)
@@ -1266,7 +1270,7 @@ class MainGUI(QtWidgets.QMainWindow):
     if filename is None and self._pending_header is None:
       filename=QtWidgets.QFileDialog.getOpenFileName(self, u'Create extraction from file header...',
                                                directory=paths.results,
-                                               filter=u'Extracted Dataset (*.dat)')
+                                               filter=u'Extracted Dataset (*.dat)')[0]
     if filename==u'':
       return
 
@@ -1986,6 +1990,7 @@ class MainGUI(QtWidgets.QMainWindow):
       return
     name=QtWidgets.QFileDialog.getSaveFileName(parent=self, caption=u'Select export file name',
                                      filter='ASCII files (*.dat);;All files (*.*)')
+    name=name[0]
     if name!='':
       name=str(name)
     else:
@@ -2436,7 +2441,7 @@ Do you want to try to restore the working reduction list?""",
     filter_=u'Reflectivity (*.dat);;All (*.*)'
     names=QtWidgets.QFileDialog.getOpenFileNames(self, u'Select reflectivity file(s)...',
                                              directory=paths.results,
-                                             filter=filter_)
+                                             filter=filter_)[0]
     if names:
       filtered_points=[]
       for name in names:

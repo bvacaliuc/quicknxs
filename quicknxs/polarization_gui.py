@@ -292,6 +292,7 @@ class PolarizationDialog(QDialog):
   def exportPolarizationParameters(self):
     name=QFileDialog.getSaveFileName(parent=self, caption=u'Select export file prefix',
                                      filter='ASCII files (*.dat);;All files (*.*)')
+    name=name[0]
     if name!='':
       name=str(name)
       if name.endswith('.dat'):
@@ -318,6 +319,7 @@ class PolarizationDialog(QDialog):
   def exportFR(self):
     name=QFileDialog.getSaveFileName(parent=self, caption=u'Select export file name',
                                      filter='ASCII files (*.dat);;All files (*.*)')
+    name=name[0]
     if name!='':
       name=str(name)
       if not name.endswith('.dat'):
@@ -362,6 +364,7 @@ class PolarizationDialog(QDialog):
     '''
     name=QFileDialog.getSaveFileName(parent=self, caption=u'Select export file name',
                                      filter='ASCII files (*.dat);;All files (*.*)')
+    name=name[0]
     if name!='':
       name=str(name)
     else:
