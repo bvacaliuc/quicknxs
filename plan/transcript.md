@@ -269,3 +269,9 @@ You are working on the quicknxsv1 project in the feature/pixi_py3_qt5 branch. Re
 ### Contents of TODO.md
 
 The contents of the `TODO.md` file are referenced in the prompt are available in [prompt-11-todo.md](prompt-11-todo.md).
+
+### Follow on to the prompt
+
+Claude developed a `PLAN.md` file in the project directory this time ( *previously, Claude would create its plans in ~/.claude/plans/* ).  The plan had an option on Issue C.  Use this prompt to adjust the plan:
+
+adjust the plan for 'Issue C: IPython Console Not Available'. Select 'Option 1 - Add IPython as a dependency' and update.
