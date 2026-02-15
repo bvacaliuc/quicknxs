@@ -5,7 +5,7 @@ import unittest
 import tempfile
 
 from numpy import float64, float32, loadtxt, array, testing
-from quicknxs.qreduce import NXSData, MRDataset, Reflectivity
+from quicknxs.qreduce import NXSData, MRDataset, Reflectivity, GISANS
 from quicknxs.qio import HeaderCreator, HeaderParser, Exporter
 
 TEST_DATASET=os.path.join(os.path.dirname(os.path.abspath(__file__)), u'test1_histo.nxs')
@@ -255,5 +255,25 @@ class ExportTest(FakeData, unittest.TestCase):
     testing.assert_allclose(rdata[:, 2], tdata[:, 2], rtol=1e-6, atol=1e-20, verbose=True)
     os.remove(expfile)
 
+class GISANSTest(FakeData, unittest.TestCase):
+  def test_gisans_no_redundant_arrays(self):
+    """GISANS objects should not retain Iraw, dIraw, I, or dI after construction."""
+    gisans=GISANS(self.ds[0])
+    # These should have been deleted to save memory
+    self.assertFalse(hasattr(gisans, 'Iraw'))
+    self.assertFalse(hasattr(gisans, 'dIraw'))
+    self.assertFalse(hasattr(gisans, 'I'))
+    self.assertFalse(hasattr(gisans, 'dI'))
+    # These should still exist
+    self.assertTrue(hasattr(gisans, 'S'))
+    self.assertTrue(hasattr(gisans, 'dS'))
+    self.assertTrue(hasattr(gisans, 'Qy'))
+    self.assertTrue(hasattr(gisans, 'Qz'))
+    self.assertTrue(hasattr(gisans, 'SGrid'))
+    self.assertTrue(hasattr(gisans, 'QyGrid'))
+    self.assertTrue(hasattr(gisans, 'QzGrid'))
+
+
 suite=unittest.TestLoader().loadTestsFromTestCase(HeaderTest)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ExportTest))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(GISANSTest))

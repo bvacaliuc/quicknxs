@@ -78,7 +78,7 @@ def main():
         'exportOffSpecular': True,
         'exportOffSpecularCorr': True,
         'exportOffSpecularSmoothed': True,  # requires SmoothDialog (GUI)
-        'exportGISANS': True,               # requires GISANSDialog (GUI)
+        'exportGISANS': False,              # requires GISANSDialog (GUI)
         'export_SA': True,
         'emailSend': False,
         'multiAscii': True,

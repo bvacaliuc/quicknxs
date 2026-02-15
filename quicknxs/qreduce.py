@@ -2072,9 +2072,9 @@ class GISANS(Reflectivity):
     # calculate ROI intensities and normalize by number of points
     P0=len(self.tof)-self.options['P0']
     PN=self.options['PN']
-    Idata=data[dataset.active_area_x[0]:dataset.active_area_x[1],
-               dataset.active_area_y[0]:dataset.active_area_y[1],
-               PN:P0]
+    Idata=array(data[dataset.active_area_x[0]:dataset.active_area_x[1],
+                     dataset.active_area_y[0]:dataset.active_area_y[1],
+                     PN:P0])
     # calculate reciprocal space, incident and outgoing perpendicular wave vectors
     self.Qx=k[newaxis, newaxis, PN:P0]*(cos(phi)*cos(af)[:, newaxis]-cos(ai)[:, newaxis])[:, :, newaxis]
     self.Qy=k[newaxis, newaxis, PN:P0]*(sin(phi)*cos(af)[:, newaxis])[:, :, newaxis]
@@ -2082,15 +2082,12 @@ class GISANS(Reflectivity):
     self.pf=k[newaxis, newaxis, PN:P0]*((0*phi)+sin(af)[:, newaxis])[:, :, newaxis]
     self.Qz=self.pi+self.pf
 
-    self.Iraw=Idata
-    self.dIraw=sqrt(self.Iraw)
-    # normalize data by width in y and multiply scaling factor
-    self.I=self.Iraw*scale
-    self.dI=self.dIraw*scale
+    # compute S and dS directly from Idata, avoiding redundant intermediate arrays
+    self.S=Idata*scale
+    self.dS=sqrt(Idata)*scale
+    del Idata
     debug("Intensity scale is %s"%(scale))
 
-    self.S=array(self.I)
-    self.dS=array(self.dI)
     if self.options['normalization']:
       norm=self.options['normalization']
       debug("Performing normalization from %s"%norm)
@@ -2113,11 +2110,7 @@ class GISANS(Reflectivity):
       for fnt in fast_n_tof[1:]:
         fresult&=(tof_edges[1:]<fnt)|(tof_edges[:-1]>fnt)
       fidx=where(fresult)[0]
-      # apply filtering to all arrays
-      self.Iraw=self.Iraw[:, :, fidx]
-      self.dIraw=self.dIraw[:, :, fidx]
-      self.I=self.I[:, :, fidx]
-      self.dI=self.dI[:, :, fidx]
+      # apply filtering to remaining arrays
       self.S=self.S[:, :, fidx]
       self.dS=self.dS[:, :, fidx]
       self.Qx=self.Qx[:, :, fidx]

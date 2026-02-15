@@ -32,7 +32,7 @@ from .mplwidget import MPLWidget
 from .plot_dialog import Ui_Dialog as UiPlot
 from .reduce_dialog import Ui_Dialog as UiReduction
 from .smooth_dialog import Ui_Dialog as UiSmooth
-from .qreduce import GISANS
+from .qreduce import GISANS, MRDataset
 from .qio import Exporter
 from .decorators import log_call, log_output
 from . import genx_data
@@ -168,7 +168,8 @@ class Reducer(object):
     '''
       Extract the GISANS data for all datasets.
     '''
-    output_data=dict([(channel, []) for channel in self.channels])
+    # For the preview dialog, only create GISANS objects for the first channel
+    preview_data=[]
     for refli in self.refls:
       opts=dict(refli.options)
       opts['gisans_no_DP']=False
@@ -176,39 +177,48 @@ class Reducer(object):
       opts['PN']=0
       index=opts['number']
       fdata=self.exporter.raw_data[index]
-      for channel in self.channels:
-        gisans=GISANS(fdata[channel], **opts)
-        output_data[channel].append(gisans)
-    dia=GISANSDialog(self._parent_window, output_data[self.channels[0]])
+      gisans=GISANS(fdata[self.channels[0]], **opts)
+      preview_data.append(gisans)
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
+    dia=GISANSDialog(self._parent_window, preview_data)
     result=dia.exec_()
     lmin=dia.ui.lambdaMin.value()
     lmax=dia.ui.lambdaMax.value()
     gridQy=dia.ui.gridQy.value()
     gridQz=dia.ui.gridQz.value()
     nslices=dia.ui.numberSlices.value()
-    dia.destroy()
     use_pf=dia.ui.usePf.isChecked()
+    no_dp=dia.ui.lambdaNoDirectPulse.isChecked()
+    dia.destroy()
+    del preview_data
     app=QApplication.instance()
     if result==QDialog.Accepted:
-      if not dia.ui.lambdaNoDirectPulse.isChecked():
-        output_data=dict([(channel, []) for channel in self.channels])
+      # Process one channel at a time to limit peak memory
+      output_data=dict([(channel, []) for channel in self.channels])
+      for channel in self.channels:
+        channel_datasets=[]
         for refli in self.refls:
           opts=dict(refli.options)
-          opts['gisans_no_DP']=dia.ui.lambdaNoDirectPulse.isChecked()
+          opts['gisans_no_DP']=no_dp
+          if not no_dp:
+            opts['P0']=0
+            opts['PN']=0
           index=opts['number']
           fdata=self.exporter.raw_data[index]
-          for channel in self.channels:
-            gisans=GISANS(fdata[channel], **opts)
-            output_data[channel].append(gisans)
-      for channel in self.channels:
-        thread=GISANSCalculation(output_data[channel], lmin, lmax, nslices, gridQy, gridQz,
+          gisans=GISANS(fdata[channel], **opts)
+          channel_datasets.append(gisans)
+        MRDataset._cached_data=None
+        MRDataset._cached_object=None
+        thread=GISANSCalculation(channel_datasets, lmin, lmax, nslices, gridQy, gridQz,
                                  use_pf=use_pf)
         thread.start()
         while not thread.isFinished():
           app.processEvents()
-        output_data[channel]=[]
+        del channel_datasets
         for item in thread.results:
           output_data[channel].append(array([item[1], item[2], item[0], item[5]]).transpose(1, 2, 0))
+        del thread
       for i in range(nslices):
         output=dict([(channel, [output_data[channel][i]]) for channel in self.channels])
         output['column_units']=['A^-1', 'A^-1', 'a.u.', 'a.u.']
