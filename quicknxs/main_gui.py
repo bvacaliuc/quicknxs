@@ -237,6 +237,7 @@ class MainGUI(QtWidgets.QMainWindow):
       return
     self.ipython=IPythonConsoleQtWidget(self)
     self.ui.plotTab.addTab(self.ipython, 'IPython')
+    self.ui.plotTab.setCurrentIndex(self.ui.plotTab.count()-1)
     self.ipython.namespace['data']=self.active_data
     # exceptions within GUI thread, must be installed by method within that process
     self.trigger('_install_exc')
@@ -266,7 +267,7 @@ class MainGUI(QtWidgets.QMainWindow):
     sys.excepthook=excepthook_overwrite
     debug('Installed excepthook overwrite')
     # set matplotlib fonts back to default
-    from mplwidget import _set_default_rc
+    from .mplwidget import _set_default_rc
     _set_default_rc()
 
   @log_input

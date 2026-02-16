@@ -283,6 +283,12 @@ class MainGUIIPythonFault(unittest.TestCase):
     from quicknxs.ipython_widget import IPythonConsoleQtWidget
     self.assertIsNotNone(IPythonConsoleQtWidget)
 
+  def test_run_ipython_starts_console(self):
+    """run_ipython() should create ipython widget and switch to its tab."""
+    self.gui.run_ipython()
+    self.assertIsNotNone(self.gui.ipython)
+    self.assertEqual(self.gui.ui.plotTab.currentWidget(), self.gui.ipython)
+
   def test_run_ipython_fallback_on_import_error(self):
     """run_ipython() should show QMessageBox when import fails."""
     with patch('quicknxs.main_gui.MainGUI.run_ipython',
