@@ -6,6 +6,7 @@ Module including main GUI class with all signal handling and plot creation.
 import os
 import sys
 from glob import glob
+from time import time
 from numpy import where, pi, newaxis, log10, savetxt, array
 from matplotlib.lines import Line2D
 from qtpy import QtWidgets, QtGui, QtCore
@@ -80,6 +81,7 @@ class MainGUI(QtWidgets.QMainWindow):
   # threads
   _gisansThread=None
   _pending_header=None
+  _last_event_update=0.0
   # keep the direct beam selection for one file here
   _norm_selected=None
   # plot line storages
@@ -2217,6 +2219,13 @@ class MainGUI(QtWidgets.QMainWindow):
     self.eventProgress.setValue(int(progress*100))
     # make sure the update is shown in the interface
     self.eventProgress.update()
+    # pump the Qt event loop so the UI stays responsive during multi-file loading
+    now = time()
+    if now - self._last_event_update > 0.2:
+      self._last_event_update = now
+      app = QtWidgets.QApplication.instance()
+      if app:
+        app.processEvents()
 
 ####### Calculations and data treatment
 

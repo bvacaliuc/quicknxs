@@ -342,6 +342,54 @@ class MainGUIHelpAboutFault(unittest.TestCase):
     self.assertIn('Qt', captured['text'])
 
 
+class UpdateEventReadoutThrottle(unittest.TestCase):
+  """Verify updateEventReadout() calls processEvents() with throttling."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_processEvents_called_at_least_once(self):
+    """updateEventReadout() must call processEvents() to keep UI responsive."""
+    call_count=[0]
+    orig=QApplication.processEvents
+    def counting_processEvents():
+      call_count[0]+=1
+      orig()
+    with patch.object(QApplication, 'processEvents', side_effect=counting_processEvents):
+      # _last_event_update starts at 0.0, so first call fires immediately
+      self.gui.updateEventReadout(0.5)
+    self.assertGreater(call_count[0], 0,
+      'processEvents() must be called at least once to keep UI responsive')
+
+  def test_throttle_limits_processEvents_calls(self):
+    """Rapid updateEventReadout() calls must not call processEvents() every time."""
+    call_count=[0]
+    orig=QApplication.processEvents
+    def counting_processEvents():
+      call_count[0]+=1
+      orig()
+    with patch.object(QApplication, 'processEvents', side_effect=counting_processEvents):
+      for i in range(20):
+        self.gui.updateEventReadout(i / 20.0)
+    # With 200 ms throttle and near-instant calls, processEvents should fire far fewer than 20 times
+    self.assertLess(call_count[0], 20,
+      'processEvents() should be throttled to avoid UI overhead on each callback')
+
+
 class MainGUIProgressDialogFix(unittest.TestCase):
   """Verify Bug 5 fix: ProgressDialog.progress() accepts float values."""
 
@@ -1200,6 +1248,7 @@ suite=unittest.TestLoader().loadTestsFromTestCase(MainGUIGeometryRestore)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIGeneral))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIActions))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIProgressCallback))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(UpdateEventReadoutThrottle))
 # Bug verification tests
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIDelayedTrigger))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIHeaderParserFault))
