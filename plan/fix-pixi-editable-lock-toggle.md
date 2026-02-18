@@ -95,4 +95,4 @@ pixi run python -c "import quicknxs; print(quicknxs.__file__)"
 - If analysis.sns.gov cannot be upgraded (e.g. managed environment), the only
   alternative is to treat `pixi.lock` as system-generated and exclude the
   `editable` field changes from commit review conventions.
-- GitHub issue: https://github.com/bvacaliuc/quicknxs/issues/TBD
+- GitHub issue: https://github.com/bvacaliuc/quicknxs/issues/1
