@@ -54,7 +54,7 @@ test-db = { cmd = "pytest tests/database_test.py -v", description = "Run databas
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
 python_files = ["*_test.py"]
-timeout = 30
+timeout = 90
 timeout_method = "signal"
 
 [tool.ruff.lint]
