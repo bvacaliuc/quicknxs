@@ -374,4 +374,11 @@ Which contains tokens, thus leaking credentials to other users on the system.  A
 
 Nice job! The last work created a script in /tmp that included a token and was readable by other users, thus leaking credentials. Please write instructions in the ./CLAUDE.md to enusre that future sessions that need to create temporary files do so securely and are not readable by other users on the system.
 
+## Prompt bug/load-extraction-hangs 1
+
+In the quicknxsv1 project, when using the GUI and performing a 'File->Load Extraction', the UI hangs. Please investigate and suggest a repair.
+
+### Retrospective
+
+The bug persists, so there is some deeper issue that is not visible to the automated testing. The bug/load-extraction-hangs branch is setup to investigate this further.
 
