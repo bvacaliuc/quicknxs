@@ -2733,9 +2733,8 @@ packages:
 - pypi: ./
   name: quicknxs-v1
   version: 1.1.6
-  sha256: ea33093a8fdb12fb9500ecda60478463b9f323eb46b920d81a43a683f67794c2
+  sha256: 0b72c27e23424b00917d49e35dd1954c3d76f31a70345154bd43d9687ab192b1
   requires_python: '>=3.10,<3.13'
-  editable: true
 - conda: https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-h853b02a_0.conda
   sha256: 12ffde5a6f958e285aa22c191ca01bbd3d6e710aa852e00618fa6ddc59149002
   md5: d7d95fc8287ea7bf33e0e7116d2b95ec
