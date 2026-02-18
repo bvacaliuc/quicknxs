@@ -12,6 +12,45 @@ You are able to direct agent teams who are expert system programmers and softwar
 You will use best practices of python syntax and code development and will design tests to verify all code contributions.
 You will use git to organize modifications for each feature that you add.
 
+## Secure Temporary Files
+
+When a task requires writing a temporary script or data file (e.g. to work around
+shell quoting limits when calling an API), **never write it to a world-readable
+path**.  `/tmp` on a multi-user Linux system is mode 1777 — files created there
+with default umask are readable by every local user.
+
+**Always create temporary files with mode 600 (owner read/write only):**
+
+```python
+import os, tempfile
+
+# Preferred: tempfile.NamedTemporaryFile — mode 600 by default
+with tempfile.NamedTemporaryFile('w', suffix='.py', delete=False) as fh:
+    fh.write(script_content)
+    tmp_path = fh.name
+try:
+    # use tmp_path ...
+finally:
+    os.unlink(tmp_path)   # always clean up
+```
+
+Or with the Write tool followed by an immediate chmod:
+
+```bash
+# After writing the file, restrict permissions immediately
+chmod 600 /path/to/tempfile
+```
+
+**Additional rules:**
+- Never embed credentials (tokens, passwords, keys) in files under `plan/`,
+  `tests/`, or any other committed path.  Use environment variables or
+  `~/.netrc` / `~/.config` files (also mode 600) instead.
+- Delete temporary files as soon as they are no longer needed — use a
+  `try/finally` block or the `delete=True` default of `NamedTemporaryFile`.
+- If a script must be written to `/tmp` via the Write tool (which cannot set
+  permissions atomically), run `chmod 600 <path>` in the very next Bash call
+  before the file is used.
+
 ## Diagnosing Memory Faults (OOM / SIGKILL / Exit 137)
 
 When investigating crashes caused by memory exhaustion (exit code 137 = SIGKILL from OOM killer):
