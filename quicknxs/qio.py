@@ -371,7 +371,8 @@ class HeaderParser(object):
 
   @staticmethod
   def read_file_header(fname):
-    text=open(fname, 'rb').read().decode('utf8')
+    with open(fname, 'rb') as _fh:
+      text=_fh.read().decode('utf8')
     header=[]
     for line in text.splitlines():
       if not line.startswith('#'):
@@ -835,50 +836,17 @@ class Exporter(object):
                        .replace('{type}', 'dat').replace('{numbers}', self.ind_str)
           if not check_exists(output):
             continue
-          of=open(output, 'wb')
-          # write the file header
-          of.write((self.file_header.as_comments()%{
-                                'datatype': key,
-                                'indices': self.ind_str,
-                                'states': channel,
-                                }).encode('utf8'))
-          of.write((self.file_header.get_data_comment(output_data['column_names'],
-                                                     output_data['column_units'])
-                    ).encode('utf8'))
-          # write the data
-          if type(value) is not list:
-            np.savetxt(of, value, delimiter='\t', fmt='%-18e')
-          else:
-            for filemap in value:
-              # separate first dimension steps by empty line
-              for scan in filemap:
-                np.savetxt(of, scan, delimiter='\t', fmt='%-18e')
-                of.write(u'\n'.encode('utf8'))
-            of.write(u'\n\n'.encode('utf8'))
-          of.close()
-          self.exported_files_all.append(output);self.exported_files_data.append(output)
-      if combined_ascii:
-        debug('Export combined_ascii')
-        output=ofname.replace('{item}', key).replace('{state}', 'all')\
-                     .replace('{instrument}', instrument.NAME)\
-                     .replace('{type}', 'dat').replace('{numbers}', self.ind_str)
-        if check_exists(output):
-          of=open(output, 'wb')
-          # write the file header
-          of.write((self.file_header.as_comments()%{
-                                'datatype': key,
-                                'indices': self.ind_str,
-                                'states': u", ".join(self.channels),
-                                }).encode('utf8'))
-          # write all channel data separated by three empty lines and one comment
-          for channel in output_data.keys():
-            if channel in ['column_names', 'column_units', 'ki_max']:
-              continue
-            of.write((u'# Start of channel %s\n'%channel).encode('utf8'))
+          with open(output, 'wb') as of:
+            # write the file header
+            of.write((self.file_header.as_comments()%{
+                                  'datatype': key,
+                                  'indices': self.ind_str,
+                                  'states': channel,
+                                  }).encode('utf8'))
             of.write((self.file_header.get_data_comment(output_data['column_names'],
                                                        output_data['column_units'])
                       ).encode('utf8'))
-            value=output_data[channel]
+            # write the data
             if type(value) is not list:
               np.savetxt(of, value, delimiter='\t', fmt='%-18e')
             else:
@@ -888,8 +856,39 @@ class Exporter(object):
                   np.savetxt(of, scan, delimiter='\t', fmt='%-18e')
                   of.write(u'\n'.encode('utf8'))
               of.write(u'\n\n'.encode('utf8'))
-            of.write((u'# End of channel %s\n\n\n'%channel).encode('utf8'))
-          of.close()
+          self.exported_files_all.append(output);self.exported_files_data.append(output)
+      if combined_ascii:
+        debug('Export combined_ascii')
+        output=ofname.replace('{item}', key).replace('{state}', 'all')\
+                     .replace('{instrument}', instrument.NAME)\
+                     .replace('{type}', 'dat').replace('{numbers}', self.ind_str)
+        if check_exists(output):
+          with open(output, 'wb') as of:
+            # write the file header
+            of.write((self.file_header.as_comments()%{
+                                  'datatype': key,
+                                  'indices': self.ind_str,
+                                  'states': u", ".join(self.channels),
+                                  }).encode('utf8'))
+            # write all channel data separated by three empty lines and one comment
+            for channel in output_data.keys():
+              if channel in ['column_names', 'column_units', 'ki_max']:
+                continue
+              of.write((u'# Start of channel %s\n'%channel).encode('utf8'))
+              of.write((self.file_header.get_data_comment(output_data['column_names'],
+                                                         output_data['column_units'])
+                        ).encode('utf8'))
+              value=output_data[channel]
+              if type(value) is not list:
+                np.savetxt(of, value, delimiter='\t', fmt='%-18e')
+              else:
+                for filemap in value:
+                  # separate first dimension steps by empty line
+                  for scan in filemap:
+                    np.savetxt(of, scan, delimiter='\t', fmt='%-18e')
+                    of.write(u'\n'.encode('utf8'))
+                of.write(u'\n\n'.encode('utf8'))
+              of.write((u'# End of channel %s\n\n\n'%channel).encode('utf8'))
           self.exported_files_all.append(output);self.exported_files_data.append(output)
     if matlab_data:
       debug('Export matlab')
@@ -975,7 +974,8 @@ class Exporter(object):
         plotlines.append(output_templates.gp_line%dict(file_name=filename, channel=channel, index=i+1))
       params['plot_lines']=output_templates.GP_SEP.join(plotlines)
       script=output_templates.gp_template%params
-      open(output, 'wb').write(self.replace_gp(script).encode('ISO-8859-1', 'ignore'))
+      with open(output, 'wb') as _fh:
+        _fh.write(self.replace_gp(script).encode('ISO-8859-1', 'ignore'))
     else:
       # 3D plot
       if 'ki_max' in output_data:
@@ -1045,7 +1045,8 @@ class Exporter(object):
         plotlines+=output_templates.GP_SEP_3D%channel+output_templates.gp_line_3D%line_params
       params['plot_lines']=plotlines
       script=output_templates.gp_template_3D%params
-      open(output, 'wb').write(self.replace_gp(script).encode('ISO-8859-1', 'ignore'))
+      with open(output, 'wb') as _fh:
+        _fh.write(self.replace_gp(script).encode('ISO-8859-1', 'ignore'))
     self.exported_files_all.append(output)
     try:
       subprocess.call(['gnuplot', output], cwd=directory, shell=False,

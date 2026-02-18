@@ -169,7 +169,8 @@ class PointPicker(QDialog):
     fpath, fname=path.split(self.origin_file)
     pre, post=fname.rsplit('_', 1)
     outfile=path.join(fpath, pre+'_filtered_'+post)
-    original_lines=open(self.origin_file, 'r').readlines()
+    with open(self.origin_file, 'r') as _fh:
+      original_lines=_fh.readlines()
     output=open(outfile, 'w')
     # collect indices of filtered regions
     reg=self.plot_region
@@ -190,7 +191,8 @@ class PointPicker(QDialog):
     value=np.array([self.Qz[reg], self.R[reg], self.dR[reg], self.dQz[reg], self.ai[reg]])
     if sys.version_info[0]>2:
       output.close()
-      outbytes=open(outfile, 'rb').read()
+      with open(outfile, 'rb') as _fh:
+        outbytes=_fh.read()
       output=open(outfile, 'wb')
       output.write(outbytes)
     np.savetxt(output, value.T, delimiter='\t', fmt='%-18e')

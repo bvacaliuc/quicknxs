@@ -667,7 +667,8 @@ class Base:
             # explicitely close the temporary file
             temp_files[i].close()
         self.commit()
-        # reset deleted rows file
+        # reset deleted rows file (close the old handle before replacing)
+        self._del_rows.close()
         self._del_rows = DeletedRowsFile(self.name,"__del_rows__").create()
 
     def select(self,names=None,request=None,**args):

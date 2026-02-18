@@ -89,7 +89,8 @@ def check_runstate():
   Check for running application by this user.
   '''
   if os.path.exists(paths.STATE_FILE):
-    pid=int(open(paths.STATE_FILE).readline().split()[-1])
+    with open(paths.STATE_FILE) as _fh:
+      pid=int(_fh.readline().split()[-1])
     running=pid_exists(pid)
     return running
   else:
@@ -232,7 +233,8 @@ class QtHandler(logging.Handler):
         msg.preamble=text
         msg.attach(MIMEText(text))
 
-        mitem=MIMEText(open(paths.LOG_FILE, 'r').read(), 'log')
+        with open(paths.LOG_FILE, 'r') as _fh:
+          mitem=MIMEText(_fh.read(), 'log')
         mitem.add_header('Content-Disposition', 'attachment', filename='debug.log')
         msg.attach(mitem)
 

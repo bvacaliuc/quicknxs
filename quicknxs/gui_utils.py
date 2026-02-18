@@ -411,15 +411,17 @@ class Reducer(object):
       # read each file, which was exported and attach it to the mail
       for item in exported_files:
         try:
+          with open(item, 'rb') as _fh:
+            _data=_fh.read()
           if item.endswith('.png'):
-            mitem=MIMEImage(open(item, 'rb').read(), 'png')
+            mitem=MIMEImage(_data, 'png')
           elif item.endswith('.pdf'):
-            mitem=MIMEText(open(item, 'rb').read(), 'pdf')
+            mitem=MIMEText(_data, 'pdf')
           elif item.endswith('.dat') or item.endswith('.gp'):
-            mitem=MIMEText(open(item, 'rb').read())
+            mitem=MIMEText(_data)
           else:
             mitem=MIMEBase('application', item[-3:])
-            mitem.set_payload(open(item, 'rb').read())
+            mitem.set_payload(_data)
             encoders.encode_base64(mitem)
         except:
           continue

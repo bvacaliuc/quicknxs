@@ -63,7 +63,8 @@ def read_defaults(base):
     from . import buzhug_files
     defaults = dict([(f,None) for f in base.field_names[2:]])
     if os.path.exists(os.path.join(base.name,"__defaults__")):
-        defs = open(os.path.join(base.name,"__defaults__"),"rb").read()
+        with open(os.path.join(base.name,"__defaults__"),"rb") as _fh:
+            defs = _fh.read()
         ix = 0
         f_name = b""
         while ix<len(defs):

@@ -56,6 +56,16 @@ testpaths = ["tests/"]
 python_files = ["*_test.py"]
 timeout = 90
 timeout_method = "signal"
+filterwarnings = [
+  # Treat all warnings as errors so future code cannot introduce new warnings silently.
+  "error",
+  # numpy exposes a `test` attribute (a PytestTester object, not a function); pytest
+  # tries to collect it during module scanning and emits this harmless false-positive.
+  "ignore::pytest.PytestCollectionWarning",
+  # ipykernel 7.x warns that its own InProcessKernel.do_history is not async.
+  # This is an upstream bug in ipykernel itself; it is not actionable from our code.
+  "ignore::PendingDeprecationWarning:ipykernel",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]

@@ -45,7 +45,8 @@ class DatabaseWidget(QWidget):
       to_=os.path.join(tmp_db, filename)
       from_=os.path.join(config.database_file, filename)
       debug(u'%s -> %s'%(from_, to_))
-      open(to_, 'wb').write(open(from_, 'rb').read())
+      with open(from_, 'rb') as _src, open(to_, 'wb') as _dst:
+        _dst.write(_src.read())
     config.temp.database_file=tmp_db
 
   def buildTable(self):

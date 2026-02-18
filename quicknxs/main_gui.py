@@ -314,7 +314,8 @@ class MainGUI(QtWidgets.QMainWindow):
     Compile a python file and extract script information to be used.
     '''
     debug(u'Reding script file %s.'%sfile)
-    stxt=open(sfile, 'r').read()
+    with open(sfile, 'r') as _fh:
+      stxt=_fh.read()
     try:
       code=compile(stxt, sfile, 'exec')
     except:
@@ -1277,7 +1278,8 @@ class MainGUI(QtWidgets.QMainWindow):
 
     self.clearRefList(do_plot=False)
     if self._pending_header is None:
-      text=open(filename, 'rb').read().decode('utf8')
+      with open(filename, 'rb') as _fh:
+        text=_fh.read().decode('utf8')
       header=[]
       for line in text.splitlines():
         if not line.startswith('#'):
@@ -1998,20 +2000,19 @@ class MainGUI(QtWidgets.QMainWindow):
       return
     refl=self.refl
     header=HeaderCreator([refl])
-    f=open(name, 'wb')
-    f.write((header.as_comments()%{'datatype': 'RawData',
-                                  'indices': refl.options['number'],
-                                  'states': self.active_channel}).encode('utf8'))
-    f.write(header.get_data_comment([u'λ', u'I', u'dI', u'I_norm', u'dI_norm', u'BG', u'dBG',
-                                     u'(I-BG)', u'd(I-BG)'],
-                                    [u'Å', u'cts', u'cts',
-                                     u'cts/(pC*pix)', u'cts/(pC*pix)',
-                                     u'cts/(pC*pix)', u'cts/(pC*pix)',
-                                     u'cts/(pC*pix)', u'cts/(pC*pix)',
-                                     ]).encode('utf8'))
-    savetxt(f, array([refl.lamda, refl.Iraw, refl.dIraw, refl.I, refl.dI,
-                      refl.BG, refl.dBG, refl.Rraw, refl.dRraw]).T, delimiter='\t', fmt='%-18e')
-    f.close()
+    with open(name, 'wb') as f:
+      f.write((header.as_comments()%{'datatype': 'RawData',
+                                    'indices': refl.options['number'],
+                                    'states': self.active_channel}).encode('utf8'))
+      f.write(header.get_data_comment([u'λ', u'I', u'dI', u'I_norm', u'dI_norm', u'BG', u'dBG',
+                                       u'(I-BG)', u'd(I-BG)'],
+                                      [u'Å', u'cts', u'cts',
+                                       u'cts/(pC*pix)', u'cts/(pC*pix)',
+                                       u'cts/(pC*pix)', u'cts/(pC*pix)',
+                                       u'cts/(pC*pix)', u'cts/(pC*pix)',
+                                       ]).encode('utf8'))
+      savetxt(f, array([refl.lamda, refl.Iraw, refl.dIraw, refl.I, refl.dI,
+                        refl.BG, refl.dBG, refl.Rraw, refl.dRraw]).T, delimiter='\t', fmt='%-18e')
 
   def plotMouseEvent(self, event):
     '''
@@ -2220,11 +2221,10 @@ class MainGUI(QtWidgets.QMainWindow):
 ####### Calculations and data treatment
 
   def updateStateFile(self, ignore):
-    sfile=open(paths.STATE_FILE, 'wb')
-    sfile.write((u'Running PID %i\n'%os.getpid()).encode('utf8'))
-    if len(self.reduction_list)>0:
-      sfile.write(str(HeaderCreator(self.reduction_list)).encode('utf8'))
-    sfile.close()
+    with open(paths.STATE_FILE, 'wb') as sfile:
+      sfile.write((u'Running PID %i\n'%os.getpid()).encode('utf8'))
+      if len(self.reduction_list)>0:
+        sfile.write(str(HeaderCreator(self.reduction_list)).encode('utf8'))
 
   @log_call
   def calcReflParams(self):
@@ -2301,9 +2301,11 @@ this could indicate a previous crash.
 Do you want to try to restore the working reduction list?""",
           buttons=QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No)
       if _result==QtWidgets.QMessageBox.Yes:
-        self._pending_header=open(paths.STATE_FILE, 'r').read()
+        with open(paths.STATE_FILE, 'r') as _fh:
+          self._pending_header=_fh.read()
         QtCore.QTimer.singleShot(1500, self.loadExtraction)
-    open(paths.STATE_FILE, 'w').write('Running PID %i\n'%os.getpid())
+    with open(paths.STATE_FILE, 'w') as _fh:
+      _fh.write('Running PID %i\n'%os.getpid())
     # read window settings
     debug('Applying GUI configuration')
     if gui.geometry is not None:
@@ -2446,7 +2448,8 @@ Do you want to try to restore the working reduction list?""",
     if names:
       filtered_points=[]
       for name in names:
-        text=open(name, 'rb').read().decode('utf8')
+        with open(name, 'rb') as _fh:
+          text=_fh.read().decode('utf8')
         header=[]
         for line in text.splitlines():
           if not line.startswith('#'):

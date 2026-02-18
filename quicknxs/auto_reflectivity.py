@@ -127,7 +127,8 @@ class FileCom(Thread):
         continue
 
   def clear_com(self):
-    open(self.bind_path, 'w').write('\n')
+    with open(self.bind_path, 'w') as _fh:
+      _fh.write('\n')
     self.last_com=os.path.getmtime(self.bind_path)
     try:
       os.chmod(self.bind_path, 0o666)
@@ -266,7 +267,8 @@ class ReflectivityBuilder(Thread):
     if pid != 0:
       logging.debug('Daemon spawned with PID %i'%pid)
       try:
-        open(cls.PID_FILE, 'w').write(str(pid)+'\n')
+        with open(cls.PID_FILE, 'w') as _fh:
+          _fh.write(str(pid)+'\n')
       except:
         logging.warn('Could not store pid %i in file:', exc_info=True)
       return
@@ -431,7 +433,8 @@ class ReflectivityBuilder(Thread):
       title='+'.join([r[0].options['number'] for r in self.reflectivity_items])
       title+='+LiveData'
       self.plot_reflectivity(data, instrument.AUTOREFL_LIVE_IMAGE, title, False)
-      open(instrument.AUTOREFL_LIVE_INDEX, 'w').write('%i\n'%live_ds.number)
+      with open(instrument.AUTOREFL_LIVE_INDEX, 'w') as _fh:
+        _fh.write('%i\n'%live_ds.number)
       #------------- Plotting the current reflectivity including the live data ---------------#
 
   def check_and_plot_newfile(self):

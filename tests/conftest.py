@@ -1,4 +1,30 @@
-"""Shared test configuration for quicknxs test suite."""
+"""Shared test configuration for quicknxs test suite.
+
+Warning policy
+--------------
+The test suite runs with ``filterwarnings = ["error", ...]`` (see pyproject.toml).
+Any Python warning that is *not* explicitly suppressed will cause the test that
+triggered it to fail.
+
+How to handle a new warning:
+
+1. If the warning is from *our* code (quicknxs/*): fix the root cause.
+   Common patterns:
+   - ResourceWarning: unclosed file → use ``with open(...) as f:`` instead of
+     bare ``open(...).read()`` or ``f = open(...) / f.close()``.
+   - DeprecationWarning from a third-party API call → update to the current API.
+
+2. If the warning is from an *upstream library* and is not actionable from our
+   code, add a targeted ``filterwarnings`` entry in pyproject.toml under
+   ``[tool.pytest.ini_options]``.  Always include a comment explaining *why* the
+   warning cannot be fixed here.  Use the most specific match pattern possible,
+   e.g. ``"ignore::PendingDeprecationWarning:ipykernel"`` rather than a blanket
+   ``"ignore::PendingDeprecationWarning"``.
+
+Currently suppressed upstream warnings (see pyproject.toml for details):
+- pytest.PytestCollectionWarning  (numpy.test attribute)
+- PendingDeprecationWarning       (ipykernel do_history not async)
+"""
 
 import gc
 import os
