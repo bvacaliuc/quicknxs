@@ -383,6 +383,9 @@ class HeaderParser(object):
 
   def parse(self, callback=None):
     self.callback=callback
+    # Clear NXSData cache before loading to free memory from previously
+    # browsed files; each cached NXSData holds ~89 MB per channel.
+    NXSData._cache.clear()
     self._read_direct_beam()
     self._read_datasets()
 
@@ -486,6 +489,9 @@ class HeaderParser(object):
   def _get_dataset(self, options):
     fname=options['File']
     read_opts=dict(NXSData.DEFAULT_OPTIONS)
+    # Disable caching: each NXS file holds ~89 MB per channel; caching all
+    # files during header parsing causes unbounded memory growth → OOM.
+    read_opts['use_caching']=False
     if options['EVT_ID'] is not None:
       if not "Event Mode Options" in self.section_data:
         raise ValueError('No "Event Mode Options" section defined but EVT_ID is set')
@@ -539,6 +545,16 @@ class HeaderParser(object):
           raise ValueError('No "Advanced Background Options" section defined but BG_ID is set')
         calc_opts.update(self._bg_options[int(db['BG_ID'])-1])
       norm=Reflectivity(data[0], **calc_opts)
+      # Free large 3D/2D arrays from each channel's MRDataset.
+      # Only scalar metadata (.number, .lambda_center) is needed downstream
+      # by loadExtraction → setNorm().  Each compressed blob is ~25 MB,
+      # decompressed ~89 MB.
+      for ds in data.values():
+        ds._data_zipped=None
+        ds.xydata=None
+        ds.xtofdata=None
+      MRDataset._cached_data=None
+      MRDataset._cached_object=None
       self.norms.append(norm)
       self.norm_data.append(data)
 
@@ -561,6 +577,8 @@ class HeaderParser(object):
       calc_opts['normalization']=self.norms[int(db['DB_ID'])-1]
       refl=Reflectivity(data[0], **calc_opts)
       self.refls.append(refl)
+      # NXSData not stored; explicit del helps refcount GC free ~89 MB/channel
+      del data
 
 class Exporter(object):
   '''

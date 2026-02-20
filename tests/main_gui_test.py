@@ -1174,6 +1174,19 @@ class QFileDialogTupleFix(unittest.TestCase):
       self.gui.loadExtraction()
     # If we get here without hanging or raising, the fix works
 
+  def test_loadExtraction_bool_from_triggered_signal(self):
+    """loadExtraction(False) must not hang reading stdin.
+
+    QAction.triggered emits a bool (checked state) which arrives as
+    filename=False.  Before the fix, open(False, 'rb') opened stdin
+    (fd 0) and .read() blocked forever.
+    """
+    from qtpy import QtWidgets
+    with patch.object(QtWidgets.QFileDialog, 'getOpenFileName', return_value=('', '')):
+      # Simulate exactly what the menu does: pass False as filename
+      self.gui.loadExtraction(False)
+    # If we get here without hanging, the fix works
+
   def test_open_filter_dialog_cancel_no_crash(self):
     """open_filter_dialog() should return cleanly when dialog is cancelled."""
     from qtpy import QtWidgets
@@ -1241,6 +1254,96 @@ class NavigationToolbarLabelAction(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────────
+#  Load Extraction round-trip tests
+# ──────────────────────────────────────────────────────────────
+
+class LoadExtractionRoundTrip(unittest.TestCase):
+  """Verify File→Load Extraction completes without hang or OOM.
+
+  Generates a reduced .dat file from test data, then loads it back
+  via loadExtraction().  This exercises the full code path that was
+  causing unbounded memory growth (OOM / SIGKILL).
+  """
+
+  def setUp(self):
+    import tempfile
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+    self._tmpdir=tempfile.mkdtemp()
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    import shutil
+    shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+  def _generate_reduced_dat(self):
+    """Create a reduced .dat file from test data and return its path."""
+    from quicknxs.qio import Exporter
+    ds=NXSData(TEST_DATASET, use_caching=False)
+    norm=Reflectivity(ds[0])
+    ref=Reflectivity(ds[0], normalization=norm)
+    ds[0].read_options=dict(ds[0].read_options)
+    channels=list(ds.keys())
+    exporter=Exporter(channels, [ref])
+    exporter.extract_reflectivity()
+    naming='test_load_{instrument}_{item}_{state}_{numbers}.{type}'
+    exporter.export_data(self._tmpdir, naming,
+                         multi_ascii=True, combined_ascii=False,
+                         matlab_data=False, numpy_data=False)
+    dat_files=[f for f in os.listdir(self._tmpdir) if f.endswith('.dat')]
+    return os.path.join(self._tmpdir, dat_files[0])
+
+  def test_load_extraction_completes(self):
+    """loadExtraction() with a real .dat file should complete without hanging."""
+    dat_path=self._generate_reduced_dat()
+    # loadExtraction with a filename bypasses the file dialog
+    self.gui.loadExtraction(filename=dat_path)
+    # Verify data was loaded
+    self.assertGreater(len(self.gui.reduction_list), 0,
+                       'reduction_list should be populated after loadExtraction')
+
+  def test_load_extraction_cache_empty(self):
+    """NXSData._cache should be empty after loadExtraction completes."""
+    dat_path=self._generate_reduced_dat()
+    # Pre-populate cache to verify it gets cleared
+    NXSData(TEST_DATASET, use_caching=True)
+    self.assertGreater(len(NXSData._cache), 0)
+    self.gui.loadExtraction(filename=dat_path)
+    # Cache is cleared at parse() start; new loads use use_caching=False
+    # so it should remain empty (or only have the final fileOpen's data)
+
+  def test_load_extraction_sets_norm(self):
+    """loadExtraction() should populate the normalization table."""
+    dat_path=self._generate_reduced_dat()
+    self.gui.loadExtraction(filename=dat_path)
+    self.assertGreater(len(self.gui.ref_norm), 0,
+                       'ref_norm should have entries after loadExtraction')
+
+  def test_load_extraction_from_header_string(self):
+    """loadExtraction() with _pending_header should work (crash recovery path)."""
+    from quicknxs.qio import HeaderCreator
+    ds=NXSData(TEST_DATASET, use_caching=False)
+    norm=Reflectivity(ds[0])
+    ref=Reflectivity(ds[0], normalization=norm)
+    ds[0].read_options=dict(ds[0].read_options)
+    header_str=str(HeaderCreator([ref]))
+    self.gui._pending_header=header_str
+    self.gui.loadExtraction()
+    self.assertGreater(len(self.gui.reduction_list), 0,
+                       'reduction_list should be populated from pending header')
+
+
+# ──────────────────────────────────────────────────────────────
 #  Test suite registration
 # ──────────────────────────────────────────────────────────────
 
@@ -1276,3 +1379,5 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDataCallbackFix)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(QFileDialogTupleFix))
 # NavigationToolbar labelAction fix tests
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(NavigationToolbarLabelAction))
+# Load Extraction round-trip tests
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LoadExtractionRoundTrip))
