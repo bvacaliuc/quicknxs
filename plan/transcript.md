@@ -411,3 +411,7 @@ The hang we have been working on happens before the dialog box can open in the G
 Please determine why this is the last thing written to the debug.log and suggest a fix. Keep in mind that the file picker dialog *never opens*.
 ```
 
+## Prompt 20
+
+In the quicknxsv1 project, please add github continuous integration support. Review the capability that is present in the related project https://github.com/neutrons/quicknxs. Use established best practices for github and setup the necessary scaffolding and triggers to have selected branches automatically run the 'make test' validation setup. Be thorough. Plan your work so that it succeeds. You may use the github API to configure origin repository for the project (this is https://github.com/bvacaliuc/quicknxs). Add the necessary hooks for reporting the build status, code coverage and other appropriate metrics. If you lack the credentials to perform a task, please create issues explaining what is needed and how to do it with a list of actions. Use agent teams as necessary.
+
