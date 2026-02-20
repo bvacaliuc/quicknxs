@@ -6,6 +6,7 @@ Module including main GUI class with all signal handling and plot creation.
 import os
 import sys
 from glob import glob
+from time import time
 from numpy import where, pi, newaxis, log10, savetxt, array
 from matplotlib.lines import Line2D
 from qtpy import QtWidgets, QtGui, QtCore
@@ -80,6 +81,7 @@ class MainGUI(QtWidgets.QMainWindow):
   # threads
   _gisansThread=None
   _pending_header=None
+  _last_event_update=0.0
   # keep the direct beam selection for one file here
   _norm_selected=None
   # plot line storages
@@ -1269,6 +1271,11 @@ class MainGUI(QtWidgets.QMainWindow):
     Analyse an already extracted dataset header to reload all settings
     used for this extraction for further processing.
     '''
+    # QAction.triggered emits a bool (checked state) which arrives here as
+    # filename=False when invoked from the menu.  Treat any non-string value
+    # the same as None so the file dialog is shown.
+    if not isinstance(filename, str):
+      filename=None
     if filename is None and self._pending_header is None:
       filename=QtWidgets.QFileDialog.getOpenFileName(self, u'Create extraction from file header...',
                                                directory=paths.results,
@@ -1297,39 +1304,54 @@ class MainGUI(QtWidgets.QMainWindow):
       warning('Could not evaluate header information, probably the wrong format:\n\n',
               exc_info=True)
       return
-    info('Reloading data from information in file header...')
-    parser.parse(callback=self.updateEventReadout)
-    info('Data loaded')
-    if not parser.refls:
-      info('No datasets found in header to restore.')
-      return
-    # updating GUI and attributes
-    for norm, norm_data in zip(parser.norms, parser.norm_data):
-      self.refl=norm
-      self.active_data=norm_data
-      self.setNorm(do_plot=False, do_remove=False)
-    for refl in parser.refls:
-      self.refl=refl
-      self.addRefList(do_plot=False)
-    # update global export options
-    if 'Global Options' in parser.section_data:
-      export.sampleSize=parser.section_data['Global Options']['sample_length']
-    # set settings for the dataset added last
-    self.auto_change_active=True
-    self.ui.refXPos.setValue(refl.options['x_pos'])
-    self.ui.refXWidth.setValue(refl.options['x_width'])
-    self.ui.refYPos.setValue(refl.options['y_pos'])
-    self.ui.refYWidth.setValue(refl.options['y_width'])
-    self.ui.bgCenter.setValue(refl.options['bg_pos'])
-    self.ui.bgWidth.setValue(refl.options['bg_width'])
-    self.ui.refScale.setValue(log10(refl.options['scale']))
-    self.auto_change_active=False
-    # load the last file in the list to be in the right directory and trigger plotting
-    if type(refl.origin) is list:
-      self.fileOpenSum([item[0] for item in refl.origin])
-    else:
-      self.fileOpen(refl.origin[0])
-    self.ref_list_channels=list(self.active_data.keys())
+    # Show a progress dialog so the UI stays responsive during multi-file loading.
+    # Without this, the 20-30 s of synchronous I/O makes the window manager
+    # mark the application "not responding."
+    from .gui_utils import ProgressDialog
+    n_files=len(parser.section_data.get('Direct Beam Runs', []))+\
+            len(parser.section_data.get('Data Runs', []))
+    pb=ProgressDialog(self, title='Loading Extraction',
+                      info_start='Loading %i data files...'%n_files,
+                      maximum=100)
+    pb.show()
+    try:
+      info('Reloading data from information in file header...')
+      parser.parse(callback=pb.progress)
+      info('Data loaded')
+      if not parser.refls:
+        info('No datasets found in header to restore.')
+        return
+      pb.info.setText('Restoring GUI state...')
+      pb.progress(1.0)
+      # updating GUI and attributes
+      for norm, norm_data in zip(parser.norms, parser.norm_data):
+        self.refl=norm
+        self.active_data=norm_data
+        self.setNorm(do_plot=False, do_remove=False)
+      for refl in parser.refls:
+        self.refl=refl
+        self.addRefList(do_plot=False)
+      # update global export options
+      if 'Global Options' in parser.section_data:
+        export.sampleSize=parser.section_data['Global Options']['sample_length']
+      # set settings for the dataset added last
+      self.auto_change_active=True
+      self.ui.refXPos.setValue(refl.options['x_pos'])
+      self.ui.refXWidth.setValue(refl.options['x_width'])
+      self.ui.refYPos.setValue(refl.options['y_pos'])
+      self.ui.refYWidth.setValue(refl.options['y_width'])
+      self.ui.bgCenter.setValue(refl.options['bg_pos'])
+      self.ui.bgWidth.setValue(refl.options['bg_width'])
+      self.ui.refScale.setValue(log10(refl.options['scale']))
+      self.auto_change_active=False
+      # load the last file in the list to be in the right directory and trigger plotting
+      if type(refl.origin) is list:
+        self.fileOpenSum([item[0] for item in refl.origin])
+      else:
+        self.fileOpen(refl.origin[0])
+      self.ref_list_channels=list(self.active_data.keys())
+    finally:
+      pb.destroy()
 
   @log_input
   def cutPoints(self):
@@ -2217,6 +2239,13 @@ class MainGUI(QtWidgets.QMainWindow):
     self.eventProgress.setValue(int(progress*100))
     # make sure the update is shown in the interface
     self.eventProgress.update()
+    # pump the Qt event loop so the UI stays responsive during multi-file loading
+    now = time()
+    if now - self._last_event_update > 0.2:
+      self._last_event_update = now
+      app = QtWidgets.QApplication.instance()
+      if app:
+        app.processEvents()
 
 ####### Calculations and data treatment
 

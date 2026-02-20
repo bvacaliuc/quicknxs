@@ -57,6 +57,8 @@ class HeaderTest(FakeData, unittest.TestCase):
                        'Refl option %s %s vs. %s'%(key, prefl.options[key], value))
     prro=prefl.read_options
     for key, value in self.ds[0].read_options.items():
+      if key in ('use_caching', 'callback'):
+        continue  # runtime parameters not preserved in header
       if type(value) in (float, float32, float64):
         value=float("%g"%value)
       self.assertEqual(prro[key], value, 'Reader option %s %s vs. %s'%(key, prro[key], value))
@@ -78,6 +80,8 @@ class HeaderTest(FakeData, unittest.TestCase):
                        'Refl option %s %s vs. %s'%(key, prefl.options[key], value))
     prro=prefl.read_options
     for key, value in self.ds[0].read_options.items():
+      if key in ('use_caching', 'callback'):
+        continue  # runtime parameters not preserved in header
       if type(value) in (float, float32, float64):
         value=float("%g"%value)
       self.assertEqual(prro[key], value, 'Reader option %s %s vs. %s'%(key, prro[key], value))
@@ -271,6 +275,103 @@ class GISANSTest(FakeData, unittest.TestCase):
     self.assertTrue(hasattr(gisans, 'QzGrid'))
 
 
+class HeaderParserMemoryTest(FakeData, unittest.TestCase):
+  """Verify HeaderParser.parse() manages memory to prevent OOM."""
+
+  def test_cache_cleared_before_parse(self):
+    """parse() should clear NXSData._cache at the start."""
+    # Pre-populate the cache
+    NXSData(TEST_DATASET, use_caching=True)
+    self.assertGreater(len(NXSData._cache), 0)
+    header=HeaderCreator([self.ref1])
+    parser=HeaderParser(str(header), parse_meta=False)
+    parser.parse()
+    # Cache should have been cleared at parse() start
+    # and _get_dataset uses use_caching=False so no new entries
+    self.assertEqual(len(NXSData._cache), 0)
+
+  def test_no_cache_accumulation(self):
+    """parse() should not accumulate NXSData objects in the cache."""
+    header=HeaderCreator([self.ref1, self.ref2])
+    parser=HeaderParser(str(header), parse_meta=False)
+    parser.parse()
+    self.assertEqual(len(NXSData._cache), 0,
+                     'NXSData._cache should be empty after parse()')
+
+  def test_norm_data_arrays_freed(self):
+    """Direct beam MRDataset objects should have _data_zipped=None after parse()."""
+    header=HeaderCreator([self.ref1])
+    parser=HeaderParser(str(header), parse_meta=False)
+    parser.parse()
+    self.assertGreater(len(parser.norm_data), 0,
+                       'Should have at least one norm_data entry')
+    for nxs_data in parser.norm_data:
+      for ds in nxs_data.values():
+        self.assertIsNone(ds._data_zipped,
+                          'MRDataset._data_zipped should be None after parse()')
+        self.assertIsNone(ds.xydata,
+                          'MRDataset.xydata should be None after parse()')
+        self.assertIsNone(ds.xtofdata,
+                          'MRDataset.xtofdata should be None after parse()')
+
+  def test_norm_metadata_preserved(self):
+    """Direct beam NXSData metadata (number, lambda_center) should survive."""
+    header=HeaderCreator([self.ref1])
+    parser=HeaderParser(str(header), parse_meta=False)
+    parser.parse()
+    for nxs_data in parser.norm_data:
+      # These are the attributes loadExtraction → setNorm() needs
+      self.assertIsNotNone(nxs_data.number)
+      self.assertIsNotNone(nxs_data.lambda_center)
+
+  def test_reflectivity_data_intact(self):
+    """Parsed Reflectivity objects should have valid Q/R/dR arrays."""
+    header=HeaderCreator([self.ref1, self.ref2])
+    parser=HeaderParser(str(header), parse_meta=False)
+    parser.parse()
+    for refl in parser.refls:
+      self.assertIsNotNone(refl.Q)
+      self.assertIsNotNone(refl.R)
+      self.assertIsNotNone(refl.dR)
+      self.assertGreater(len(refl.Q), 0)
+
+
+class ExportAndReloadTest(FakeData, unittest.TestCase):
+  """Generate a reduced .dat file and reload it via HeaderParser."""
+
+  def test_export_and_reload_round_trip(self):
+    """Create a .dat file with Exporter, then reload it with HeaderParser."""
+    channels=list(self.ds.keys())
+    exporter=Exporter(channels, [self.ref1, self.ref2])
+    exporter.extract_reflectivity()
+    tmpdir=tempfile.mkdtemp()
+    try:
+      naming='roundtrip_{instrument}_{item}_{state}_{numbers}.{type}'
+      exporter.export_data(tmpdir, naming,
+                           multi_ascii=True, combined_ascii=False,
+                           matlab_data=False, numpy_data=False)
+      # Find the first exported .dat file
+      dat_files=[f for f in os.listdir(tmpdir) if f.endswith('.dat')]
+      self.assertGreater(len(dat_files), 0, 'No .dat files exported')
+      dat_path=os.path.join(tmpdir, dat_files[0])
+      # Reload it
+      parser=HeaderParser(dat_path, parse_meta=True)
+      parser.parse()
+      self.assertGreater(len(parser.refls), 0, 'No refls after reload')
+      self.assertGreater(len(parser.norms), 0, 'No norms after reload')
+      # Verify NXSData cache is empty
+      self.assertEqual(len(NXSData._cache), 0)
+      # Verify reflectivity data is valid
+      for refl in parser.refls:
+        self.assertGreater(len(refl.Q), 0)
+        self.assertGreater(len(refl.R), 0)
+    finally:
+      import shutil
+      shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 suite=unittest.TestLoader().loadTestsFromTestCase(HeaderTest)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ExportTest))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(HeaderParserMemoryTest))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ExportAndReloadTest))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(GISANSTest))

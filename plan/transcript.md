@@ -374,4 +374,40 @@ Which contains tokens, thus leaking credentials to other users on the system.  A
 
 Nice job! The last work created a script in /tmp that included a token and was readable by other users, thus leaking credentials. Please write instructions in the ./CLAUDE.md to enusre that future sessions that need to create temporary files do so securely and are not readable by other users on the system.
 
+## Prompt bug/load-extraction-hangs 1
+
+In the quicknxsv1 project, when using the GUI and performing a 'File->Load Extraction', the UI hangs. Please investigate and suggest a repair.
+
+### Retrospective
+
+The bug persists, so there is some deeper issue thatould you please review again? I just did a 'make gui' and 'File->Load Extraction' in a real GUI and it still hangs. Please run the strace again to see why, and hopefully find the
+  problem once and for all.  is not visible to the automated testing. The bug/load-extraction-hangs branch is setup to investigate this further.
+
+## Prompt bug/load-extraction-hangs 2
+
+In the quicknxsv1 project bug/load-extraction-hangs branch, I have a difficult problem that has given previous agent runs difficulty to resolve. Please use every effort that you can to help solve this problem. The issue is when running the gui, selecting 'File->Load Extraction' causes a hang of the UI. This is a critical problem because it prevents loading previously reduced data sets. I have done a 'make strace' and reproduced the error and all the strace.* files are written in the project folder. The corresponding feature in the quicknxsv2 project does not fail, but works correctly. Please consider thoroughly the problem, develop hypotheses, direct agents to act, and solve the problem of loading prior reduced data files. Generate reduced data sets to verify the function in both the GUI and in headless testing. Be complete and do not stop until the problem is resolved and reduced data files can be loaded without error.
+
+### Follow on Prompt bug/load-extraction-hangs 2-B
+
+would you please review again? I just did a 'make gui' and 'File->Load Extraction' in a real GUI and it still hangs. Please run the strace again to see why, and hopefully find the problem once and for all.
+
+### Follow on Prompt bug/load-extraction-hangs 2-C
+
+The hang we have been working on happens before the dialog box can open in the GUI. I have copied the ~/.quicknxs/debug.log into TODO.md, please read it. The application is not using memory as far as I can tell. It just seems to be waiting for something. No other UI element is responsive. When the X is clicked to close the app, the "application is not responding" pop-up occurs which lets me choose to terminate the application. Does this give you a clue as to where the problem might be? Thank you for trying again to solve this.
+
+#### Contents of TODO.md
+
+```
+# ~/.quicknxs/debug.log file from GUI invoking File->Load Extraction
+
+[INFO] - 2026-02-19 23:09:15,319 - gui_logging.py:116:setup_system *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging started ***
+[INFO] - 2026-02-19 23:09:22,963 - main_gui.py:1313:loadExtraction Reloading data from information in file header...
+[INFO] - 2026-02-19 23:09:22,964 - main_gui.py:1315:loadExtraction Data loaded
+[INFO] - 2026-02-19 23:09:22,964 - main_gui.py:1317:loadExtraction No datasets found in header to restore.
+[INFO] - 2026-02-19 23:09:25,900 - main_gui.py:263:set_debug Logger debug mode is now active
+[DEBUG] - 2026-02-19 23:09:34,095 - main_gui.py:1268:@log_call quicknxs.main_gui.MainGUI.loadExtraction
+[DEBUG] - 2026-02-19 23:09:34,095 - main_gui.py:1918:@log_call quicknxs.main_gui.MainGUI.clearRefList
+
+Please determine why this is the last thing written to the debug.log and suggest a fix. Keep in mind that the file picker dialog *never opens*.
+```
 
