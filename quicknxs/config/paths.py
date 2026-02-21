@@ -4,9 +4,9 @@ Configured path variables.
 '''
 
 import os
+from getpass import getuser
 
 config_file=''
-from getpass import getuser
 
 # define global path variables usable in config strings or other modules
 HOME=os.path.expanduser(u'~')

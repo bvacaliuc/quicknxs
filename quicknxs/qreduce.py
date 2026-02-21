@@ -153,7 +153,7 @@ class OptionsDocMeta(type):
     dct['__doc__']=docstring
 
     return super(OptionsDocMeta, cls).__new__(cls, name, bases, dct)
-  
+
   @staticmethod
   def format_description(description, maxlen):
     output=[description]
@@ -163,7 +163,7 @@ class OptionsDocMeta(type):
       output.append(lastitem[:splitidx])
       output.append(lastitem[splitidx+1:])
     return output
-    
+
 
 class NXSData(object, metaclass=OptionsDocMeta):
   '''
@@ -239,7 +239,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
   def _get_all_options(cls, options):
     all_options=dict(cls.DEFAULT_OPTIONS)
     for key, value in options.items():
-      if not key in all_options:
+      if key not in all_options:
         raise ValueError("%s is not a known option parameter"%key)
       all_options[key]=value
     return all_options
@@ -247,7 +247,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
   def _read_file(self, filename):
     '''
     Load data from a Nexus file.
-    
+
     :param str filename: Path to file to read
     '''
     start=time()
@@ -309,7 +309,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
         year_month_int = int("%s%s" % (parts_str[0], parts_str[1]))
         if year_month_int >= 201807:
             assign_labels = False
-    except:
+    except Exception:
         warn("Problem parsing start time: skipping labels")
         assign_labels = False
 
@@ -345,7 +345,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
 
     # check that all channels have a mapping entry
     for channel in channels:
-      if not channel in [m[1] for m in mapping]:
+      if channel not in [m[1] for m in mapping]:
         mapping.append((channel.lstrip('entry-'), channel))
 
     # get runtime for event mode splitting
@@ -400,7 +400,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
     For the oldest file format, where polarization channels
     are in different .nxs files, this method reads all files
     and builds a dictionary of it.
-    
+
     :param str filename: Path to file to read
     '''
     base_name=filename.rsplit("_p", 1)[0]
@@ -424,7 +424,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
         raise KeyError("No such channel: %s"%str(item))
 
   def __setitem__(self, item, data):
-    if type(item)==int:
+    if isinstance(item, int):
       self._channel_data[item]=data
     else:
       if item in self._channel_names:
@@ -557,9 +557,9 @@ class NXSMultiData(NXSData):
 
   def _add_data(self, other):
     '''
-    Add the counts of all channels to this dataset channels 
+    Add the counts of all channels to this dataset channels
     and increase the proton charge equally.
-    
+
     :type other: NXSData
     '''
     for key, value in self.items():
@@ -581,7 +581,7 @@ class XMLData(NXSData):
       self._options['callback'](0.)
     try:
       xml=minidom.parse(filename)
-    except:
+    except Exception:
       debug('Could not read xml file %s'%filename, exc_info=True)
       return False
     finfo=xml.getElementsByTagName('Files')[0]
@@ -590,9 +590,9 @@ class XMLData(NXSData):
     path=os.path.dirname(filename)
     for item in finfo.getElementsByTagName('entry'):
       channels.append(item.getAttribute('name'))
-      xmlfiles.append((os.path.join(path, item.getAttribute('xy_file')), 
+      xmlfiles.append((os.path.join(path, item.getAttribute('xy_file')),
                        os.path.join(path, item.getAttribute('tofx_file'))))
-    
+
     # collect meta information
     daslogs={}
     for item in xml.getElementsByTagName('DASLogs')[0].getElementsByTagName('item'):
@@ -653,7 +653,7 @@ class XMLData(NXSData):
       mapping=[]
     # check that all channels have a mapping entry
     for channel in channels:
-      if not channel in [m[1] for m in mapping]:
+      if channel not in [m[1] for m in mapping]:
         mapping.append((channel.lstrip('entry-'), channel))
 
     progress=0.1
@@ -803,7 +803,7 @@ class MRDataset(object):
                  tof_overwrite=None):
     '''
     Load data from a Nexus file containing event information.
-    Creates 3D histogram with ither linear or 1/t spaced 
+    Creates 3D histogram with ither linear or 1/t spaced
     time of flight channels. The result has the same format as
     from the read_file function.
     '''
@@ -908,7 +908,7 @@ class MRDataset(object):
 
     try:
       xyxml=minidom.parse(xyfile)
-    except:
+    except Exception:
       warn('Could not parse xml file %s:'%xyfile, exc_info=True)
       return None
 
@@ -932,11 +932,11 @@ class MRDataset(object):
     xydata=MRDataset._getxml_data(xyxml)
     try:
       tofxxml=minidom.parse(tofxfile)
-    except:
+    except Exception:
       warn('Could not parse xml file %s:'%tofxfile, exc_info=True)
       return None
     tofxdata=MRDataset._getxml_data(tofxxml).T
-    
+
     output.xydata=xydata.T.astype(float)
 
     if tof_overwrite is None:
@@ -976,7 +976,7 @@ class MRDataset(object):
                  callback=None, callback_offset=0., callback_scaling=1.):
     '''
     Filter events outside the tof_edges region and calculate the binning with devide_bin.
-    
+
     @return: 3D array of dimensions (x, y, tof)
     '''
     region=(tof_time>=tof_edges[0])&(tof_time<=tof_edges[-1])
@@ -991,7 +991,7 @@ class MRDataset(object):
     Use a divide and conquer strategy to bin the data. For the actual binning the
     numpy bincount function is used, as it is much faster then histogram for
     counting of integer values.
-    
+
     :param tof_ids: Array of positional indices for each event
     :param tof_time: Array of time of flight for each event
     :param tof_edges: The edges of bins to be used for the histogram
@@ -1000,7 +1000,7 @@ class MRDataset(object):
     :keyword callback_offset: Offset for calling the function
     :keyword callback_scaling: Factor to multiply the counting index when calling the function
     :keyword cbidx: Current counting index for this recursive call
-    
+
     :return: 3D list of dimensions (tof, x, y)
     '''
     if len(tof_edges)==2:
@@ -1024,7 +1024,7 @@ class MRDataset(object):
   def _collect_info(self, data):
     '''
     Extract header information from the HDF5 file.
-    
+
     :param h5py._hl.group.Group data:
     '''
     self.origin=(os.path.abspath(data.file.filename), data.name.lstrip('/'))
@@ -1046,7 +1046,8 @@ class MRDataset(object):
           continue
         try:
           if 'units' in item['value'].attrs:
-            self.log_units[motor]=item['value'].attrs['units'].decode('utf8') if isinstance(item['value'].attrs['units'], bytes) else str(item['value'].attrs['units'])
+            units_attr=item['value'].attrs['units']
+            self.log_units[motor]=units_attr.decode('utf8') if isinstance(units_attr, bytes) else str(units_attr)
           else:
             self.log_units[motor]=u''
           val=item['value'][()]
@@ -1065,7 +1066,7 @@ class MRDataset(object):
             else:
               self.logs[motor]=val.mean()
               self.log_minmax[motor]=(val.min(), val.max())
-        except:
+        except Exception:
           continue
       self.lambda_center=data['DASlogs/LambdaRequest/value'][()][0]
     self.dangle=data['instrument/bank1/DANGLE/value'][()][0]
@@ -1106,7 +1107,7 @@ class MRDataset(object):
     if detector_id in instrument.DETECTOR_REGION:
       self.active_area_x=instrument.DETECTOR_REGION[detector_id][0]
       self.active_area_y=instrument.DETECTOR_REGION[detector_id][1]
-  
+
   @staticmethod
   def _getxml_data(xml):
     data=xml.getElementsByTagName('Data')[0]
@@ -1114,7 +1115,8 @@ class MRDataset(object):
     xdim=int(data.getAttribute('xdim'))
     ydim=int(data.getAttribute('ydim'))
     type_name=data.getAttribute('type')
-    Idata=frombuffer(base64.decodebytes(rawdata.data.encode() if isinstance(rawdata.data, str) else rawdata.data), dtype=type_name).reshape(xdim, ydim)
+    raw_bytes=rawdata.data.encode() if isinstance(rawdata.data, str) else rawdata.data
+    Idata=frombuffer(base64.decodebytes(raw_bytes), dtype=type_name).reshape(xdim, ydim)
     return Idata
 
   def __repr__(self):
@@ -1305,7 +1307,7 @@ def is_analyzer_in(position, trans_position, start_time_str):
         year_month_int = int("%s%s" % (parts_str[0], parts_str[1]))
         if year_month_int >= 201708:
             is_analyzer_in = abs(trans_position-NEW_ANALYZER_IN[0])<NEW_ANALYZER_IN[1]
-    except:
+    except Exception:
         warn("Problem parsing start time: use more recent definition for analyzer position")
         is_analyzer_in = abs(trans_position-NEW_ANALYZER_IN[0])<NEW_ANALYZER_IN[1]
     return is_analyzer_in
@@ -1313,7 +1315,7 @@ def is_analyzer_in(position, trans_position, start_time_str):
 def time_from_header(filename, nxs=None):
   '''
   Read just an nxs header to get the time of a measurement in seconds.
-  
+
   :param str filename: Path to nxs file
   '''
   if nxs is None:
@@ -1350,7 +1352,7 @@ def time_from_header(filename, nxs=None):
 def locate_file(number, histogram=True, old_format=False, verbose=True):
     '''
     Search the data folders for a specific file number and open it.
-    
+
     :param int number: Run number
     '''
     if verbose:
@@ -1427,7 +1429,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
   def __init__(self, dataset, **options):
     all_options=dict(Reflectivity.DEFAULT_OPTIONS)
     for key, value in options.items():
-      if not key in all_options:
+      if key not in all_options:
         raise ValueError("%s is not a known option parameter"%key)
       all_options[key]=value
     self.options=all_options
@@ -1532,12 +1534,12 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
   def _calc_normal(self, dataset):
     """
     Extract reflectivity from 3D dataset I(x,y,ToF).
-    Uses a window in x and y to filter the 3D data and than sums all I values 
+    Uses a window in x and y to filter the 3D data and than sums all I values
     for each ToF channel. Qz is calculated using the x window center position
-    together with the tth-bank and direct pixel values. 
-    Error is also calculated and all intermediate steps are stored in the object 
+    together with the tth-bank and direct pixel values.
+    Error is also calculated and all intermediate steps are stored in the object
     (scaled and unscaled intensity and background).
-    
+
     :param quicknxs.qreduce.MRDataset dataset: The dataset to use for extraction
     """
     tof_edges=dataset.tof_edges
@@ -1621,12 +1623,12 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
     Extract reflectivity from 4D dataset (x,y,ToF,I).
     Uses a window in x and y to filter the 4D data
     and than sums all I values for each ToF channel.
-    
+
     In contrast to calc_reflectivity this function assumes
     that a brought region reflected from a bend sample is
     analyzed, so each x line corresponds to different alpha i
     values.
-    
+
     :param quicknxs.qreduce.MRDataset dataset: The dataset to use for extraction
     """
     tof_edges=dataset.tof_edges
@@ -1668,7 +1670,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
     # calculate ROI intensities and normalize by number of points
     # still keeping it as 2D dataset
     self.Iraw=Idata.sum(axis=1)
-    I=self.Iraw/(reg[3]-reg[2])*scale
+    I=self.Iraw/(reg[3]-reg[2])*scale  # noqa: E741
     self.dIraw=sqrt(self.Iraw)
     dI=self.dIraw/(reg[3]-reg[2])*scale
     # For comparison store intensity summed over whole area
@@ -1749,7 +1751,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
     '''
     Calculate the background intensity vs. ToF.
     Equal for normal and fan reflectivity extraction.
-    
+
     :param quicknxs.qreduce.MRDataset dataset: The dataset to use for extraction
     '''
     data=dataset.data
@@ -1794,7 +1796,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
       lamda_regions=unique(Lamda[points_in_region].flatten())
       # add missing lambda items from normal bg region
       for lamdai in lamda:
-        if not lamdai in lamda_regions:
+        if lamdai not in lamda_regions:
           points_in_region[:, reg[0]:reg[1]]|=(Lamda[:, reg[0]:reg[1]]==lamdai)
       points_in_region=points_in_region.astype(float)
       # sum over y
@@ -1875,7 +1877,7 @@ class OffSpecular(Reflectivity):
   def __init__(self, dataset, **options):
     all_options=dict(OffSpecular.DEFAULT_OPTIONS)
     for key, value in options.items():
-      if not key in all_options:
+      if key not in all_options:
         raise ValueError("%s is not a known option parameter"%key)
       all_options[key]=value
     self.options=all_options
@@ -1917,7 +1919,7 @@ class OffSpecular(Reflectivity):
     and than sums all I values for each ToF and x channel.
     Qz,Qx,kiz,kfz is calculated using the x and ToF positions
     together with the tth-bank and direct pixel values.
-    
+
     :param quicknxs.qreduce.MRDataset dataset: The dataset to use for extraction
     """
     tof_edges=dataset.tof_edges
@@ -2000,7 +2002,7 @@ class GISANS(Reflectivity):
   def __init__(self, dataset, **options):
     all_options=dict(OffSpecular.DEFAULT_OPTIONS)
     for key, value in options.items():
-      if not key in all_options:
+      if key not in all_options:
         raise ValueError("%s is not a known option parameter"%key)
       all_options[key]=value
     self.options=all_options

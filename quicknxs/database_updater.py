@@ -50,7 +50,7 @@ class DatabaseUpdater(Thread):
       try:
         self.check()
         self.check_live_index()
-      except:
+      except Exception:
         logging.warning('Error in DatabaseUpdater thread:', exc_info=True)
       self.quit_event.wait(self.sleep_time)
 
@@ -68,7 +68,8 @@ class DatabaseUpdater(Thread):
     Increase current_index as long as there are data files available.
     '''
     # don't try to locate a file that's already in the database
-    while self.in_db(): self.current_index+=1
+    while self.in_db():
+      self.current_index+=1
 
     # check if the file actually exists before trying to add it
     fname=qreduce.locate_file(self.current_index, verbose=False)
@@ -79,7 +80,8 @@ class DatabaseUpdater(Thread):
       self.current_index+=1
 
       # don't try to locate a file that's already in the database
-      while self.in_db(): self.current_index+=1
+      while self.in_db():
+        self.current_index+=1
 
       # check if the file actually exists before trying to add it
       fname=qreduce.locate_file(self.current_index, verbose=False)

@@ -90,7 +90,7 @@ class HeaderCreator(object):
           for poly in bg[2]:
             poly=[poly[0][0], poly[0][1], poly[1][0], poly[1][1],
                   poly[2][0], poly[2][1], poly[3][0], poly[3][1]]
-            if not poly in self.bg_polys:
+            if poly not in self.bg_polys:
               self.bg_polys.append(poly)
             poly_ids.append(self.bg_polys.index(poly)+1)
           bg[2]=poly_ids
@@ -111,7 +111,7 @@ class HeaderCreator(object):
         if not item.origin[0].endswith('event.nxs'):
           continue
       event_opts=[item.read_options[option] for option in self.event_options]
-      if not event_opts in self.evts:
+      if event_opts not in self.evts:
         self.evts.append(event_opts)
 
   def _collect_global_options(self):
@@ -360,7 +360,7 @@ class HeaderParser(object):
     if isinstance(header, bytes):
       header=header.decode('utf8', 'ignore')
     # if header is a single line, assume it is a file name, not a header string
-    if not '\n' in header:
+    if '\n' not in header:
       header=self.read_file_header(header)
     self.header=header
     self.sections={}
@@ -493,7 +493,7 @@ class HeaderParser(object):
     # files during header parsing causes unbounded memory growth → OOM.
     read_opts['use_caching']=False
     if options['EVT_ID'] is not None:
-      if not "Event Mode Options" in self.section_data:
+      if "Event Mode Options" not in self.section_data:
         raise ValueError('No "Event Mode Options" section defined but EVT_ID is set')
       evt_opts=self.section_data["Event Mode Options"][int(options['EVT_ID'])-1]
       for key in ['bin_type', 'bins', 'event_split_bins', 'event_split_index']:
@@ -505,7 +505,7 @@ class HeaderParser(object):
       return NXSData(fname, **read_opts)
 
   def _collect_background_options(self):
-    if not 'Advanced Background Options' in self.section_data:
+    if 'Advanced Background Options' not in self.section_data:
       return
     self._bg_options=[]
     for item in self.section_data['Advanced Background Options']:
@@ -513,7 +513,7 @@ class HeaderParser(object):
       for key in ['bg_tof_constant', 'bg_scale_xfit', 'bg_scale_factor']:
         opt_item[key]=item[key]
       if item['bg_poly_regions'] is not None:
-        if not 'Background Polygon Regions' in self.section_data:
+        if 'Background Polygon Regions' not in self.section_data:
           raise ValueError('No "Background Polygon Regions" section defined but bg_poly_regions is set')
         opt_item['bg_poly_regions']=[]
         for index in item['bg_poly_regions']:
@@ -541,7 +541,7 @@ class HeaderParser(object):
         if key in db:
           calc_opts[key]=db[key]
       if db['BG_ID'] is not None:
-        if not 'Advanced Background Options' in self.section_data:
+        if 'Advanced Background Options' not in self.section_data:
           raise ValueError('No "Advanced Background Options" section defined but BG_ID is set')
         calc_opts.update(self._bg_options[int(db['BG_ID'])-1])
       norm=Reflectivity(data[0], **calc_opts)
@@ -571,7 +571,7 @@ class HeaderParser(object):
         if key in db:
           calc_opts[key]=db[key]
       if db['BG_ID'] is not None:
-        if not 'Advanced Background Options' in self.section_data:
+        if 'Advanced Background Options' not in self.section_data:
           raise ValueError('No "Advanced Background Options" section defined but BG_ID is set')
         calc_opts.update(self._bg_options[int(db['BG_ID'])-1])
       calc_opts['normalization']=self.norms[int(db['DB_ID'])-1]
@@ -798,7 +798,7 @@ class Exporter(object):
         pb.info.setText(pbinfo+channel)
         pb.add=100*i
       data=np.hstack(odata[channel])
-      I=data[:, :, 5].flatten()
+      I=data[:, :, 5].flatten()  # noqa: E741
       Qzmax=data[:, :, 2].max()*2.
       if settings['xy_column']==0:
         x=data[:, :, 4].flatten()
@@ -822,7 +822,7 @@ class Exporter(object):
         axis_sigma_scaling=3
         xysigma0=Qzmax/6.
       del data  # release hstack copy before smoothing
-      x, y, I=smooth_data(settings, x, y, I, callback=(pb and pb.progress), sigmas=settings['sigmas'],
+      x, y, I=smooth_data(settings, x, y, I, callback=(pb and pb.progress), sigmas=settings['sigmas'],  # noqa: E741
                           axis_sigma_scaling=axis_sigma_scaling, xysigma0=xysigma0)
       output_data[channel]=[np.array([x, y, I]).transpose((1, 2, 0))]
       del x, y, I  # release before next channel iteration
@@ -874,7 +874,8 @@ class Exporter(object):
                   np.savetxt(of, scan, delimiter='\t', fmt='%-18e')
                   of.write(u'\n'.encode('utf8'))
               of.write(u'\n\n'.encode('utf8'))
-          self.exported_files_all.append(output);self.exported_files_data.append(output)
+          self.exported_files_all.append(output)
+          self.exported_files_data.append(output)
       if combined_ascii:
         debug('Export combined_ascii')
         output=ofname.replace('{item}', key).replace('{state}', 'all')\
@@ -907,7 +908,8 @@ class Exporter(object):
                     of.write(u'\n'.encode('utf8'))
                 of.write(u'\n\n'.encode('utf8'))
               of.write((u'# End of channel %s\n\n\n'%channel).encode('utf8'))
-          self.exported_files_all.append(output);self.exported_files_data.append(output)
+          self.exported_files_all.append(output)
+          self.exported_files_data.append(output)
     if matlab_data:
       debug('Export matlab')
       from scipy.io import savemat
@@ -919,7 +921,8 @@ class Exporter(object):
         if not check_exists(output):
           continue
         savemat(output, dictdata, oned_as='column')
-        self.exported_files_all.append(output);self.exported_files_data.append(output)
+        self.exported_files_all.append(output)
+        self.exported_files_data.append(output)
     if numpy_data:
       debug('Export numpy')
       for key, output_data in self.output_data.items():
@@ -930,7 +933,8 @@ class Exporter(object):
         if not check_exists(output):
           continue
         np.savez(output, **dictdata)
-        self.exported_files_all.append(output);self.exported_files_data.append(output)
+        self.exported_files_all.append(output)
+        self.exported_files_data.append(output)
 
   def dictize_data(self, output_data):
     '''
@@ -1069,7 +1073,7 @@ class Exporter(object):
     try:
       subprocess.call(['gnuplot', output], cwd=directory, shell=False,
                       env=GP_ENVIRONMENT)
-    except:
+    except Exception:
       pass
     else:
       folder=os.path.dirname(output)
@@ -1077,7 +1081,8 @@ class Exporter(object):
         output=os.path.join(folder, params['output']+'png')
       else:
         output=os.path.join(folder, params['output']+'png')
-      self.exported_files_all.append(output);self.exported_files_plots.append(output)
+      self.exported_files_all.append(output)
+      self.exported_files_plots.append(output)
 
   @log_call
   def create_genx_file(self, directory=paths.results,
@@ -1095,7 +1100,7 @@ class Exporter(object):
     else:
       template=os.path.join(paths.GENX_TEMPLATES, 'spinflip.gx')
     for key, output_data in self.output_data.items():
-      if not key in ['Specular', 'TrueSpecular']:
+      if key not in ['Specular', 'TrueSpecular']:
         continue
       output=ofname.replace('{item}', key).replace('{state}', 'all')\
                    .replace('{instrument}', instrument.NAME)\

@@ -242,7 +242,7 @@ class QtHandler(logging.Handler):
         smtp.sendmail(msg['From'], msg['To'].split(','), msg.as_string())
         smtp.quit()
         logging.info('Mail sent')
-      except:
+      except Exception:
         logging.warning('problem sending the mail', exc_info=True)
       else:
         # after successful email notification the same error is not reported twice

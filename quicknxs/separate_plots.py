@@ -132,7 +132,7 @@ class ProjectionPlotDialog(QDialog):
     self.ax_map.xaxis.tick_top()
     self.ax_map.yaxis.tick_right()
     self.ax_y.xaxis.tick_top()
-  
+
   def draw(self):
     self.plot.draw()
 
@@ -150,7 +150,7 @@ class ProjectionPlotDialog(QDialog):
     if log:
       self.ax_x.set_yscale('log')
       self.ax_y.set_xscale('log')
- 
+
   def toggle_log(self, *args):
     '''
     Toggle the logarithmic axes of the projection plots.

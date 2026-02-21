@@ -4,7 +4,8 @@
   data to user defined formats.
 '''
 
-import os, sys
+import os
+import sys
 from tempfile import gettempdir
 from zipfile import ZipFile, ZIP_DEFLATED
 from io import BytesIO
@@ -362,7 +363,7 @@ class Reducer(object):
     fname=os.path.join(gettempdir(), 'plot_%i.png'%len(self.tempfiles))
     try:
       plot.canvas.print_figure(fname)
-    except:
+    except Exception:
       pass
     else:
       self.exported_files_plots.append(fname)
@@ -423,7 +424,7 @@ class Reducer(object):
             mitem=MIMEBase('application', item[-3:])
             mitem.set_payload(_data)
             encoders.encode_base64(mitem)
-        except:
+        except Exception:
           continue
         mitem.add_header('Content-Disposition', 'attachment', filename=os.path.basename(item))
         msg.attach(mitem)
@@ -435,7 +436,7 @@ class Reducer(object):
                     [s.strip() for s in msg['To'].split(',')+msg['CC'].split(',')],
                     msg.as_string())
       smtp.quit()
-    except:
+    except Exception:
       warning("Could not send email, perhaps you're not in the ORNL network.", exc_info=True)
     else:
       debug('Email sent successfully')
@@ -602,17 +603,17 @@ class PlotDialog(QDialog):
     Imin=1e10
     if plot.cplot is not None:
       for item in plot.canvas.ax.images:
-        I=item.get_array()
+        I=item.get_array()  # noqa: E741
         Imin=min(Imin, I[I>0].min())
       for item in plot.canvas.ax.collections:
-        I=item.get_array()
+        I=item.get_array()  # noqa: E741
         Imin=min(Imin, I[I>0].min())
       for item in plot.canvas.ax.images:
-        I=item.get_array()
+        I=item.get_array()  # noqa: E741
         I[I<=0]=Imin
         item.set_array(I)
       for item in plot.canvas.ax.collections:
-        I=item.get_array()
+        I=item.get_array()  # noqa: E741
         I[I<=0]=Imin
         item.set_array(I)
       plot.draw()
@@ -674,7 +675,7 @@ class SmoothDialog(QDialog):
         Qz=item[:, :, 1]
         ki_z=item[:, :, 2]
         kf_z=item[:, :, 3]
-        I=item[:, :, 5]
+        I=item[:, :, 5]  # noqa: E741
 
         Qzmax=max(ki_z.max()*2., Qzmax)
         if self.ui.kizmkfzVSqz.isChecked():
@@ -865,7 +866,7 @@ class GISANSCalculation(QThread):
     PN=data.options['PN']
     # filter the points
     region=where((data.lamda[PN:P0]>=lmin)&(data.lamda[PN:P0]<=lmax))
-    I=data.S[:, :, region].flatten()
+    I=data.S[:, :, region].flatten()  # noqa: E741
     dI=data.dS[:, :, region].flatten()
     qy=data.Qy[:, :, region].flatten()
     if self.use_pf:
@@ -878,7 +879,7 @@ class GISANSCalculation(QThread):
       PN=data.options['PN']
       # filter the points
       region=where((data.lamda[PN:P0]>=lmin)&(data.lamda[PN:P0]<=lmax))
-      I=hstack([I, data.S[:, :, region].flatten()])
+      I=hstack([I, data.S[:, :, region].flatten()])  # noqa: E741
       dI=hstack([dI, data.dS[:, :, region].flatten()])
       qy=hstack([qy, data.Qy[:, :, region].flatten()])
       if self.use_pf:
@@ -993,7 +994,7 @@ class GISANSDialog(QDialog):
     Start a thread that calculates projections to be plotted.
     '''
     for child in self.ui.resultImageArea.children():
-      if not type(child) is MPLWidget:
+      if type(child) is not MPLWidget:
         continue
       child.setParent(None)
     self._listItems={}
@@ -1087,7 +1088,7 @@ class DelayedTrigger(QThread):
     A loop that carries out tasks after a short delay.
     If the tasks are triggered again later, the first
     ones are ignored and the delay is reset.
-    
+
     This allows the GUI to be more responsive when changing
     parameters for e.g. a plot that takes longer time to
     draw.

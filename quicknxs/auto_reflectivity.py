@@ -4,7 +4,8 @@ Use the sample database to try to automatically generate reflectivity plots
 from the most current mesurements.
 '''
 
-import os, sys
+import os
+import sys
 import logging
 import numpy
 import atexit
@@ -17,16 +18,15 @@ from xml.etree import ElementTree
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
-from matplotlib import cm, colors
+from matplotlib import colors, colormaps
+from matplotlib.colors import LogNorm
 cmap=colors.LinearSegmentedColormap.from_list('default',
                   ['#0000ff', '#00ff00', '#ffff00', '#ff0000', '#bd7efc', '#000000'], N=256)
-from matplotlib import colormaps
 colormaps.register(cmap, name='default')
-from matplotlib.colors import LogNorm
 
-from . import database, qreduce, qcalc, console_logging
-from .config import instrument
-from .version import str_version
+from . import database, qreduce, qcalc, console_logging  # noqa: E402
+from .config import instrument  # noqa: E402
+from .version import str_version  # noqa: E402
 
 class GroupEvent(Event):
   '''
@@ -70,7 +70,7 @@ class FileCom(Thread):
         self._run()
       except KeyboardInterrupt:
         return
-      except:
+      except Exception:
         logging.warning('Error in FileCom:', exc_info=True)
         self.quit.wait(30.)
 
@@ -85,7 +85,7 @@ class FileCom(Thread):
       logging.info('External program has established connection')
       try:
         xml=ElementTree.parse(self.bind_path)
-      except:
+      except Exception:
         logging.warn('Communication error, could not parse xml string:', exc_info=True)
         self.clear_com()
         continue
@@ -103,7 +103,7 @@ class FileCom(Thread):
         else:
           value=eval(subele.get('value'))
         message_dict[key]=value
-      if not 'action' in message_dict:
+      if 'action' not in message_dict:
         logging.warn('Message contains no action, discarded')
         continue
       action=message_dict['action']
@@ -144,7 +144,7 @@ class FileCom(Thread):
     root=ElementTree.Element('QuickNXS_FileCom')
     for key, value in sorted(message_dict.items()):
       attrib={'type': type(value).__name__}
-      if type(value) in [str, unicode, int, float, bool, type(None)]:
+      if type(value) in [str, int, float, bool, type(None)]:
         attrib['pickled']='False'
         attrib['value']=repr(value)
       else:
@@ -215,11 +215,11 @@ class FileWatchDog(Thread):
         self._run()
       except KeyboardInterrupt:
         return
-      except:
+      except Exception:
         logging.warning('Error in FileWatchDog:', exc_info=True)
         self.quit.wait(30.)
     logging.debug('FileWatchDog closed')
-  
+
   def _run(self):
     self.live_data_last_mtime=os.path.getmtime(instrument.LIVE_DATA)
     while not self.quit.isSet():
@@ -263,13 +263,13 @@ class ReflectivityBuilder(Thread):
     # start the daemon process
     logging.debug('Spawning daemon process')
     pid = os.fork()
-  
+
     if pid != 0:
       logging.debug('Daemon spawned with PID %i'%pid)
       try:
         with open(cls.PID_FILE, 'w') as _fh:
           _fh.write(str(pid)+'\n')
-      except:
+      except Exception:
         logging.warn('Could not store pid %i in file:', exc_info=True)
       return
 
@@ -285,7 +285,7 @@ class ReflectivityBuilder(Thread):
 
     rb=cls(index)
     rb.start()
-    
+
     rb.newFileId=index
     rb.newFileName=fname
     rb.newFileImage=image_path
@@ -336,7 +336,7 @@ class ReflectivityBuilder(Thread):
         self._run()
       except KeyboardInterrupt:
         break
-      except:
+      except Exception:
         logging.warning('Error in ReflectivityBuilder:', exc_info=True)
         self.quit.wait(30.)
     self.com.quit.set()
@@ -462,7 +462,7 @@ class ReflectivityBuilder(Thread):
           logging.debug('Generate autoreduce raw image at %s'%self.newFileImage)
           try:
             self.plot_raw_only(self.newFileImage, self.newFileId)
-          except:
+          except Exception:
             logging.warn('Error in plot_raw_only:', exc_info=True)
       self.newFileId=None
       self.newFileImage=None
@@ -740,8 +740,8 @@ class ReflectivityBuilder(Thread):
       return dsinfo
 
   def get_cut_pts(self, ds):
-    l=ds.lambda_center
-    res=numpy.where((ds[0].lamda>=(l-1.45))&(ds[0].lamda<=(l+1.25)))[0]
+    lambda_center=ds.lambda_center
+    res=numpy.where((ds[0].lamda>=(lambda_center-1.45))&(ds[0].lamda<=(lambda_center+1.25)))[0]
     if len(res)<3:
       return 0, 0
     P0=len(ds[0].lamda)-res[-1]

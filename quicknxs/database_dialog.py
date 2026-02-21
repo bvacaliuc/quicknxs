@@ -71,12 +71,12 @@ class DatabaseWidget(QWidget):
     filter_str, parameters=self.ui.filters.getFilters()
     selection=self.db(filter_str, **parameters)
     selection=selection.sort_by('+file_id')
-    
+
     if self.ui.searchColumn.currentText()!='':
       column=str(self.ui.searchColumn.currentText())
       search_str=str(self.ui.searchEntry.text())
       selection=[r for r in selection if search_str in str(eval('r.'+column))]
-    
+
     numitems=min(len(selection), self.ui.maxResults.value())
     tbl.setRowCount(numitems)
 

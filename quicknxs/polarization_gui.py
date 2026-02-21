@@ -46,19 +46,22 @@ class PolarizationDialog(QDialog):
             ('++' in channels and '-+' in channels)):
       self.ui.flippingRatios.draw()
       return
-    FR1=0;FR2=0
-    I={}
+    FR1=0
+    FR2=0
+    I={}  # noqa: E741
     nos=[item[0] for item in self._WLitems]
     if opts['number'] in nos:
       this_index=nos.index(opts['number'])
       lmin=float(self.ui.wlTable.item(this_index, 1).text())
       lmax=float(self.ui.wlTable.item(this_index, 2).text())
     else:
-      lmin=0.; lmax=15.
+      lmin=0.
+      lmax=15.
     if '++' in channels and '-+' in channels:
       p=Reflectivity(data['++'], **opts)
       m=Reflectivity(data['-+'], **opts)
-      I['++']=p;I['-+']=m
+      I['++']=p
+      I['-+']=m
       reg=where((p.Rraw>0)&(m.Rraw>0)&(p.lamda>=lmin)&(p.lamda<=lmax))
       fr, dfr=self.calc_fr(p, m)
       FR1=fr[reg].mean()
@@ -66,7 +69,8 @@ class PolarizationDialog(QDialog):
     if '++' in channels and '+-' in channels:
       p=Reflectivity(data['++'], **opts)
       m=Reflectivity(data['+-'], **opts)
-      I['++']=p;I['+-']=m
+      I['++']=p
+      I['+-']=m
       reg=where((p.Rraw>0)&(m.Rraw>0)&(p.lamda>=lmin)&(p.lamda<=lmax))
       fr, dfr=self.calc_fr(p, m)
       FR2=fr[reg].mean()
@@ -102,13 +106,19 @@ class PolarizationDialog(QDialog):
     dfr=sqrt((p.dRraw/m.Rraw)**2+(m.dRraw*p.Rraw/m.Rraw**2)**2)
     return fr, dfr
 
-  def calc_pols(self, I):
+  def calc_pols(self, I):  # noqa: E741
     '''
     Calculate efficiency parameters from intensities using the
     formulas (11) given in [ARWildes2007]_.
     '''
-    I00=I['++'].Rraw;I01=I['+-'].Rraw;I10=I['-+'].Rraw;I11=I['--'].Rraw
-    ddI00=I['++'].dRraw**2;ddI01=I['+-'].dRraw**2;ddI10=I['-+'].dRraw**2;ddI11=I['--'].dRraw**2
+    I00=I['++'].Rraw
+    I01=I['+-'].Rraw
+    I10=I['-+'].Rraw
+    I11=I['--'].Rraw
+    ddI00=I['++'].dRraw**2
+    ddI01=I['+-'].dRraw**2
+    ddI10=I['-+'].dRraw**2
+    ddI11=I['--'].dRraw**2
     # combined polarizer/analyzer efficiency
     phi1=(I00-I01)*(I00-I10)
     phi2=(I00*I11-I01*I10)
@@ -135,13 +145,16 @@ class PolarizationDialog(QDialog):
     dFa=sqrt(ddFa1/Fa2**2+ddFa2*Fa1**2/Fa2**4)
     return phi, dphi, Fp, dFp, Fa, dFa
 
-  def calc_fullpols(self, I, FM):
+  def calc_fullpols(self, I, FM):  # noqa: E741
     '''
     Calculate all 4 polariation parameter from a direct beam measurement and a magnetic
     materials measurement.
     '''
     phi, dphi, Fp, dFp, Fa, dFa=self.calc_pols(I)
-    F00=FM['++'].Rraw;F01=FM['+-'].Rraw;F10=FM['-+'].Rraw;F11=FM['--'].Rraw
+    F00=FM['++'].Rraw
+    F01=FM['+-'].Rraw
+    F10=FM['-+'].Rraw
+    F11=FM['--'].Rraw
     #ddF00=FM['++'].dRraw**2;ddF01=FM['+-'].dRraw**2;ddF10=FM['-+'].dRraw**2;ddF11=FM['--'].dRraw**2
     p1=(1-2*Fa)*F00+(2*Fa-1)*F10-F01+F11
     p2=(1-2*Fa)*F00+(2*Fa-1)*F01-F10+F11
@@ -207,7 +220,7 @@ class PolarizationDialog(QDialog):
       a_all=[]
       Fa_all=[]
       Fp_all=[]
-    for i, (no, I, ignore) in enumerate(self._WLitems):
+    for i, (no, I, ignore) in enumerate(self._WLitems):  # noqa: E741
       lamda=list(I.values())[0].lamda
       reg=((lamda>=float(self.ui.wlTable.item(i, 1).text()))&
            (lamda<=float(self.ui.wlTable.item(i, 2).text())))
@@ -215,9 +228,13 @@ class PolarizationDialog(QDialog):
         if not use_FM:
           phi, dphi, Fp, dFp, Fa, dFa=self.calc_pols(I)
           if not errbars:
-            dphi=None;dFp=None;dFa=None
+            dphi=None
+            dFp=None
+            dFa=None
           else:
-            dphi=dphi[reg];dFp=dFp[reg];dFa=dFa[reg]
+            dphi=dphi[reg]
+            dFp=dFp[reg]
+            dFa=dFa[reg]
           self.ui.wavelengthPol.errorbar(lamda[reg], phi[reg], yerr=dphi,
                                          ls='-', color='#008888', label=u'$\\phi$')
           self.ui.wavelengthPol.errorbar(lamda[reg], Fp[reg], yerr=dFp,
@@ -227,12 +244,20 @@ class PolarizationDialog(QDialog):
         else:
           p, dp, a, da, Fp, dFp, Fa, dFa=self.calc_fullpols(I, self._FMitems[i][1])
           if not errbars:
-            dp=None;da=None;dFp=None;dFa=None
+            dp=None
+            da=None
+            dFp=None
+            dFa=None
           else:
-            dp=dp[reg];da=da[reg];dFp=dFp[reg];dFa=dFa[reg]
+            dp=dp[reg]
+            da=da[reg]
+            dFp=dFp[reg]
+            dFa=dFa[reg]
           lamda_all.append(lamda[reg])
-          p_all.append(p[reg]);a_all.append(a[reg])
-          Fp_all.append(Fp[reg]);Fa_all.append(Fa[reg])
+          p_all.append(p[reg])
+          a_all.append(a[reg])
+          Fp_all.append(Fp[reg])
+          Fa_all.append(Fa[reg])
           self.ui.wavelengthPol.errorbar(lamda[reg], p[reg], yerr=dp,
                                          ls='-', color='green', label=u'p')
           self.ui.wavelengthPol.errorbar(lamda[reg], a[reg], yerr=da,
@@ -329,7 +354,7 @@ class PolarizationDialog(QDialog):
       dFR1s=[]
       FR2s=[]
       dFR2s=[]
-      for i, (ignore, I, ignore) in enumerate(self._WLitems):
+      for i, (ignore, I, ignore) in enumerate(self._WLitems):  # noqa: E741
         lamda=list(I.values())[0].lamda
         reg=((lamda>=float(self.ui.wlTable.item(i, 1).text()))&
              (lamda<=float(self.ui.wlTable.item(i, 2).text())))
@@ -343,13 +368,17 @@ class PolarizationDialog(QDialog):
           FR1s.append(fr[reg])
           dFR1s.append(dfr[reg])
       if len(FR1s)!=len(lamdas):
-        FR1s=hstack(lamdas)*0.;dFR1s=hstack(lamdas)*0.
+        FR1s=hstack(lamdas)*0.
+        dFR1s=hstack(lamdas)*0.
       else:
-        FR1s=hstack(FR1s);dFR1s=hstack(dFR1s)
+        FR1s=hstack(FR1s)
+        dFR1s=hstack(dFR1s)
       if len(FR2s)!=len(lamdas):
-        FR2s=hstack(lamdas)*0.;dFR2s=hstack(lamdas)*0.
+        FR2s=hstack(lamdas)*0.
+        dFR2s=hstack(lamdas)*0.
       else:
-        FR2s=hstack(FR2s);dFR2s=hstack(dFR2s)
+        FR2s=hstack(FR2s)
+        dFR2s=hstack(dFR2s)
       lamdas=hstack(lamdas)
       f=open(name, 'w')
       f.write('## Wavelength dependence of flipping ratio\n')
@@ -371,7 +400,7 @@ class PolarizationDialog(QDialog):
       return
     f=open(name, 'w')
     f.write('## Pixel dependence of flipping ratio\n# lambda, X, FR1, dFR1\n')
-    for ignore, I, xpos in self._Xitems:
+    for ignore, I, xpos in self._Xitems:  # noqa: E741
       lamda=list(I.values())[0].lamda
       fr, dfr=self.calc_fr(I['++'], I['+-'])
       reg=I['++'].Rraw>0
@@ -422,7 +451,7 @@ class PolarizationDialog(QDialog):
     lamdas=[]
     Xs=[]
     FRs=[]
-    for ignore, I, xpos in self._Xitems:
+    for ignore, I, xpos in self._Xitems:  # noqa: E741
       lamda=list(I.values())[0].lamda
       lamdas.append(lamda)
       FRs.append(I['++'].Rraw/I['+-'].Rraw)
@@ -464,9 +493,11 @@ def m_l(lamda, lamda_0):
 def Pn(lamda, Pmax, lamda_0, s):
   m=m_l(lamda, lamda_0)
   if lamda_0>=2.5:
-    s2=s;s1=0.05
+    s2=s
+    s1=0.05
   else:
-    s1=s;s2=0.05
+    s1=s
+    s2=0.05
   return Pmax*(Iup(m, 4, s2)-Idown(m, 0.6, s1))/(Iup(m, 4, s2)+Idown(m, 0.6, s1))
 
 def Pn_residuals(p, lamda=None, Pdata=None, fjac=None):

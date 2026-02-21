@@ -26,9 +26,9 @@ class LimitingSpinBox(QSpinBox):
 class FilterWidget(QWidget):
   '''
   Widget used in the DatabaseWidget to specify a set of filters applied to the search.
-  
+
   When adding a filter the ActiveFilter widget is used to store and display the
-  options. 
+  options.
   FilterWidget.getFilters() is then used in the databaseWidget to collect
   the information in a filtering string and a set of filter parameters as
   needed by the buzhug database select method for filtering.
@@ -112,7 +112,7 @@ class FilterWidget(QWidget):
 
   def checkEntry(self):
     '''
-    Test if the current entry is valid for 
+    Test if the current entry is valid for
     '''
     ctype=self.columns[self.ui.filterColumn.currentIndex()][1]
     txt=str(self.ui.filterEntry.text())

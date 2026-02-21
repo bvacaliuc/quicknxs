@@ -10,7 +10,7 @@ from io import StringIO
 
 
 #
-# Help functions adopted from Michele Simionato's decorator module 
+# Help functions adopted from Michele Simionato's decorator module
 # http://www.phyast.pitt.edu/~micheles/python/decorator.zip
 #
 
@@ -57,15 +57,15 @@ def update_wrapper(wrapper, wrapped, create=False):
         infodict=wrapped
     else: # assume wrapped is a function
         infodict=getinfo(wrapped)
-    assert not '_wrapper_' in infodict["argnames"], \
+    assert '_wrapper_' not in infodict["argnames"], \
            '"_wrapper_" is a reserved argument name!'
     if create: # create a brand new wrapper with the right signature
         src="lambda %(signature)s: _wrapper_(%(signature)s)"%infodict
         # import sys; print >> sys.stderr, src # for debugging purposes
-        wrapper=eval(src, dict(_wrapper_=wrapper))        
+        wrapper=eval(src, dict(_wrapper_=wrapper))
     try:
         wrapper.__name__=infodict['name']
-    except: # Python version < 2.4
+    except Exception: # Python version < 2.4
         pass
     wrapper.__doc__=infodict['doc']
     wrapper.__module__=infodict['module']
@@ -107,7 +107,7 @@ class DecoratorLogger(logging.getLoggerClass()):
     A logger that makes sure the actual function definition filename, lineno and function name
     is used for logging.
   '''
-  
+
   if sys.version_info[0:2]>=(3, 2): #sinfo was introduced in python 3.2
     def makeRecord(self, name, lvl, fn, lno, msg, args, exc_info, func=None, extra=None, sinfo=None):
       if extra is None:
@@ -120,10 +120,10 @@ class DecoratorLogger(logging.getLoggerClass()):
   else:
     def makeRecord(self, name, lvl, fn, lno, msg, args, exc_info, func=None, extra=None):
       if extra is None:
-        return logging.getLoggerClass().makeRecord(self, name, lvl, fn, lno, 
+        return logging.getLoggerClass().makeRecord(self, name, lvl, fn, lno,
                            msg, args, exc_info, func=func, extra=None)
       else:
-        
+
         return logging.getLoggerClass().makeRecord(self, name, lvl, extra['name'], extra['lno'],
                            msg, args, exc_info, func=extra['func'], extra=None)
 
@@ -151,7 +151,8 @@ def log_call(func, *args, **kw):
   '''
     Decorator to log just the method call.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   infodict=getinfo(func)
   if len(infodict['argnames'])>0 and infodict['argnames'][0]=='self':
     _logformat('%s.%s.%s'%(infodict['module'],
@@ -166,7 +167,8 @@ def log_input(func, *args, **kw):
   '''
     Decorator to log a method call with input.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   infodict=getinfo(func)
   if hasattr(func, '__func__'):
     logstr=' call %s.%s('%(args[0].__class__.__name__, infodict['name'])
@@ -208,7 +210,8 @@ def log_output(func, *args, **kw):
     Decorator to log a method call with output. If combined with log_input
     the input is logged at the time before the call and the output after.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   output=func(*args, **kw)
   infodict=getinfo(func)
   if len(infodict['argnames'])>0 and infodict['argnames'][0]=='self':
@@ -229,7 +232,8 @@ def log_both(func, *args, **kw):
   '''
     Decoratore to log a method call with input and output.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   infodict=getinfo(func)
   if hasattr(func, '__func__'):
     logstr=' call %s.%s('%(args[0].__class__.__name__, infodict['name'])
@@ -284,12 +288,13 @@ def time_call(func, *args, **kw):
   '''
     Decorator to log just the method call.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   name=func.__name__
   start=time()
   output=func(*args, **kw)
   runtime=time()-start
-  if not name in timings:
+  if name not in timings:
     timings[name]=(0., 0.)
   avg, calls=timings[name]
   timings[name]=((avg*calls+runtime)/(calls+1), calls+1)
@@ -303,11 +308,11 @@ class check_input(object):
   '''
   try_convert=True
   types=[]
-  
+
   def __init__(self, types, try_convert=True):
     self.types=types
     self.try_convert=try_convert
-  
+
   def __call__(self, func):
     infodict=getinfo(func)
     argnames=infodict['argnames']

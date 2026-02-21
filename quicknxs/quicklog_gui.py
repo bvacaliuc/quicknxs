@@ -36,7 +36,7 @@ class Logfile(QObject):
 
     self.watch=QFileSystemWatcher([filename])
     self.watch.fileChanged.connect(self.update_text)
-  
+
   def read_text(self):
     fh=open(self.fname, 'rb')
     fh.seek(self.curpos)
@@ -60,7 +60,7 @@ class Logfile(QObject):
         logging.warn('Error reading entry text "%s":'%entry_text, exc_info=True)
         continue
       self.entries.append(entry)
-  
+
   def update_text(self):
     text=self.read_text()
     pre_update=len(self.entries)
@@ -167,7 +167,7 @@ class QuicklogWindow(QMainWindow):
   def showLog(self, logfile):
     '''
     Display the Logfile object in the ui treeview.
-    
+
     :param Logfile logfile: An Logfile instance to be displayed.
     '''
     self.logfile=None
@@ -182,7 +182,8 @@ class QuicklogWindow(QMainWindow):
     if threads:
       self.ui.filterThread.show()
       self.ui.filterThreadLabel.show()
-      for t in threads: self.ui.filterThread.addItem(t)
+      for t in threads:
+        self.ui.filterThread.addItem(t)
     else:
       self.ui.filterThread.hide()
       self.ui.filterThreadLabel.hide()

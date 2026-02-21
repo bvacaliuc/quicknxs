@@ -320,7 +320,7 @@ class MainGUI(QtWidgets.QMainWindow):
       stxt=_fh.read()
     try:
       code=compile(stxt, sfile, 'exec')
-    except:
+    except Exception:
       debug('Error in script:', exc_info=True)
       return None
     try:
@@ -329,7 +329,7 @@ class MainGUI(QtWidgets.QMainWindow):
         return None
       name=script_info[1].split('Name:', 1)[1].strip()
       info=script_info[2].split('Info:', 1)[1].strip()
-    except:
+    except Exception:
       debug("Can't parse script header:", exc_info=True)
       return None
     else:
@@ -384,7 +384,7 @@ class MainGUI(QtWidgets.QMainWindow):
             bin_type=self.ui.eventBinMode.currentIndex(),
             bins=self.ui.eventTofBins.value(),
             callback=self.updateEventReadout)
-    except:
+    except Exception:
       warning('Could not open files to sum them up:', exc_info=True)
       return
     self._fileOpenDone(data, filenames[0], do_plot)
@@ -967,7 +967,7 @@ class MainGUI(QtWidgets.QMainWindow):
   def plot_offspec(self):
     '''
     Create an offspecular plot for all channels of the datasets in the
-    reduction list. The user can define upper and lower bounds for the 
+    reduction list. The user can define upper and lower bounds for the
     plotted intensity and select the coordinates to be ither kiz-kfz vs. Qz,
     Qx vs. Qz or kiz vs. kfz.
     '''
@@ -1059,13 +1059,13 @@ class MainGUI(QtWidgets.QMainWindow):
       plot=plots[i]
       if plot.cplot is not None:
         for item in plot.canvas.ax.collections:
-          I=item.get_array()
+          I=item.get_array()  # noqa: E741
           Imin=min(Imin, I[I>0].min())
     for i, ignore in enumerate(self.ref_list_channels):
       plot=plots[i]
       if plot.cplot is not None:
         for item in plot.canvas.ax.collections:
-          I=item.get_array()
+          I=item.get_array()  # noqa: E741
           I[I<=0]=Imin
           item.set_array(I)
       plot.draw()
@@ -1158,7 +1158,7 @@ class MainGUI(QtWidgets.QMainWindow):
   @log_call
   def update_daslog(self):
     '''
-    Write parameters from all file daslogs to the tables in the 
+    Write parameters from all file daslogs to the tables in the
     daslog tab.
     '''
     table=self.ui.daslogTableBox
@@ -1300,7 +1300,7 @@ class MainGUI(QtWidgets.QMainWindow):
       from_backup=True
     try:
       parser=HeaderParser(header, parse_meta=not from_backup)
-    except:
+    except Exception:
       warning('Could not evaluate header information, probably the wrong format:\n\n',
               exc_info=True)
       return
@@ -1370,7 +1370,7 @@ class MainGUI(QtWidgets.QMainWindow):
     '''
     Make use of all automatic algorithms to reduce a full set of data in one run.
     Normalization files are detected by the tth angle to the selected peak position.
-    
+
     The result is shown in the table and can be modified by the user.
     '''
     last_file=''
@@ -1535,11 +1535,12 @@ class MainGUI(QtWidgets.QMainWindow):
     self.ui.datasetDangle0.setText(dangle0)
     self.ui.datasetSangle.setText(u"%.3f°"%d.sangle)
     self.ui.datasetDirectPixel.setText(dpix)
-    self.ui.currentChannel.setText('<b>%s</b> (%s)&nbsp;&nbsp;&nbsp;Type: %s&nbsp;&nbsp;&nbsp;Current State: <b>%s</b>'%(
-                                                      self.active_data.number,
-                                                      self.active_data.experiment,
-                                                      self.active_data.measurement_type,
-                                                      self.active_channel))
+    self.ui.currentChannel.setText(
+      '<b>%s</b> (%s)&nbsp;&nbsp;&nbsp;Type: %s&nbsp;&nbsp;&nbsp;Current State: <b>%s</b>'%(
+        self.active_data.number,
+        self.active_data.experiment,
+        self.active_data.measurement_type,
+        self.active_channel))
 
   @log_call
   def toggleColorbars(self):
@@ -1680,7 +1681,7 @@ class MainGUI(QtWidgets.QMainWindow):
   @log_both
   def getNorm(self, data=None):
     '''
-    Return a fitting normalization (same ToF channels and wavelength) for 
+    Return a fitting normalization (same ToF channels and wavelength) for
     a dataset.
     '''
     if self.active_data is None:
@@ -1714,7 +1715,8 @@ class MainGUI(QtWidgets.QMainWindow):
     else:
       if self._norm_selected is None:
         result=QtWidgets.QInputDialog.getItem(self, 'Select Normalization',
-                                          'There are more than one normalizations\nfor this wavelength available,\nplease select one:',
+                                          'There are more than one normalizations\n'
+                                          'for this wavelength available,\nplease select one:',
                                           indices, editable=False)
         if not result[1]:
           return None
@@ -2324,7 +2326,7 @@ class MainGUI(QtWidgets.QMainWindow):
     # the file also stores the current working state for reload after a crash (reduced data)
     if os.path.exists(paths.STATE_FILE):
       _result=QtWidgets.QMessageBox.warning(self, "Previous Crash",
-"""There is a state file but no running process for it, 
+"""There is a state file but no running process for it,
 this could indicate a previous crash.
 
 Do you want to try to restore the working reduction list?""",
@@ -2453,7 +2455,8 @@ Do you want to try to restore the working reduction list?""",
 
   @log_call
   def open_nxs_dialog(self):
-    if self.active_data is None: return
+    if self.active_data is None:
+      return
     dia=NXSDialog(self, self.active_data.origin)
     dia.show()
 
@@ -2487,7 +2490,7 @@ Do you want to try to restore the working reduction list?""",
         header='\n'.join(header)
         try:
           parser=HeaderParser(header)
-        except:
+        except Exception:
           warning('Open file %s:\nCould not evaluate header information, probably the wrong format:\n\n'%
                   name,
               exc_info=True)

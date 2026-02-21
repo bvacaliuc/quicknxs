@@ -7,7 +7,7 @@ try:
   import sip
   sip.setapi('QString', 2)
   sip.setapi('QVariant', 2)
-except:
+except Exception:
   pass
 
 # used for * imports

@@ -1383,7 +1383,7 @@ class mpfit:
                                 #if ct GT 0 OR finite(ratio) EQ 0 then begin
 
                         if self.status!=0:
-                                break;
+                                break
                 # End of outer loop.
                 if self.mp_pool is not None:
                   self.mp_pool.close()
@@ -1440,7 +1440,6 @@ class mpfit:
         def __str__(self):
                 return {'params': self.params,
                            'niter': self.niter,
-                           'params': self.params,
                            'covar': self.covar,
                            'perror': self.perror,
                            'status': self.status,
@@ -2248,7 +2247,7 @@ class mpfit:
                         if (numpy.abs(fp)<=0.1*delta) or \
                            ((parl==0) and (fp<=temp) and (temp<0)) or \
                            (iter_==10):
-                            break;
+                            break
 
                         # Compute the newton correction
                         wa1=diag[ipvt]*wa2[ipvt]/dxnorm

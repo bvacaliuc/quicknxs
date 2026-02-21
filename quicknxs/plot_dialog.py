@@ -82,4 +82,3 @@ class Ui_Dialog(object):
     self.clipButton.setText(_translate("Dialog", "Clip"))
 
 from .mplwidget import MPLWidget
-from . import icons_rc

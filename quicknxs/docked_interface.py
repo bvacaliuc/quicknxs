@@ -1783,4 +1783,3 @@ from .compare_plots import CompareWidget
 from .help_widgets import LimitingSpinBox
 from .mplwidget import MPLWidget
 from .persistentframe import PersistentFrame
-from . import icons_rc

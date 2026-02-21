@@ -67,10 +67,42 @@ filterwarnings = [
   "ignore::PendingDeprecationWarning:ipykernel",
 ]
 
+[tool.ruff]
+line-length = 120
+
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 
 [tool.ruff.lint.per-file-ignores]
+# Qt Designer auto-generated UI files — E402 because Qt pattern places imports
+# at the bottom of the file (after the Ui_ class body), E501 for long generated lines.
 "quicknxs/icons_rc.py" = ["E501"]
-"quicknxs/default_interface.py" = ["E501"]
-"quicknxs/docked_interface.py" = ["E501"]
+"quicknxs/default_interface.py" = ["E501", "E402"]
+"quicknxs/docked_interface.py" = ["E501", "E402"]
+"quicknxs/background_dialog.py" = ["E402", "E501"]
+"quicknxs/compare_widget.py" = ["E402"]
+"quicknxs/database_widget.py" = ["E402"]
+"quicknxs/gisans_dialog.py" = ["E402"]
+"quicknxs/nxs_widget.py" = ["E402"]
+"quicknxs/plot_dialog.py" = ["E402"]
+"quicknxs/point_picker_dialog.py" = ["E402"]
+"quicknxs/polarization_dialog.py" = ["E402"]
+"quicknxs/rawcompare_dialog.py" = ["E402"]
+"quicknxs/reduce_dialog.py" = ["E402"]
+"quicknxs/smooth_dialog.py" = ["E402"]
+# Data format template file — long lines are intentional column-aligned file headers.
+"quicknxs/config/output_templates.py" = ["E501"]
+# Third-party embedded libraries (should not be modified).
+"quicknxs/mpfit.py" = ["E501", "E402", "E741", "E722", "E721", "E701", "E702", "F841", "W293", "W291"]
+"quicknxs/buzhug/__init__.py" = ["F403", "F405"]
+"quicknxs/buzhug/buzhug.py" = ["F403", "F405", "E722", "E741"]
+"quicknxs/buzhug/buzhug_files.py" = ["E402"]
+# Scientific modules that use `from numpy import *` — a common numpy idiom
+# for interactive/computation code.  Refactoring to `import numpy as np`
+# throughout these large files is deferred; suppress the star-import warnings.
+"quicknxs/compare_plots.py" = ["F403", "F405"]
+"quicknxs/database.py" = ["F403", "F405"]
+"quicknxs/genx_data.py" = ["F403", "F405"]
+"quicknxs/qcalc.py" = ["F403", "F405"]
+"quicknxs/qreduce.py" = ["F403", "F405"]
+"quicknxs/rawcompare_plots.py" = ["F403", "F405"]

@@ -93,7 +93,7 @@ class BackgroundDialog(QDialog):
     row, col=item.row(), item.column()
     try:
       val=float(item.text())
-    except:
+    except Exception:
       return
     if len(self.polygons)>row:
       self.polygons[row][col//2][col%2]=val
@@ -143,7 +143,7 @@ class BackgroundDialog(QDialog):
     reg=norm>0
     lamda=refl.lamda[reg]
     # normalize all intensities by direct beam
-    I=refl.I[reg]/norm[reg]
+    I=refl.I[reg]/norm[reg]  # noqa: E741
     dI=sqrt((refl.dI[reg]/norm[reg])**2+(refl.I[reg]/norm[reg]**2*dnorm[reg])**2)
     BGraw=refl.BGraw[reg]/norm[reg]
     dBGraw=sqrt((refl.dBGraw[reg]/norm[reg])**2+(refl.BGraw[reg]/norm[reg]**2*dnorm[reg])**2)

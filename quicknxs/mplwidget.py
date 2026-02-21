@@ -5,7 +5,6 @@ from qtpy import QtGui, QtCore, QtWidgets
 from qtpy.QtPrintSupport import QPrinter, QPrintPreviewDialog
 import matplotlib.cm
 import matplotlib.colors
-from . import icons_rc #@UnusedImport
 from .config import plotting
 
 # set the default backend to be compatible with Qt in case someone uses pylab from IPython console
@@ -19,12 +18,11 @@ cmap=matplotlib.colors.LinearSegmentedColormap.from_list('default',
                   ['#0000ff', '#00ff00', '#ffff00', '#ff0000', '#bd7efc', '#000000'], N=256)
 matplotlib.colormaps.register(cmap, name='default')
 
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt import NavigationToolbar2QT
-from matplotlib.backend_tools import Cursors as _Cursors
-from matplotlib.cbook import _Stack as Stack
-from matplotlib.colors import LogNorm, Normalize
-from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # noqa: E402
+from matplotlib.backends.backend_qt import NavigationToolbar2QT  # noqa: E402
+from matplotlib.backend_tools import Cursors as _Cursors  # noqa: E402
+from matplotlib.colors import LogNorm, Normalize  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 try:
     import matplotlib.backends.qt_editor.figureoptions as figureoptions
 except ImportError:
@@ -122,7 +120,7 @@ class NavigationToolbar(NavigationToolbar2QT):
       Save the plot to a temporary png file and show a preview dialog also used for printing.
     '''
     filetypes=self.canvas.get_supported_filetypes_grouped()
-    sorted_filetypes=sorted(filetypes.items())
+    sorted(filetypes.items())
 
     filename=os.path.join(tempfile.gettempdir(), u"quicknxs_print.png")
     self.canvas.print_figure(filename, dpi=600)

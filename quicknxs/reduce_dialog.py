@@ -315,4 +315,3 @@ class Ui_Dialog(object):
     self.label_6.setText(_translate("Dialog", "Message Text:"))
     self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_2), _translate("Dialog", "Email Results"))
 
-from . import icons_rc

@@ -27,7 +27,7 @@ def validate_field(base,field_def):
         default = field_def[2]
         if isinstance(typ,base.__class__):
             if not hasattr(default.__class__,"db") or \
-                not default.__class__.db is typ:
+                default.__class__.db is not typ:
                 raise ValueError('Incorrect default value for field "%s"'
                     " : expected %s, got %s (class %s)" %(name,typ,
                         default,default.__class__))

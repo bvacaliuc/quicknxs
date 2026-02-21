@@ -16,15 +16,15 @@ except (ImportError, RuntimeError):
 
 class PeakFinder(object):
   '''
-  Peak finder which can be reevaluated with different thresholds 
+  Peak finder which can be reevaluated with different thresholds
   without recalculation all steps.
   The steps performed are:
-  
+
     - CWT of the dataset (which also removes the baseline)
     - Finding ridged lines by walking through different CWT scales
     - Calculate signal to noise ratio (SNR)
-    - Identify the peaks from the ridged lines 
-      (this is where the user parameters enter and can be recalculated fast) 
+    - Identify the peaks from the ridged lines
+      (this is where the user parameters enter and can be recalculated fast)
   '''
 
   def __init__(self, xdata, ydata, resolution=5):
@@ -162,7 +162,7 @@ class PeakFinder(object):
                 estimate_center=False):
     '''
     Return a list of peaks fulfilling the defined conditions.
-    
+
     :param snr: Minimal signal to noise ratio
     :param min_width: Minimal peak width
     :param max_width: Maximal peak width
@@ -170,7 +170,7 @@ class PeakFinder(object):
     :param analyze: Store information to analyze the filtering
     :param double_peak_detection: Perform a second run, where the ridge_length is reduced near found peaks
     :param estimate_center: Use the x position of the ridge maximum to estimate peak position
-    
+
     :return: List of found peaks as (x0, width, I0, ridge length, SNR)
     '''
     xdata=self.xdata
@@ -272,7 +272,7 @@ class PeakFinder(object):
         adjecent_peaks+=[item for item in double_peak_info if
                         (item[0]>=(peaki[0]-peaki[3]/2.*peaki[1]))
                         and (item[0]<=(peaki[0]+peaki[3]/2.*peaki[1]))
-                        and not item in adjecent_peaks
+                        and item not in adjecent_peaks
                         ]
       peak_info+=adjecent_peaks
     if analyze:
@@ -344,7 +344,7 @@ class Cwt:
     Used by subclass which provides the method wf(self,s_omega)
     wf is the Fourier transform of the wavelet function.
     Returns an instance.
-    
+
     Naming convention roughly follows [CTorrance1998]_.
     """
 
@@ -402,7 +402,8 @@ class Cwt:
         else a linear scale
         """
         if scaling=="log":
-            if notes<=0: notes=1
+            if notes<=0:
+              notes=1
             # adjust nscale so smallest scale is 1
             noctave=self._log2(2.*ndata/largestscale)
             self.nscale=notes*noctave
@@ -413,7 +414,8 @@ class Cwt:
             nmax=ndata/largestscale/2
             self.scales=numpy.arange(float(2), float(nmax))
             self.nscale=len(self.scales)
-        else: raise ValueError("scaling must be linear or log")
+        else:
+          raise ValueError("scaling must be linear or log")
         return
 
     def getdata(self):

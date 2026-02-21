@@ -16,7 +16,6 @@ rename backup file by removing the datetime string
 """
 import os
 import struct
-import random #@UnusedImport
 import math
 
 class OldFloatFile:

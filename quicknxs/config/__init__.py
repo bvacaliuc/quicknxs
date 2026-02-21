@@ -3,7 +3,7 @@
   Package containing configuration modules.
   This folder contains all files which define constants and parameters
   for quicknxs.
-  
+
   The config package facilitates a special ConfigProxy interface that
   acts like a dictionary, which is automatically generated from the
   submodules. Constants (variables using only capital letters) are
@@ -13,27 +13,27 @@
   next import. To get access to the configuration other modules
   only need to import the module name, which can be either
   used as dictionary or by accessing the objects attributes.
-  
+
   For example the module "user1" could look like this::
-    
+
     # module docstring
     config_file="user"
     CONST1=12.3
     CONST2=431.2
     opt1=12
     opt2=1
-  
+
   The module that wants to use these information will be similar to::
-  
+
     from quicknxs.config import user1
-    
+
     print user1.CONS1 # directly read from module
     print user1['opt1'] # first time read from module than from user.ini file
-    
+
   If the module does not define the 'config_file' variable it is treated as
   a normal module, if it is None the storage is just temporary and if it
   is the empty string it will use the default config file.
-  
+
   The proxy allows simple interpolation by using '%(name)s' inside a variable
   string, which will be substituted by the name variable from the same config.
   To use variables from a different config use '%(config.name)s' syntax.
@@ -62,7 +62,7 @@ def _create_proxy():
   Read all submodules and if config_file is defined
   add them to the ConfigProxy object that stores
   all information in .ini files. The usage in other
-  modules is the same for both cases when no parameter 
+  modules is the same for both cases when no parameter
   is imported dirctly from the submodule.
   '''
   global proxy, __all__

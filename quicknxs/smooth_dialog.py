@@ -247,4 +247,3 @@ class Ui_Dialog(object):
     self.label_14.setText(_translate("Dialog", "R [Sigmas]"))
 
 from .mplwidget import MPLWidget
-from . import icons_rc

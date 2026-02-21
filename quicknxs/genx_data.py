@@ -4,7 +4,8 @@ GenX template files.
 '''
 
 from numpy import *
-import os, time
+import os
+import time
 
 #==============================================================================
 #BEGIN: Class DataSet
@@ -95,8 +96,8 @@ class DataSet:
 
     def safe_copy(self, new_set):
         '''safe_copy(self, new_set) --> None
-        
-        A safe copy from one dataset to another. 
+
+        A safe copy from one dataset to another.
         Note, not totally safe since references are not broken
         '''
         self.name=new_set.name
@@ -162,14 +163,14 @@ class DataSet:
 
     def get_extra_data_names(self):
         '''get_extra_data_names(self) --> names [list]
-        
+
         returns the names of the extra data
         '''
         return self.extra_data.keys()
 
     def set_extra_data(self, name, value, command=None):
         '''set_extra_data_names(self, name, value, command = None)
-        
+
         sets extra data name, if it does not exist a new entry is created.
         name should be a string and value can be any object.
         If command is set, this means that the data set can be operated upon
@@ -185,7 +186,7 @@ class DataSet:
 
     def get_extra_data(self, name):
         '''get_extra_data(self, name) --> object
-        
+
         returns the extra_data object with name name [string] if does not
         exist an LookupError is yielded.
         '''
@@ -202,9 +203,9 @@ class DataSet:
         Possible extras:
         comments - string of chars that shows that a line is a comment
         delimeter - chars that are spacers between values default None
-            all whitespaces 
+            all whitespaces
         skiprows - number of rows to skip before starting to read the data
-        
+
         '''
         try:
             with open(filename) as f:
@@ -243,7 +244,7 @@ class DataSet:
 
     def save_file(self, filename):
         '''save_file(self, filename) --> None
-        
+
         saves the dataset to a file with filename.
         '''
         if  self.x.shape==self.y_sim.shape and \
@@ -269,10 +270,6 @@ class DataSet:
 
 
     def run_x_command(self):
-        x=self.x_raw #@UnusedVariable
-        y=self.y_raw #@UnusedVariable
-        e=self.error_raw #@UnusedVariable
-        xe=self.xerror_raw #@UnusedVariable
 
         for key in self.extra_data_raw:
             exec('%s = self.extra_data_raw["%s"]'%(key, key))
@@ -281,10 +278,6 @@ class DataSet:
         #print self.x
 
     def run_y_command(self):
-        x=self.x_raw #@UnusedVariable
-        y=self.y_raw #@UnusedVariable
-        e=self.error_raw #@UnusedVariable
-        xe=self.xerror_raw #@UnusedVariable
 
         for key in self.extra_data_raw:
             exec('%s = self.extra_data_raw["%s"]'%(key, key))
@@ -294,10 +287,6 @@ class DataSet:
         #print self.y_command
 
     def run_error_command(self):
-        x=self.x_raw #@UnusedVariable
-        y=self.y_raw #@UnusedVariable
-        e=self.error_raw #@UnusedVariable
-        xe=self.xerror_raw #@UnusedVariable
 
         for key in self.extra_data_raw:
             exec('%s = self.extra_data_raw["%s"]'%(key, key))
@@ -305,10 +294,6 @@ class DataSet:
         self.error=eval(self.error_command)
 
     def run_xerror_command(self):
-        x=self.x_raw #@UnusedVariable
-        y=self.y_raw #@UnusedVariable
-        e=self.error_raw #@UnusedVariable
-        xe=self.xerror_raw #@UnusedVariable
 
         for key in self.extra_data_raw:
             exec('%s = self.extra_data_raw["%s"]'%(key, key))
@@ -316,10 +301,6 @@ class DataSet:
         self.xerror=eval(self.xerror_command)
 
     def run_extra_commands(self):
-        x=self.x_raw #@UnusedVariable
-        y=self.y_raw #@UnusedVariable
-        e=self.error_raw #@UnusedVariable
-        xe=self.xerror_raw #@UnusedVariable
 
         for key in self.extra_data_raw:
             exec('%s = self.extra_data_raw["%s"]'%(key, key))
@@ -338,15 +319,12 @@ class DataSet:
 
     def try_commands(self, command_dict):
         ''' try_commands(self, command_dict) --> tuple of bool
-        Evals the commands to locate any errors. Used to 
+        Evals the commands to locate any errors. Used to
         test the commands before doing the actual setting of x,y and z
         '''
         result=''
 
-        x=self.x_raw #@UnusedVariable
-        y=self.y_raw #@UnusedVariable
         e=self.error_raw #@UnusedVariable
-        xe=self.xerror_raw #@UnusedVariable
 
         #Know we have to do this with the extra data
         for key in self.extra_data_raw:
@@ -448,7 +426,7 @@ class DataSet:
 
     def get_sim_plot_items(self):
         '''get_sim_plot_items(self) --> dict
-        Returns a dictonary of color [tuple], symbol [string], 
+        Returns a dictonary of color [tuple], symbol [string],
         sybolsize [float], linetype [string], linethickness [float].
         Used for plotting the simulation.
         '''
@@ -461,7 +439,7 @@ class DataSet:
                }
     def get_data_plot_items(self):
         '''get_data_plot_items(self) --> dict
-        Returns a dictonary of color [tuple], symbol [string], 
+        Returns a dictonary of color [tuple], symbol [string],
         sybolsize [float], linetype [string], linethickness [float].
         Used for plotting the data.
         '''
@@ -476,15 +454,15 @@ class DataSet:
     def set_data_plot_items(self, pars):
         ''' set_data_plot_items(self, pars) --> None
         Sets the plotting parameters for the data by a dictonary of the
-        same structure as in get_data_plot_items(). If one of items in the 
+        same structure as in get_data_plot_items(). If one of items in the
         pars [dictonary] is None that item will be skipped, i.e. keep its old
         value.
         '''
         #print 'data set_data_plot_items: '
         #print pars
         for name in self.plot_setting_names:
-            if pars[name]!=None:
-                if type(pars[name])==type(''):
+            if pars[name] is not None:
+                if isinstance(pars[name], str):
                     exec('self.data_'+name+' = "' \
                             +pars[name].__str__()+'"')
                 elif name=='color':
@@ -496,15 +474,15 @@ class DataSet:
     def set_sim_plot_items(self, pars):
         ''' set_data_plot_items(self, pars) --> None
         Sets the plotting parameters for the data by a dictonary of the
-        same structure as in get_data_plot_items(). If one of items in the 
+        same structure as in get_data_plot_items(). If one of items in the
         pars [dictonary] is None that item will be skipped, i.e. keep its old
         value.
         '''
         #print 'data set_sim_plot_items: '
         #print pars
         for name in self.plot_setting_names:
-            if pars[name]!=None:
-                if type(pars[name])==type(''):
+            if pars[name] is not None:
+                if isinstance(pars[name], str):
                     exec('self.sim_'+name+' = "' \
                             +pars[name].__str__()+'"')
                 elif name=='color':
@@ -530,14 +508,14 @@ class DataList:
 
     def __getitem__(self, key):
         '''__getitem__(self,key) --> DataSet
-        
+
         returns item at position key
         '''
         return self.items[key]
 
     def __iter__(self):
         ''' __iter__(self) --> iterator
-        
+
         Opertor definition. Good to have in case one needs to loop over
         all datasets
         '''
@@ -545,14 +523,14 @@ class DataList:
 
     def __len__(self):
         '''__len__(self) --> length (integer)
-        
+
         Returns the nmber of datasers in the list.
         '''
         return self.items.__len__()
 
     def safe_copy(self, new_data):
         '''safe_copy(self, new_data) --> None
-        
+
         Conduct a safe copy of a data set into this data set.
         This is intended to produce version safe import of data sets.
         '''
@@ -563,8 +541,8 @@ class DataList:
 
     def add_new(self, name=''):
         ''' add_new(self,name='') --> None
-        
-        Adds a new DataSet with the optional name. If name not sets it 
+
+        Adds a new DataSet with the optional name. If name not sets it
         will be given an automatic name
         '''
         if name=='':
@@ -576,9 +554,9 @@ class DataList:
         #print "An empty dataset is appended at postition %i."%(len(self.items)-1)
 
     def delete_item(self, pos):
-        '''delete_item(self,pos) --> None        
-        
-        Deletes the item at position pos. Only deletes if the pos is an 
+        '''delete_item(self,pos) --> None
+
+        Deletes the item at position pos. Only deletes if the pos is an
         element and the number of datasets are more than one.
         '''
         if pos<len(self.items) and len(self.items)>1:
@@ -591,7 +569,7 @@ class DataList:
 
     def move_up(self, pos):
         '''move_up(self, pos) --> None
-        
+
         Move the data set at position pos up one step. If it is at the top
         it will not be moved.
         '''
@@ -602,7 +580,7 @@ class DataList:
     def move_down(self, pos):
         '''
         move_down(self,pos) --> None
-        
+
         Move the dataset at postion pos down one step. If it is at the bottom
         it will not be moved.
         '''
@@ -612,15 +590,15 @@ class DataList:
 
     def update_data(self):
         ''' update_data(self) --> None
-        
-        Calcultes all the values for the current items. 
+
+        Calcultes all the values for the current items.
         '''
         [item.run_command() for item in self.items]
 
     def set_simulated_data(self, sim_data):
         '''
         set_simulated_data(self, sim_data) --> None
-        
+
         Sets the simualted data in the data. Note this will depend on the
         flag use in the data.
         '''
@@ -633,8 +611,8 @@ class DataList:
     def get_name(self, pos):
         '''
         get_name(self,pos) --> name (string)
-        
-        Yields the name(string) of the dataset at position pos(int). 
+
+        Yields the name(string) of the dataset at position pos(int).
         '''
         return self.items[pos].name
 
@@ -673,7 +651,7 @@ class DataList:
 
     def show_items(self, positions):
         '''show_items(self, positions) --> None
-        Will put the datasets at positions [list] to show all 
+        Will put the datasets at positions [list] to show all
         other of no show, hide.
         '''
         [item.set_show(i in positions) for i, item in enumerate(self.items)]
@@ -682,16 +660,16 @@ class DataList:
     def set_name(self, pos, name):
         '''
         set_name(self,pos,name) --> None
-        
+
         Sets the name of the data set at position pos (int) to name (string)
         '''
         self.items[pos].name=name
 
     def export_data_to_files(self, basename, indices=None):
         '''export_data_to_files(self, basename, indices = None) --> None
-        
+
         saves the data to files with base name basename and extentions .dat
-        If indices are used only the data given in the list indices are 
+        If indices are used only the data given in the list indices are
         exported.
         '''
         # Check if we shoudlstart picking data sets to export
@@ -711,7 +689,7 @@ class DataList:
 
     def get_data_as_asciitable(self, indices=None):
         ''' get_data_as_table(self, indices = None) --> string
-        
+
         Yields the data sets as a ascii table with tab seperated values.
         This makes it possible to export the data to for example spreadsheets.
         Each data set will be four columns with x, Meas, Meas error and Calc.

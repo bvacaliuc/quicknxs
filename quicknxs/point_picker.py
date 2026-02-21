@@ -15,8 +15,8 @@ class PointPicker(QDialog):
   from a list of αi,Q,I values or directly on the plot.
   The dialog is created with the filename where the data is taken from. Optionally
   the pre_filter list can be given, which is a list of indices to be selected on startup.
-  
-  When the user accepts the dialog, the current selection 
+
+  When the user accepts the dialog, the current selection
   is stored in the filtered_idxs attribute.
   '''
   origin_file=None
@@ -93,7 +93,7 @@ class PointPicker(QDialog):
   def plot(self):
     '''
     Draw lines for the filtered data colored by incident angle values and
-    black dots for removed points. 
+    black dots for removed points.
     '''
     plot=self.ui.plot
 

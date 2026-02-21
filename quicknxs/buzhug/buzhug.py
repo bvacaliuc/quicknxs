@@ -89,7 +89,6 @@ Version 1.8
 import os #@UnusedImport
 import threading
 from io import StringIO
-import itertools
 import token
 import tokenize
 import re
@@ -203,11 +202,11 @@ class ResultSet(list):
             tt = token.tok_name[t[0]]
             ts = t[1]
             if tt == 'OP':
-                if not ts in ['+','-']:
+                if ts not in ['+','-']:
                     raise SyntaxError("Bad operator in sort condition: %s" %ts)
                 order = ts
             elif tt == 'NAME':
-                if not ts in self.names:
+                if ts not in self.names:
                     raise ValueError("Unknown sort field :%s" %ts)
                 cond.append((self.names.index(ts),order))
         # build the function order_func used to sort records
@@ -708,7 +707,7 @@ class Base:
         if not names:
             names = self.field_names
         else:
-            names += [ f for f in ['__id__','__version__'] if not f in names ]
+            names += [ f for f in ['__id__','__version__'] if f not in names ]
         res,names = self._select(names,request,**args)
         return ResultSet(names,list(res.values()))
 
@@ -771,7 +770,7 @@ class Base:
                 else:
                     _c.append(self.f_encode[t](v))
             for n in args.keys():
-                if not n in _names:
+                if n not in _names:
                     _names.append(n)
         else:
             for (k,v) in args.items():
@@ -790,7 +789,7 @@ class Base:
             mo = n.search(_request)
             if mo:
                 name = mo.group('name')
-                if not name in _names:
+                if name not in _names:
                     _names.append(name)
 
         # replace field names by their rank in record
@@ -923,7 +922,7 @@ class Base:
 
         if after is None:
             indx = 2 # insert after __version__
-        elif not after in self.field_names:
+        elif after not in self.field_names:
             raise NameError("No field named %s" %after)
         else:
             indx = 1+self.field_names.index(after)
@@ -941,7 +940,7 @@ class Base:
 
     def drop_field(self,field_name):
         """Remove the specified field name"""
-        if not field_name in self.field_names:
+        if field_name not in self.field_names:
             raise NameError("No field named %s" %field_name)
         if field_name == '__id__':
             raise ValueError("Field __id__ can't be removed")
@@ -959,7 +958,7 @@ class Base:
 
     def _validate(self,k,v):
         """Validate the couple key,value"""
-        if not k in self.fields.keys():
+        if k not in self.fields.keys():
             raise NameError("No field named %s" %k)
         if v is None:
             return

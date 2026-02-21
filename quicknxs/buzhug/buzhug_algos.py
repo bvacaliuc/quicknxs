@@ -6,7 +6,6 @@ number of blocks are read and the search is made on the buffer
 """
 
 from datetime import date, datetime
-import itertools
 
 def rev(s):
     """ function used to compare strings in decreasing order"""
@@ -26,7 +25,7 @@ def make_search_func(db,field,value):
         if not len(value)==2:
             raise ValueError("If argument is a list, only 2 values "
                 "should be passed (found %s)" %len(value))
-        if not db.fields[field] in [int,float,date,datetime]:
+        if db.fields[field] not in [int,float,date,datetime]:
             raise TypeError("Search between values is only allowed for "
                 "int, float, date and datetime (found %s)" %db.fields[field])
         db._validate(field,value[0])
@@ -111,7 +110,7 @@ def fast_select(db,names,**args):
     v_args = [ (k,v) for (k,v) in args.items()
         if not hasattr(db._file[k],'block_len') ]
     arg_names = [ k for k,v in f_args + v_args ]
-    no_args = [ n for n in names if not n in arg_names ]
+    no_args = [ n for n in names if n not in arg_names ]
     names = arg_names + no_args
 
     [ db._file[k].seek(0) for k in names + list(args.keys()) ]
