@@ -1,7 +1,7 @@
 # Monthly automated pixi lockfile refresh.
 #
 # Runs pixi update, generates a human-readable markdown diff, then opens a PR
-# against master so a maintainer can review and merge the dependency bump.
+# against next so a maintainer can review and merge the dependency bump.
 #
 # One-time repository setup required:
 #   Settings > Actions > General > Workflow permissions:
@@ -73,4 +73,4 @@ jobs:
           title: "chore: monthly pixi lockfile update"
           body: ${{ steps.pr-body.outputs.body }}
           labels: dependencies
-          base: master
+          base: next
