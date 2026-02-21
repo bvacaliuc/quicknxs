@@ -3,10 +3,13 @@
 # Runs pixi update, generates a human-readable markdown diff, then opens a PR
 # against next so a maintainer can review and merge the dependency bump.
 #
-# One-time repository setup required:
-#   Settings > Actions > General > Workflow permissions:
-#     Enable "Allow GitHub Actions to create and approve pull requests"
-#   (See GitHub issue: "Enable 'Allow GitHub Actions to create PRs' for lockfile workflow")
+# Required secrets:
+#   WORKFLOW_PAT — a fine-grained Personal Access Token with "Contents: write"
+#                  and "Pull requests: write" permissions on this repo.
+#                  Using a PAT (instead of GITHUB_TOKEN) allows the push that
+#                  creates the PR branch to trigger CI on that branch, so the
+#                  required status checks are satisfied automatically.
+#                  See GitHub issue: "Configure WORKFLOW_PAT for lockfile CI"
 #
 # Pinned actions (tag + full SHA for supply-chain security):
 #   actions/checkout             v4.2.2  11bd71901bbe5b1630ceea73d27597364c9af683
@@ -66,7 +69,10 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0  # v8.1.0
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # WORKFLOW_PAT must be a fine-grained PAT; see issue "Configure WORKFLOW_PAT for lockfile CI".
+          # A PAT-driven push triggers CI on the new branch so required status checks are satisfied.
+          # Without it, GitHub's anti-loop protection suppresses the push event and CI never runs.
+          token: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
           commit-message: "chore: update pixi.lock"
           branch: chore/update-pixi-lockfile
           delete-branch: true
