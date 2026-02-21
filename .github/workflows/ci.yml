@@ -11,12 +11,14 @@ on:
   push:
     branches:
       - master
+      - next
       - "feature/**"
       - "bug/**"
       - "fix/**"
+      - "chore/**"
     tags: ["v*"]
   pull_request:
-    branches: [master]
+    branches: [master, next]
   workflow_dispatch:
 
 # Cancel any in-progress run for the same branch/PR when a new commit arrives.
