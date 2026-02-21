@@ -10,13 +10,12 @@ Use this script to upgrade to the new version : select the directory
 for the database in the window, this will upgrade all float fields
 
 For safety reasons, a backup copy of old files for these fields is
-saved in the directory with current datetime appended at the end of 
-file name. In case of any problem, remove new file for the field and 
+saved in the directory with current datetime appended at the end of
+file name. In case of any problem, remove new file for the field and
 rename backup file by removing the datetime string
 """
 import os
 import struct
-import random #@UnusedImport
 import math
 
 class OldFloatFile:
@@ -27,18 +26,18 @@ class OldFloatFile:
     X = MAXSHORT - MIDSHORT
 
     def from_block(self,block):
-        if block[0]=='!':
+        if block[0:1]==b'!':
             return None
         else:
             s = block[1:]
-            if ord(s[0]) < 128:
+            if (s[0] if isinstance(s[0], int) else ord(s[0])) < 128:
                 # negative number
                 pack_exp = s[:2]
                 exp = 3000 - struct.unpack('>h',pack_exp)[0]
-                mant = struct.unpack('>d',chr(63)+s[2:])[0] - 1.1
+                mant = struct.unpack('>d',bytes([63])+s[2:])[0] - 1.1
             else:
                 exp = self.X + struct.unpack('>h',s[:2])[0]
-                mant = struct.unpack('>d',chr(63)+s[2:])[0]
+                mant = struct.unpack('>d',bytes([63])+s[2:])[0]
             return math.ldexp(mant,exp)
 
 class FloatFile:
@@ -49,40 +48,40 @@ class FloatFile:
 
     def to_block(self,value):
         if value is None:
-            return '!'+chr(0)*9
+            return b'!' + bytes(9)
         elif not isinstance(value,float):
-            raise ValueError,'Bad type : expected float, got %s %s' \
-                %(value,value.__class__)
+            raise ValueError('Bad type : expected float, got %s %s'
+                %(value,value.__class__))
         else:
             # get mantissa and exponent
             # f = mant*2**exp, 0.5 <= abs(mant) < 1
             mant,exp = math.frexp(value)
             if value>=0:
                 pack_exp = struct.pack('>H',exp+self.offsetpos)
-                return '-'+pack_exp+struct.pack('>d',mant)[1:]
+                return b'-'+pack_exp+struct.pack('>d',mant)[1:]
             else:
                 pack_exp = struct.pack('>H',self.offsetneg-exp)
-                return '-'+pack_exp+struct.pack('>d',1.1+mant)[1:]
+                return b'-'+pack_exp+struct.pack('>d',1.1+mant)[1:]
 
     def from_block(self,block):
-        if block[0]=='!':
+        if block[0:1]==b'!':
             return None
         else:
             s = block[1:]
-            if ord(s[0])<128:
+            if (s[0] if isinstance(s[0], int) else ord(s[0]))<128:
                 # negative number
                 exp = self.offsetneg-struct.unpack('>H',s[:2])[0]
-                mant = struct.unpack('>d',chr(63)+s[2:])[0] - 1.1
+                mant = struct.unpack('>d',bytes([63])+s[2:])[0] - 1.1
             else:
                 exp = struct.unpack('>H',s[:2])[0]-self.offsetpos
-                mant = struct.unpack('>d',chr(63)+s[2:])[0]
+                mant = struct.unpack('>d',bytes([63])+s[2:])[0]
             return math.ldexp(mant,exp)
 
 def conv(old):
     # update base to new version
     of = OldFloatFile()
     nf = FloatFile()
-    for (f,t) in old.fields.iteritems():
+    for (f,t) in old.fields.items():
         if t is float:
             old_path = db._file[f].path
             new_path = os.path.join(db._file[f].base,"new_"+db._file[f].name)
@@ -94,10 +93,10 @@ def conv(old):
                 else:
                     new_block = nf.to_block(v)
                     if nf.from_block(new_block) != v:
-                        raise ValueError,"conversion error : %s != %s" \
-                            %(v,nf.from_block(new_block))
+                        raise ValueError("conversion error : %s != %s"
+                            %(v,nf.from_block(new_block)))
                 new_file.write(new_block)
-            print i,"lines"
+            print(i,"lines")
             new_file.close()
 
             # double-check if values are the same between old and new file
@@ -110,8 +109,8 @@ def conv(old):
                     break
                 new = new_file.read(bl)
                 if not of.from_block(old) == nf.from_block(new):
-                    raise ValueError, "conversion error : %s != %s" \
-                        %(of.from_block(old),nf.from_block(new))
+                    raise ValueError("conversion error : %s != %s"
+                        %(of.from_block(old),nf.from_block(new)))
 
             new_file.close()
             # replace old file
@@ -120,12 +119,13 @@ def conv(old):
             import datetime
             backup_name = db._file[f].name+datetime.datetime.now().strftime("%y%m%d%H%M%S")
             os.rename(db._file[f].path,os.path.join(db._file[f].base,backup_name))
-            os.rename(new_path,old_path)            
+            os.rename(new_path,old_path)
 
-import buzhug                
-import tkFileDialog
+if __name__ == '__main__':
+    import tkinter.filedialog as tkFileDialog
+    from . import buzhug
 
-path = tkFileDialog.askdirectory()
-if path :
-    db = buzhug.Base(path).open()
-    conv(db)
+    path = tkFileDialog.askdirectory()
+    if path :
+        db = buzhug.Base(path).open()
+        conv(db)

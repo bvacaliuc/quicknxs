@@ -6,11 +6,11 @@ import sys
 import inspect
 import logging
 from time import time
-from StringIO import StringIO
+from io import StringIO
 
 
 #
-# Help functions adopted from Michele Simionato's decorator module 
+# Help functions adopted from Michele Simionato's decorator module
 # http://www.phyast.pitt.edu/~micheles/python/decorator.zip
 #
 
@@ -26,18 +26,23 @@ def getinfo(func):
       - dict (the function __dict__ : str)
     """
     assert inspect.ismethod(func) or inspect.isfunction(func)
-    regargs, varargs, varkwargs, defaults=inspect.getargspec(func)
+    regargs, varargs, varkwargs, defaults=inspect.getfullargspec(func)[:4]
     argnames=list(regargs)
     if varargs:
         argnames.append(varargs)
     if varkwargs:
         argnames.append(varkwargs)
-    signature=inspect.formatargspec(regargs, varargs, varkwargs, defaults,
-                                      formatvalue=lambda value: "")[1:-1]
+    # Build signature string (inspect.formatargspec removed in Python 3.11)
+    sig_parts = list(regargs)
+    if varargs:
+        sig_parts.append('*' + varargs)
+    if varkwargs:
+        sig_parts.append('**' + varkwargs)
+    signature = ', '.join(sig_parts)
     output=dict(name=func.__name__, argnames=argnames, signature=signature,
-                defaults=func.func_defaults, doc=func.__doc__,
+                defaults=func.__defaults__, doc=func.__doc__,
                 module=func.__module__, dict=func.__dict__,
-                globals=func.func_globals, closure=func.func_closure)
+                globals=func.__globals__, closure=func.__closure__)
     return output
 
 def update_wrapper(wrapper, wrapped, create=False):
@@ -52,20 +57,20 @@ def update_wrapper(wrapper, wrapped, create=False):
         infodict=wrapped
     else: # assume wrapped is a function
         infodict=getinfo(wrapped)
-    assert not '_wrapper_' in infodict["argnames"], \
+    assert '_wrapper_' not in infodict["argnames"], \
            '"_wrapper_" is a reserved argument name!'
     if create: # create a brand new wrapper with the right signature
         src="lambda %(signature)s: _wrapper_(%(signature)s)"%infodict
         # import sys; print >> sys.stderr, src # for debugging purposes
-        wrapper=eval(src, dict(_wrapper_=wrapper))        
+        wrapper=eval(src, dict(_wrapper_=wrapper))
     try:
         wrapper.__name__=infodict['name']
-    except: # Python version < 2.4
+    except Exception: # Python version < 2.4
         pass
     wrapper.__doc__=infodict['doc']
     wrapper.__module__=infodict['module']
     wrapper.__dict__.update(infodict['dict'])
-    wrapper.func_defaults=infodict['defaults']
+    wrapper.__defaults__=infodict['defaults']
     return wrapper
 
 
@@ -102,7 +107,7 @@ class DecoratorLogger(logging.getLoggerClass()):
     A logger that makes sure the actual function definition filename, lineno and function name
     is used for logging.
   '''
-  
+
   if sys.version_info[0:2]>=(3, 2): #sinfo was introduced in python 3.2
     def makeRecord(self, name, lvl, fn, lno, msg, args, exc_info, func=None, extra=None, sinfo=None):
       if extra is None:
@@ -115,10 +120,10 @@ class DecoratorLogger(logging.getLoggerClass()):
   else:
     def makeRecord(self, name, lvl, fn, lno, msg, args, exc_info, func=None, extra=None):
       if extra is None:
-        return logging.getLoggerClass().makeRecord(self, name, lvl, fn, lno, 
+        return logging.getLoggerClass().makeRecord(self, name, lvl, fn, lno,
                            msg, args, exc_info, func=func, extra=None)
       else:
-        
+
         return logging.getLoggerClass().makeRecord(self, name, lvl, extra['name'], extra['lno'],
                            msg, args, exc_info, func=extra['func'], extra=None)
 
@@ -133,10 +138,10 @@ logger.addHandler(null_handler)
 logging.setLoggerClass(old_class)
 
 def _logformat(msg, decname, func):
-  if hasattr(func, 'im_func'):
-    co=func.im_func.func_code
+  if hasattr(func, '__func__'):
+    co=func.__func__.__code__
   else:
-    co=func.func_code
+    co=func.__code__
   fname=co.co_filename
   lno=co.co_firstlineno
   logger.debug(msg, extra={'func': '@'+decname, 'name': fname, 'lno': lno})
@@ -146,7 +151,8 @@ def log_call(func, *args, **kw):
   '''
     Decorator to log just the method call.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   infodict=getinfo(func)
   if len(infodict['argnames'])>0 and infodict['argnames'][0]=='self':
     _logformat('%s.%s.%s'%(infodict['module'],
@@ -161,9 +167,10 @@ def log_input(func, *args, **kw):
   '''
     Decorator to log a method call with input.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   infodict=getinfo(func)
-  if hasattr(func, 'im_func'):
+  if hasattr(func, '__func__'):
     logstr=' call %s.%s('%(args[0].__class__.__name__, infodict['name'])
     method=True
     info_len=len('%s.%s('%(args[0].__class__.__name__, infodict['name']))
@@ -203,7 +210,8 @@ def log_output(func, *args, **kw):
     Decorator to log a method call with output. If combined with log_input
     the input is logged at the time before the call and the output after.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   output=func(*args, **kw)
   infodict=getinfo(func)
   if len(infodict['argnames'])>0 and infodict['argnames'][0]=='self':
@@ -224,9 +232,10 @@ def log_both(func, *args, **kw):
   '''
     Decoratore to log a method call with input and output.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   infodict=getinfo(func)
-  if hasattr(func, 'im_func'):
+  if hasattr(func, '__func__'):
     logstr=' call %s.%s('%(args[0].__class__.__name__, infodict['name'])
     method=True
     info_len=len('%s.%s('%(args[0].__class__.__name__, infodict['name']))
@@ -279,12 +288,13 @@ def time_call(func, *args, **kw):
   '''
     Decorator to log just the method call.
   '''
-  if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
+  if logging.root.getEffectiveLevel()>logging.DEBUG:
+    return func(*args, **kw)
   name=func.__name__
   start=time()
   output=func(*args, **kw)
   runtime=time()-start
-  if not name in timings:
+  if name not in timings:
     timings[name]=(0., 0.)
   avg, calls=timings[name]
   timings[name]=((avg*calls+runtime)/(calls+1), calls+1)
@@ -298,11 +308,11 @@ class check_input(object):
   '''
   try_convert=True
   types=[]
-  
+
   def __init__(self, types, try_convert=True):
     self.types=types
     self.try_convert=try_convert
-  
+
   def __call__(self, func):
     infodict=getinfo(func)
     argnames=infodict['argnames']
@@ -315,9 +325,9 @@ class check_input(object):
         src+='\n    try:'
         src+='\n      %s=%s(%s)'%(argnames[i], typei.__name__, argnames[i])
         src+='\n    except:'
-        src+='\n      raise ValueError, "type of %s is not %s"'%(argnames[i], typei.__name__)
+        src+='\n      raise ValueError("type of %s is not %s")'%(argnames[i], typei.__name__)
       else:
-        src+='\n    raise ValueError, "type of %s is not %s"'%(argnames[i], typei.__name__)
+        src+='\n    raise ValueError("type of %s is not %s")'%(argnames[i], typei.__name__)
     src+='\n  return _func_(%(signature)s)'%infodict
     exec_dict=dict(_func_=func, _call_=self.__call__)
     exec(src, exec_dict)

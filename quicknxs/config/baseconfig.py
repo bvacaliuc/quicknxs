@@ -4,11 +4,11 @@
   combines module parameters with temporary and user changeable
   configuration file options. When used in other modules
   this facility is completely hidden to the API.
-  
+
   As each parameter can be accessed as an attribute of the ConfigHolder object
   it behaves exactly like the according module would to, thus
   IDEs with context sensitive syntax completion work with it as well.
-  
+
   The initialization of all config modules is done in the config __init__ module.
 '''
 
@@ -16,7 +16,7 @@ import os
 import atexit
 import re
 import sys
-from .configobj import ConfigObj, ConfigObjError
+from configobj import ConfigObj, ConfigObjError
 from ..decorators import log_call, log_input
 
 
@@ -52,18 +52,18 @@ class ConfigProxy(object):
   def add_config(self, name, items, storage=''):
     '''
     Crate a new dictionary connected to a storage config file.
-    
+
     :returns: The corresponding :class:`ConfigHolder` object.
     '''
     if storage=='':
       storage=self.default_storage
     if storage is None:
       storage='_temp'
-      if not '_temp' in self.storages:
+      if '_temp' not in self.storages:
         self.tmp_storages[storage]={}
         # use the exact same dictionary object
         self.storages[storage]=self.tmp_storages[storage]
-    elif not storage in self.storages:
+    elif storage not in self.storages:
       sfile=os.path.join(self.config_path, storage+'.ini')
       try:
         self.storages[storage]=ConfigObj(
@@ -83,7 +83,7 @@ class ConfigProxy(object):
     if name in self.storages[storage]:
       # update additional options from config
       for key, value in items.items():
-        if not key in self.storages[storage][name]:
+        if key not in self.storages[storage][name]:
           self.storages[storage][name][key]=value
     else:
       self.storages[storage][name]=dict(items)
@@ -94,7 +94,7 @@ class ConfigProxy(object):
   def add_path_config(self, name, items, cpath):
     '''
     Crate a new dictionary connected to a storage config file.
-    
+
     :returns: The corresponding :class:`ConfigHolder` object.
     '''
     # get last config from file, if it exists
@@ -114,7 +114,7 @@ class ConfigProxy(object):
       ccopts['last_file']=last_cfile
       ccopts['config_files']=[last_cfile]
 
-    if not cpath in self.storages:
+    if cpath not in self.storages:
       sfile=os.path.join(cpath, last_cfile+'.ini')
       try:
         self.storages[cpath]=ConfigObj(
@@ -135,7 +135,7 @@ class ConfigProxy(object):
     if name in self.storages[cpath]:
       # update additional options from config
       for key, value in items.items():
-        if not key in self.storages[cpath][name]:
+        if key not in self.storages[cpath][name]:
           self.storages[cpath][name][key]=value
     else:
       self.storages[cpath][name]=dict(items)
@@ -150,11 +150,11 @@ class ConfigProxy(object):
 
   @log_input
   def switch_path_config(self, cpath, cname):
-    if not cpath in self.path_configs:
+    if cpath not in self.path_configs:
       if cpath in self.configs and self.configs[cpath] in self.path_configs:
         cpath=self.configs[cpath]
       else:
-        raise KeyError, 'Config path %s is not defined'%cpath
+        raise KeyError('Config path %s is not defined'%cpath)
     # save the current config to a file
     # remove constants for storage
     for ignore, config in self.storages[cpath].items():
@@ -177,7 +177,7 @@ class ConfigProxy(object):
       self._PARSE_ERRORS.append(
           ("Could not parse configfile %s, using temporary config.\nFix or delete the file!"%sfile,
             sys.exc_info()))
-    if not cname in self.path_configs[cpath][0]['config_files']:
+    if cname not in self.path_configs[cpath][0]['config_files']:
       self.path_configs[cpath][0]['config_files'].append(cname)
 
     # update missing items from default config
@@ -185,37 +185,37 @@ class ConfigProxy(object):
       if name in self.storages[cpath]:
         # update additional options from config
         for key, value in items.items():
-          if not key in self.storages[cpath][name]:
+          if key not in self.storages[cpath][name]:
             self.storages[cpath][name][key]=value
       else:
         self.storages[cpath][name]=dict(items)
       self.path_configs[cpath][0]['last_file']=cname
 
   def get_path_configs(self, cpath):
-    if not cpath in self.path_configs:
+    if cpath not in self.path_configs:
       if cpath in self.configs and self.configs[cpath] in self.path_configs:
         cpath=self.configs[cpath]
       else:
-        raise KeyError, 'Config path %s is not defined'%cpath
+        raise KeyError('Config path %s is not defined'%cpath)
     return self.path_configs[cpath][0]['config_files']
 
   def get_current_path_config(self, cpath):
-    if not cpath in self.path_configs:
+    if cpath not in self.path_configs:
       if cpath in self.configs and self.configs[cpath] in self.path_configs:
         cpath=self.configs[cpath]
       else:
-        raise KeyError, 'Config path %s is not defined'%cpath
+        raise KeyError('Config path %s is not defined'%cpath)
     return self.path_configs[cpath][0]['last_file']
 
   @log_input
   def add_alias(self, config, alias):
     '''
     Crate an alias for another configuration item.
-    
+
     :returns: The corresponding :class:`ConfigHolder` object.
     '''
-    if not config in self.configs:
-      raise KeyError, 'no configuration named %s found'%config
+    if config not in self.configs:
+      raise KeyError('no configuration named %s found'%config)
     self.aliases[alias]=config
     return self[config]
 
@@ -243,19 +243,19 @@ class ConfigProxy(object):
       ccopts.write()
 
   def __getitem__(self, name):
-    if isinstance(name, basestring):
+    if isinstance(name, str):
       if name in self.configs or name in self.aliases:
         return ConfigHolder(self, name)
-      raise KeyError, "%s is no known configuration"%name
+      raise KeyError("%s is no known configuration"%name)
     else:
-      raise KeyError, "Only strings are allowed as keys"
+      raise KeyError("Only strings are allowed as keys")
 
   def get_config_item(self, config, item):
     """Called by :class:`ConfigHolder` to retreive an item"""
     if config in self.aliases:
       config=self.aliases[config]
-    if not config in self.configs:
-      raise KeyError, "%s is no known configuration"%config
+    if config not in self.configs:
+      raise KeyError("%s is no known configuration"%config)
     storage=self.configs[config]
     # special convenience methods to switch the config file with the config object
     if storage in self.path_configs and item=='get_configs':
@@ -270,7 +270,7 @@ class ConfigProxy(object):
       value=self.tmp_storages[storage][config][item]
     else:
       value=self.storages[storage][config][item]
-    if isinstance(value, basestring) and '%' in value and \
+    if isinstance(value, str) and '%' in value and \
           not self.storages[storage][config].get('NO_INTERPOLATION', False):
       # perform interpolation with constants if possible
       value=self.interpolate(config, value)
@@ -293,7 +293,7 @@ class ConfigProxy(object):
       match_end=match.span()[1]
       match=self._KEYCRE.search(value[match_start+match_end:])
       match_start+=match_end
-      if not '.' in match_key:
+      if '.' not in match_key:
         # search same config for value
         if match_key in self.tmp_storages[storage][config]:
           value=value.replace(match_str, vtype(self.tmp_storages[storage][config][match_key]))
@@ -319,8 +319,8 @@ class ConfigProxy(object):
     """Called by :class:`ConfigHolder` to set an item value"""
     if config in self.aliases:
       config=self.aliases[config]
-    if not config in self.configs:
-      raise KeyError, "%s is no known configuration"%config
+    if config not in self.configs:
+      raise KeyError("%s is no known configuration"%config)
     storage=self.configs[config]
     if temporary:
       # store value in temporary dictionary
@@ -332,17 +332,17 @@ class ConfigProxy(object):
     """Called by :class:`ConfigHolder` to get the keys for it's config"""
     if config in self.aliases:
       config=self.aliases[config]
-    if not config in self.configs:
-      raise KeyError, "%s is no known configuration"%config
+    if config not in self.configs:
+      raise KeyError("%s is no known configuration"%config)
     storage=self.configs[config]
-    keys=self.storages[storage][config].keys()
+    keys=list(self.storages[storage][config].keys())
     if storage in self.path_configs:
       keys+=['get_configs', 'switch_config', 'get_current_config']
     return keys
 
   def keys(self):
     """Return the available configurations"""
-    keys=self.configs.keys()+self.aliases.keys()
+    keys=list(self.configs.keys())+list(self.aliases.keys())
     keys.sort()
     return keys
 
@@ -367,9 +367,9 @@ class ConfigHolder(object):
   Dictionary like object connected to the a :class:`ConfigProxy` reading
   and writing values directly to that object.
   Each key can also be accessed as attribute of the object.
-  
+
   To store items temporarily, the object supports a "temp"
-  attribute, which itself is a ConfigHolder object. 
+  attribute, which itself is a ConfigHolder object.
   '''
 
   def __init__(self, proxy, name, storetmp=False):
@@ -386,7 +386,7 @@ class ConfigHolder(object):
   def __getattribute__(self, name):
     """
       Basis of the parameter access (e.g. can use
-      object.key to access object[key]). If a 
+      object.key to access object[key]). If a
     """
     if name.startswith('_') or name in dir(ConfigHolder):
       return object.__getattribute__(self, name)
@@ -404,7 +404,7 @@ class ConfigHolder(object):
 
   def __setitem__(self, name, value):
     if name==name.upper():
-      raise ValueError, "%s is a constant and thus cannot be altered"%name
+      raise ValueError("%s is a constant and thus cannot be altered"%name)
     self._proxy.set_config_item(self._name, name, value,
                                 temporary=self._storetmp)
 
@@ -428,4 +428,4 @@ class ConfigHolder(object):
     return output
 
   def __dir__(self):
-    return self.__dict__.keys()+self.keys()
+    return list(self.__dict__.keys())+self.keys()

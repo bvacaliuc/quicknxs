@@ -34,10 +34,10 @@ record is checked, if it has changed since selecting an exception is raised
 
 Implementation overview
 - all files are in a directory called like the base
-- in this directory there are files with general information, and one file 
+- in this directory there are files with general information, and one file
   per field ("field file") ; storage format and methods for storing and
   retrieving depend on the field type. Uses the classes in buzhug_classes
-- all selections are made by "brutal" browsing of the files (no indexing) ; 
+- all selections are made by "brutal" browsing of the files (no indexing) ;
   for string fields, the very fast "for line in file" loop is used
 
 Version 0.4
@@ -67,7 +67,7 @@ Version 1.4
 - add boolean type
 - default value for fields can be specified in create() and modified by
   set_default(field_name,default)
-- change conversion of float 0.0 (diidn't preserve order for small positive 
+- change conversion of float 0.0 (diidn't preserve order for small positive
 floats)
 - move methods to manage db information to new module buzhug_info.py
 - add negative indexing. db[-1] returns the last inserted record
@@ -88,27 +88,20 @@ Version 1.8
 
 import os #@UnusedImport
 import threading
-import cStringIO
-import itertools
+from io import StringIO
 import token
 import tokenize
 import re
 import tempfile #@UnusedImport
 import shutil #@UnusedImport
-import urllib
+import urllib.parse
 
 import time
 from datetime import date, datetime, time as dtime #@UnusedImport
 
-# compatibility with Python 2.3
-try:
-    set([1])
-except NameError:
-    from sets import Set as set
-
-from buzhug_files import *
-import buzhug_algos
-import buzhug_info
+from .buzhug_files import *
+from . import buzhug_algos
+from . import buzhug_info
 
 version = "1.8"
 
@@ -133,12 +126,12 @@ class Record(list):
         try:
             ix = self.fields.index(k)
         except ValueError:
-            raise AttributeError,'No attribute named %s' %k
+            raise AttributeError('No attribute named %s' %k)
         try:
             return self.db.f_decode[self.types[ix]](list.__getitem__(self,ix))
         except:
-            print 'error for key %s type %s value %s' %(k,self.types[ix],
-                list.__getitem__(self,ix))
+            print('error for key %s type %s value %s' %(k,self.types[ix],
+                list.__getitem__(self,ix)))
             raise
 
     def __setattr__(self,k,v):
@@ -151,17 +144,14 @@ class Record(list):
     def __repr__(self):
         elts = []
         for k in self.fields:
-            if not isinstance(getattr(self,k),unicode):
-                elts.append('%s:%s' %(k,getattr(self,k)))
-            else:
-                elts.append(('%s:%s' %(k,getattr(self,k))).encode('utf-8'))
+            elts.append('%s:%s' %(k,getattr(self,k)))
         return '<' + ' '.join(elts) +'>'
 
     def update(self,**kw):
         self.db.update(self,**kw)
 
 def makeRecordClass(db,record_class,field_names):
-    """Generate a subclass of record_class, specifying a Base instance 
+    """Generate a subclass of record_class, specifying a Base instance
     and a list of field names and types"""
 
     class _Record(record_class):
@@ -185,42 +175,39 @@ class ResultSet(list):
     def __init__(self,names,_list):
         list.__init__(self,_list)
         self.names = names
-    
+
     def pp(self,width=70):
         """pretty print"""
-        col_width = width/len(self.names)
+        col_width = width//len(self.names)
         fmt = '%%-%ss' %col_width
-        print '|'.join([fmt %name for name in self.names])
-        print '|'.join([fmt %('-'*col_width) for name in self.names])
+        print('|'.join([fmt %name for name in self.names]))
+        print('|'.join([fmt %('-'*col_width) for name in self.names]))
         for rec in self:
             line = []
             for name in self.names:
                 v = fmt %getattr(rec,name)
-                if not isinstance(getattr(rec,name),unicode):
-                    line.append(v)
-                else:
-                    enc=line.append(v.encode('latin-1')) #@UnusedVariable
-            print '|'.join(line)
+                line.append(v)
+            print('|'.join(line))
 
     def sort_by(self,order):
         """order is a string with field names separated by + or -
-        For instance, sort_by('name + surname - age') sorts by ascending 
+        For instance, sort_by('name + surname - age') sorts by ascending
         name, ascending surname and descending age"""
-        
+
         # parse the order string
-        e = cStringIO.StringIO(order).readline
+        e = StringIO(order).readline
         cond = []
         order = '+'
         for t in tokenize.generate_tokens(e):
             tt = token.tok_name[t[0]]
             ts = t[1]
             if tt == 'OP':
-                if not ts in ['+','-']:
-                    raise SyntaxError,"Bad operator in sort condition: %s" %ts
+                if ts not in ['+','-']:
+                    raise SyntaxError("Bad operator in sort condition: %s" %ts)
                 order = ts
             elif tt == 'NAME':
-                if not ts in self.names:
-                    raise ValueError,"Unknown sort field :%s" %ts
+                if ts not in self.names:
+                    raise ValueError("Unknown sort field :%s" %ts)
                 cond.append((self.names.index(ts),order))
         # build the function order_func used to sort records
         o_f = "def order_func(rec):\n"
@@ -231,16 +218,14 @@ class ResultSet(list):
                 elts.append("rec[%s]" %ix)
             else:
                 elts.append("buzhug_algos.rev(rec[%s])" %ix)
-        o_f += ",".join(elts) +"]"        
-        exec o_f in globals()  # this creates the global function order_func
+        o_f += ",".join(elts) +"]"
+        _globals = dict(globals())
+        exec(o_f, _globals)  # this creates the function order_func in _globals
 
         # apply the key
-        try:
-            self.sort(key=order_func) #@UndefinedVariable
-        except TypeError: # for Python 2.3
-            self.sort(lambda x, y: cmp(order_func(x), order_func(y))) #@UndefinedVariable
+        self.sort(key=_globals['order_func'])
         return self
-        
+
 REGEXPTYPE = type(re.compile('a'))
 class Pattern:
 
@@ -249,19 +234,19 @@ class Pattern:
 
     def match(self,s):
         return self.pattern.match(s[1:-1])
-        
+
     def search(self,s):
         return self.pattern.search(s[1:-1])
-        
+
 # -----------------------
 # The class Base is an abstraction of the database. It supports all the
 # usual functions : create a new base, open an existing base, insert
 # a record, delete a record, select a set of records matching a condition,
 # update the values of an existing record, destroy a base
-# Each record has an integer attribute called '__id__', a unique and 
+# Each record has an integer attribute called '__id__', a unique and
 # unchangeable identifier
 # Deleted records are physically marked for deletion, but not immediately
-# removed. When many records have been deleted, they take useless place in 
+# removed. When many records have been deleted, they take useless place in
 # the files and slow down the queries ; the cleanup() method gets rid of them
 #
 # Record selection
@@ -277,8 +262,8 @@ class Pattern:
 # The first argument to the select method is always the list of the fields
 # to return in the result set. If the empty list is passed, all fields are
 # returned
-# For simple requests that test equality of a set of fields to a set of 
-# values, the syntax is like this : 
+# For simple requests that test equality of a set of fields to a set of
+# values, the syntax is like this :
 #     select(['name','age'],firstname = 'pierre')
 # returns the records with attributes name and age for which the first name
 # is 'pierre'
@@ -293,7 +278,7 @@ class Pattern:
 #     select(['name','age'],
 #            'firstname in c1 and (country = c2 or age > c3)',
 #            c1 = ('pierre','paul'),c2='France',c3=30)
-# returns the records representing the persons called 'pierre' or 'paul', 
+# returns the records representing the persons called 'pierre' or 'paul',
 # either from France or older than 30 years
 #
 # 3. Selection by record id
@@ -317,10 +302,10 @@ class TimeFormatError(Exception):
 class Base:
 
     BLOCKSIZE = 131072
-    
+
 
     types_map = [ (int,IntegerFile),(float,FloatFile),
-            (str,StringFile),(unicode,UnicodeFile),
+            (str,StringFile),
             (date,DateFile),(datetime,DateTimeFile), (dtime, TimeFile),
             (bool,BooleanFile)]
 
@@ -334,11 +319,14 @@ class Base:
         self.pos_name = os.path.join(basename,'__pos__')
         for (c_obj,c_file) in self.types_map:
                 self._register_class(c_obj,c_file)
+        # Python 2 compatibility: alias legacy type names to Python 3 equivalents
+        self.types['unicode'] = str
+        self.types['long'] = int
         # from_string[_class] is the function used to convert a string
         # into an instance of _class
         self.from_string = { str:lambda x:x, int:int,
             float:float}
-        # class used for the records. Default is Record, but it can 
+        # class used for the records. Default is Record, but it can
         # be changed by set_record_class()
         self.record_class = Record
 
@@ -347,7 +335,7 @@ class Base:
         self.record_class = record_class
         self._full_rec = makeRecordClass(self,self.record_class,
             self.field_names)
-        
+
     def _register_class(self,class_obj,class_file):
         """Register a data type
         class_obj is the data class (eg int)
@@ -387,14 +375,14 @@ class Base:
                 elif mode == 'open':
                     return self.open()
                 else:
-                    raise IOError,"Base %s already exists" %self.name
+                    raise IOError("Base %s already exists" %self.name)
             else:
                 if mode != 'open':
-                    raise IOError,"Directory %s already exists" %self.name
+                    raise IOError("Directory %s already exists" %self.name)
                 else:
-                    raise IOError,"Mode 'open' : " \
-                        "Directory %s already exists but no info file found" \
-                        %self.name
+                    raise IOError("Mode 'open' : "
+                        "Directory %s already exists but no info file found"
+                        %self.name)
 
         self.field_names = [ f[0] for f in fields ]
         self.fields = dict([(f[0],f[1]) for f in fields])
@@ -431,30 +419,32 @@ class Base:
         Raise IOError if no base is found for the path entered in __init__
         """
         if not os.path.exists(self.name) or not os.path.isdir(self.name):
-            raise IOError,"Base %s doesn't exist" %self.name
+            raise IOError("Base %s doesn't exist" %self.name)
         try:
             _info = open(self.info_name,'rb')
         except IOError:
-            raise IOError,"No buzhug base in directory %s" %self.name
+            raise IOError("No buzhug base in directory %s" %self.name)
         return self._open(_info)
-        
+
     def _open(self,info):
-        fields = [ f.split(':',1) for f in info.read().split() ]
+        fields = [ f.split(b':',1) for f in info.read().split() ]
         info.close()
         self.fields = {}
         for (k,v) in fields:
+            k = k.decode('utf-8') if isinstance(k, bytes) else k
+            v = v.decode('utf-8') if isinstance(v, bytes) else v
             if v.startswith('<base>'):
                 # reference to an external base
-                base_path = urllib.unquote(v[6:])
+                base_path = urllib.parse.unquote(v[6:])
                 ext_db = Base(base_path).open()
                 self._register_base(ext_db)
                 self.fields[k] = ext_db
             else:
                 self.fields[k] = self.types[v]
-        self.field_names = [ k for (k,v) in fields ]
-        self.encode = dict([(k,self.f_encode[self.fields[k]]) 
+        self.field_names = [ (k.decode('utf-8') if isinstance(k, bytes) else k) for (k,v) in fields ]
+        self.encode = dict([(k,self.f_encode[self.fields[k]])
             for k in self.field_names])
-        self.decode = dict([(k,self.f_decode[self.fields[k]]) 
+        self.decode = dict([(k,self.f_decode[self.fields[k]])
             for k in self.field_names])
         self._open_files()
         # read default values
@@ -508,19 +498,19 @@ class Base:
         Return the identifier of the newly inserted record
         """
         if args and kw:
-            raise SyntaxError,"Can't use both positional and keyword arguments"
+            raise SyntaxError("Can't use both positional and keyword arguments")
         if args:
             # insert a list of values ordered like in the base definition
             if not len(args) == len(self.field_names)-2:
-                raise TypeError,"Expected %s arguments, found %s" \
-                   %(len(self.field_names)-2,len(args))
+                raise TypeError("Expected %s arguments, found %s"
+                   %(len(self.field_names)-2,len(args)))
             return self.insert(**dict(zip(self.field_names[2:],args)))
         if '__id__' in kw.keys():
-            raise NameError,"Specifying the __id__ is not allowed"
+            raise NameError("Specifying the __id__ is not allowed")
         if '__version__' in kw.keys():
-            raise NameError,"Specifying the __version__ is not allowed"
+            raise NameError("Specifying the __version__ is not allowed")
         rec = dict([(f,self.defaults[f]) for f in self.field_names[2:]])
-        for (k,v) in kw.iteritems():
+        for (k,v) in kw.items():
             self._validate(k,v)
             rec[k] = v
         # initial version = 0
@@ -541,22 +531,14 @@ class Base:
     def set_string_format(self, class_, format): #@ReservedAssignment
         """Specify the format used to convert a string into an instance
         of the class. class_ can be:
-        - unicode : the format is the encoding
         - date, datetime : format = the format string as defined in strftime
         """
-        if class_ is unicode:
-            # test encoding ; will raise LookupError if invalid
-            unicode('a').encode(format)
-            # create the conversion function bytestring -> unicode string
-            def _from_string(us):
-                return unicode(us,format)
-            self.from_string[unicode] = _from_string
-        elif class_ is date:
+        if class_ is date:
             # test date format
             d = date(1994,10,7)
             t = time.strptime(d.strftime(format),format)
             if not t[:3] == d.timetuple()[:3]:
-                raise TimeFormatError,'%s is not a valid date format' %format
+                raise TimeFormatError('%s is not a valid date format' %format)
             else:
                 # create the conversion function string -> date
                 def _from_string(ds):
@@ -567,8 +549,8 @@ class Base:
             dt = datetime(1994,10,7,8,30,15)
             t = time.strptime(dt.strftime(format),format)
             if not t[:6] == dt.timetuple()[:6]:
-                raise TimeFormatError,'%s is not a valid datetime format' \
-                    %format
+                raise TimeFormatError('%s is not a valid datetime format'
+                    %format)
             else:
                 # create the conversion function string -> date
                 def _from_string(dts):
@@ -579,15 +561,15 @@ class Base:
             dt = dtime(8,30,15)
             t = time.strptime(dt.strftime(format),format)
             if not t[3:6] == (dt.hour, dt.minute, dt.second):
-                raise TimeFormatError,'%s is not a valid datetime.time format' \
-                    %format
+                raise TimeFormatError('%s is not a valid datetime.time format'
+                    %format)
             else:
                 # create the conversion function string -> dtime
                 def _from_string(dts):
                     return dtime(*time.strptime(dts,format)[3:6])
                 self.from_string[dtime] = _from_string
         else:
-            raise ValueError,"Can't specify a format for class %s" %class_
+            raise ValueError("Can't specify a format for class %s" %class_)
 
     def insert_as_strings(self,*args,**kw):
         """Insert a record with values provided as strings. They must be
@@ -595,12 +577,12 @@ class Base:
         functions defined in the dictionary from_string
         """
         if args and kw:
-            raise SyntaxError,"Can't use both positional and keyword arguments"
+            raise SyntaxError("Can't use both positional and keyword arguments")
         if args:
             # insert a list of strings ordered like in the base definition
             if not len(args) == len(self.field_names)-2:
-                raise TypeError,"Expected %s arguments, found %s" \
-                   %(len(self.field_names)-2,len(args))
+                raise TypeError("Expected %s arguments, found %s"
+                   %(len(self.field_names)-2,len(args)))
             return self.insert_as_strings(**dict(zip(self.field_names[2:],
                 args)))
         return self.insert(**self.apply_types(**kw))
@@ -613,21 +595,21 @@ class Base:
             try:
                 t = self.fields[k]
             except KeyError:
-                raise NameError,"No field named %s" %k
-            if not self.from_string.has_key(t):
-                raise Exception,'No string format defined for %s' %t
+                raise NameError("No field named %s" %k)
+            if t not in self.from_string:
+                raise Exception('No string format defined for %s' %t)
             else:
                 try:
                     or_kw[k] = self.from_string[t](kw[k])
                 except:
-                    raise TypeError,"Can't convert %s into %s" %(kw[k],t)
+                    raise TypeError("Can't convert %s into %s" %(kw[k],t))
         return or_kw
 
     def commit(self):
         """Save all changes on disk"""
         self.close()
         self._open_files()
-        
+
     def delete(self,records):
         """Remove the items in the iterable records"""
         if issubclass(records.__class__,Record):
@@ -647,7 +629,7 @@ class Base:
             for dp,f in zip(delete_pos,self.field_names):
                 self._file[f].mark_as_deleted(dp)
             # the line number in field files is saved in _del_rows
-            self._del_rows.insert(delete_pos[0]/5)
+            self._del_rows.insert(delete_pos[0]//5)
             # mark line in position file as deleted
             self._pos.remove(_line_in_pos)
             # mark line in _id_pos as deleted
@@ -666,9 +648,9 @@ class Base:
             lnum += 1
         for _id in range(lnum):
             pos_block = self._pos.get_block_at(_id)
-            if not pos_block[0] == '#':
+            if not pos_block[0:1] == b'#':
                 positions = self._pos.from_block(pos_block)
-                new_pos = [] 
+                new_pos = []
                 for i,f in enumerate(self.field_names):
                     new_pos.append(temp_files[i].tell())
                     block = self._file[f].get_block_at_pos(positions[i])
@@ -684,25 +666,26 @@ class Base:
             # explicitely close the temporary file
             temp_files[i].close()
         self.commit()
-        # reset deleted rows file
+        # reset deleted rows file (close the old handle before replacing)
+        self._del_rows.close()
         self._del_rows = DeletedRowsFile(self.name,"__del_rows__").create()
 
     def select(self,names=None,request=None,**args):
         """Select the records in the base that verify a predicate and return
-        the specified names. If names is [] or None then all the fields are 
+        the specified names. If names is [] or None then all the fields are
         returned
-        
+
         The predicate can be expressed :
         - by a request string and keyword arguments for the values
         - by field_name = value keywords to test equality of fields to values
 
         Return an instance of ResultSet
-        
+
         Examples :
         db.select() # return all the records in the base
-        db.select(['name']) # return the value of field name 
+        db.select(['name']) # return the value of field name
                             # for all the records in the base
-        db.select(None,age=30) # return the records with age = 30 
+        db.select(None,age=30) # return the records with age = 30
                                # with all fields set
         db.select(['name'],age=30) # return the same list with only the
                                # field 'name' set (faster)
@@ -710,23 +693,23 @@ class Base:
                                # only field 'name' set
         """
         res,names = self._select(names,request,**args)
-        return ResultSet(names,res.values())
-    
+        return ResultSet(names,list(res.values()))
+
     def select_for_update(self,names=None,request=None,**args):
         """Same syntax as select, only checks that the field __version__
         is returned. This field is used for concurrency control ; if
         a user selects a record, then updates it, the program checks if the
         version on disk is the same as the users's version ; if another
         user has updated it in the meantime it will have changed
-        
+
         select_for_update takes a little more time than select, this is
         why there are two different methods"""
         if not names:
             names = self.field_names
         else:
-            names += [ f for f in ['__id__','__version__'] if not f in names ]
+            names += [ f for f in ['__id__','__version__'] if f not in names ]
         res,names = self._select(names,request,**args)
-        return ResultSet(names,res.values())
+        return ResultSet(names,list(res.values()))
 
     def __call__(self,**kw):
         return self.select_for_update(**kw)
@@ -745,7 +728,7 @@ class Base:
             _names = self.field_names
 
         _namespace = {}
-        if args.has_key('_namespace'):
+        if '_namespace' in args:
             _namespace = args['_namespace']
             del args['_namespace']
 
@@ -755,7 +738,7 @@ class Base:
         # the return value of match and search applied to the string
         # stripped from its first and last character
         regexps = []
-        for k,v in args.iteritems():
+        for k,v in args.items():
             if type(v) is REGEXPTYPE:
                 _namespace[k] = Pattern(v)
                 regexps.append(k)
@@ -765,14 +748,14 @@ class Base:
             del args[k]
 
         if _request is None:
-            f_args = [ k for k in args.keys() 
+            f_args = [ k for k in args.keys()
                 if hasattr(self._file[k],'block_len') ]
             # if there is at least one fixed length field to search, use the
             # fast_select algorithm
             if f_args:
                 res,names = buzhug_algos.fast_select(self,_names,**args)
                 _Record = makeRecordClass(self,self.record_class,names)
-                for k in res.keys():
+                for k in list(res.keys()):
                     res[k] = _Record(res[k])
                 return res,names
             conds = []
@@ -780,17 +763,17 @@ class Base:
                 conds.append('%s == _c[%s]' %(k,i))
             _request = ' and '.join(conds)
             _c = []
-            for (k,v) in args.iteritems():
+            for (k,v) in args.items():
                 t = self.fields[k]  # field type
                 if isinstance(v,(tuple,list)):
                     _c.append([self.f_encode[t](x) for x in v])
                 else:
                     _c.append(self.f_encode[t](v))
             for n in args.keys():
-                if not n in _names:
+                if n not in _names:
                     _names.append(n)
         else:
-            for (k,v) in args.iteritems():
+            for (k,v) in args.items():
                 if isinstance(v,Record):
                     # comparison with a record of another base
                     ft = self.file_types[self.types[v.db.name]]
@@ -806,7 +789,7 @@ class Base:
             mo = n.search(_request)
             if mo:
                 name = mo.group('name')
-                if not name in _names:
+                if name not in _names:
                     _names.append(name)
 
         # replace field names by their rank in record
@@ -823,23 +806,26 @@ class Base:
         if _request:
             loop +="    if %s:\n" %_request
         else:
-            # _request is empty : select all items 
+            # _request is empty : select all items
             # except those marked as deleted
-            loop +="    if _rec[0][0] != '#':\n"
+            loop +="    if _rec[0][0:1] != b'#':\n"
         loop +="        _res[num] = _rec"
 
         # prepare namespace
         args.update(_namespace)
 
         # execute the loop
-        exec loop in locals(),args
+        _local_ns = dict(locals())
+        _local_ns.update(args)
+        exec(loop, globals(), _local_ns)
+        _res = _local_ns['_res']
 
         # exclude deleted rows from the results
         if self._del_rows.deleted_rows:
             _to_delete = set(_res.keys()) & set(self._del_rows.deleted_rows)
             for k in _to_delete:
                 del _res[k]
-        
+
         # return the list of selected items, with return fields set
         return _res,_names
 
@@ -855,10 +841,10 @@ class Base:
             return
         only_fixed_length = True
         if '__id__' in kw.keys():
-            raise NameError,"Can't update __id__"
+            raise NameError("Can't update __id__")
         if '__version__' in kw.keys():
-            raise NameError,"Can't update __version__"
-        for (k,v) in kw.iteritems():
+            raise NameError("Can't update __version__")
+        for (k,v) in kw.items():
             self._validate(k,v)
             setattr(record,k,v)
             if not hasattr(self.file_types[self.fields[k]],
@@ -867,18 +853,18 @@ class Base:
 
         if not hasattr(record,'__id__') or not hasattr(record,'__version__'):
             # refuse to update a record that was not selected for update
-            raise UpdateError,'The record was not selected for update'
+            raise UpdateError('The record was not selected for update')
 
         _id = record.__id__
         # line number of the record in position file
         _line_in_pos = self._id_pos.get_value_at_pos(5*_id)
-        
+
         # if the record was selected for update it has a __version__
         # attribute. If the version for the same id in the position
         # file is not the same, refuse to update
         current_version = self[_id].__version__
         if not record.__version__ == current_version:
-            raise ConflictError,'The record has changed since selection'
+            raise ConflictError('The record has changed since selection')
 
         # increment version
         record.__version__ += 1
@@ -888,7 +874,7 @@ class Base:
         if only_fixed_length:
             # only fixed length fields modified : just change the values
             kw['__version__'] = record.__version__
-            for k,v in kw.iteritems():
+            for k,v in kw.items():
                 ix = self.field_names.index(k)
                 self._file[k].write_value_at_pos(field_pos[ix],v)
         else:
@@ -915,18 +901,18 @@ class Base:
             pos = [ new_pos[f] for f in self.field_names ]
             self._pos.update(_line_in_pos,pos)
 
-            # for previous version of the record, 
+            # for previous version of the record,
             # mark row in field files as deleted
             for dp,f in zip(field_pos,self.field_names):
                 self._file[f].mark_as_deleted(dp)
             # add a deleted row
-            self._del_rows.insert(field_pos[0]/5)
+            self._del_rows.insert(field_pos[0]//5)
 
     def add_field(self,field_name,field_type,after=None,default=None):
         """Add a new field after the specified field, or in the beginning if
         no field is specified"""
         if field_name in self.field_names:
-            raise NameError,"Field %s already exists" %field_name
+            raise NameError("Field %s already exists" %field_name)
         field_def = [field_name,field_type]
         if default is not None:
             field_def.append(default)
@@ -936,8 +922,8 @@ class Base:
 
         if after is None:
             indx = 2 # insert after __version__
-        elif not after in self.field_names:
-            raise NameError,"No field named %s" %after
+        elif after not in self.field_names:
+            raise NameError("No field named %s" %after)
         else:
             indx = 1+self.field_names.index(after)
         self.field_names.insert(indx,field_name)
@@ -954,12 +940,12 @@ class Base:
 
     def drop_field(self,field_name):
         """Remove the specified field name"""
-        if not field_name in self.field_names:
-            raise NameError,"No field named %s" %field_name
+        if field_name not in self.field_names:
+            raise NameError("No field named %s" %field_name)
         if field_name == '__id__':
-            raise ValueError,"Field __id__ can't be removed"
+            raise ValueError("Field __id__ can't be removed")
         if field_name == '__version__':
-            raise ValueError,"Field __version__ can't be removed"
+            raise ValueError("Field __version__ can't be removed")
         indx = self.field_names.index(field_name)
         self.field_names.remove(field_name)
         del self.defaults[field_name]
@@ -972,30 +958,30 @@ class Base:
 
     def _validate(self,k,v):
         """Validate the couple key,value"""
-        if not k in self.fields.keys():
-            raise NameError,"No field named %s" %k
+        if k not in self.fields.keys():
+            raise NameError("No field named %s" %k)
         if v is None:
             return
         # if self.fields[k] is an instance of Base, the value must be an
-        # instance of a subclass of Record with its class attribute 
+        # instance of a subclass of Record with its class attribute
         # db == self.fields[k]
         if isinstance(self.fields[k],Base):
             if not issubclass(v.__class__,Record):
-                raise TypeError,"Bad type for %s : expected %s, got %s %s" \
-                      %(k,self.fields[k],v,v.__class__)
+                raise TypeError("Bad type for %s : expected %s, got %s %s"
+                      %(k,self.fields[k],v,v.__class__))
             if v.__class__.db.name != self.fields[k].name:
-                raise TypeError,"Bad base for %s : expected %s, got %s" \
-                      %(k,self.fields[k].name,v.__class__.db.name)
+                raise TypeError("Bad base for %s : expected %s, got %s"
+                      %(k,self.fields[k].name,v.__class__.db.name))
         else:
             if not isinstance(v,self.fields[k]):
-                raise TypeError,"Bad type for %s : expected %s, got %s %s" \
-                      %(k,self.fields[k],v,v.__class__)
+                raise TypeError("Bad type for %s : expected %s, got %s %s"
+                      %(k,self.fields[k],v,v.__class__))
 
     def _iterate(self,*names):
         """_iterate on the specified names only"""
         Record = makeRecordClass(self,self.record_class,names)
         files = [ self._file[f] for f in names ]
-        for record in itertools.izip(*files):
+        for record in zip(*files):
             yield Record(record)
 
     def __getitem__(self,num):
@@ -1004,8 +990,8 @@ class Base:
             num = len(self)+num
         # first find the line in position file
         block_pos = self._id_pos.get_block_at_pos(5*num)
-        if block_pos[0] == '#':
-            raise IndexError,'No item at position %s' %num
+        if block_pos[0:1] == b'#':
+            raise IndexError('No item at position %s' %num)
         else:
             _id_pos = self._id_pos.from_block(block_pos)
         # block in position file
@@ -1026,7 +1012,7 @@ class Base:
     def has_key(self,num):
         # first find the line in position file
         block_pos = self._id_pos.get_block_at_pos(5*num)
-        if not block_pos or block_pos[0] == '#':
+        if not block_pos or block_pos[0:1] == b'#':
             return False
         return True
 
@@ -1038,12 +1024,12 @@ class Base:
 
     def __iter__(self):
         """Iterate on all records
-        XXX TO DO : optimize : if no deleted record, 
+        XXX TO DO : optimize : if no deleted record,
         remove the test record[0][0] != "#"
         """
         files = [ self._file[f] for f in self.field_names ]
-        for record in itertools.izip(*files):
-            if record[0][0] != "#":
+        for record in zip(*files):
+            if record[0][0:1] != b"#":
                 r = self._full_rec(record)
                 yield r
 
@@ -1167,4 +1153,4 @@ class TS_Base(Base):
             _releaseLock()
         return res
 
-    
+

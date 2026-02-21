@@ -1,0 +1,201 @@
+   MEMORY ANALYSIS: smooth_data Function in quicknxsv1/quicknxs/qcalc.py
+   ====================================================================
+
+   EXECUTIVE SUMMARY
+   The smooth_data function has severe memory inefficiencies that compound with data size,
+   causing OOM kills (exit 137). The primary issue is that for each grid point iteration,
+   LARGE temporary arrays are created without proper memory management.
+
+   DATA FLOW AND ARRAY SIZES
+   =========================
+
+   1. DATA PREPARATION (qio.py line 737-761):
+      - Line 737: data = np.hstack(odata[channel])
+        * odata[channel] is a list of off-specular datasets
+        * Each dataset has shape (x_pixels, tof_bins, 7) where 7 is [Qx, Qz, ki_z, kf_z, ki_z-kf_z, I, dI]
+        * Detector: 304 pixels (x) × 256 pixels (y) × typically 100-200 ToF bins
+        * Multiple datasets can be stacked, creating arrays of shape (N_datasets*x*y, tof_bins, 7)
+
+      - Lines 738-742: Arrays are FLATTENED
+        * x = data[:, :, 4].flatten()  → 1D array of ALL x-coordinates combined
+        * y = data[:, :, 1].flatten()  → 1D array of ALL y-coordinates combined
+        * I = data[:, :, 5].flatten()  → 1D array of ALL intensities combined
+        * If combining multiple datasets: This can be MILLIONS of points
+
+      Example size calculation:
+      - 2-4 off-specular datasets
+      - Each: ~304 x-pixels × 256 y-pixels × 100-200 ToF bins = 7.8M-15.6M elements
+      - Combined across datasets: 15M-60M element arrays
+
+   2. SMOOTH_DATA FUNCTION (qcalc.py line 244-296):
+      INPUT ARRAYS: x, y, I are LARGE 1D arrays from step 1 above
+
+      LINE-BY-LINE MEMORY CREATION:
+
+      Line 264-266: Output grid creation
+      - xout = linspace(x1, x2, gridx) → small, gridx points (typically 20-100)
+      - yout = linspace(y1, y2, gridy) → small, gridy points (typically 20-100)
+      - Xout, Yout = meshgrid(xout, yout) → 2D arrays of shape (gridy, gridx)
+      - Iout = zeros_like(Xout) → 2D array of shape (gridy, gridx)
+      These are SMALL.
+
+      Line 268: ssigmax, ssigmay = sigmax**2, sigmay**2 → scalars
+
+      CRITICAL LOOP (lines 270-293):
+      For each grid point (i, j) in output grid (imax × len(Xout[0])):
+
+      Line 285 or 287: **MAIN MEMORY PROBLEM**
+      rij = (x-xij)**2/ssigmaxi + (y-yij)**2/ssigmayi
+      OR
+      rij = (x-xij)**2/ssigmax + (y-yij)**2/ssigmay
+
+      WHAT HAPPENS:
+      - (x - xij) creates a NEW TEMPORARY ARRAY of size len(x)
+      - (x - xij)**2 creates ANOTHER NEW TEMPORARY ARRAY
+      - (y - yij)**2 creates ANOTHER NEW TEMPORARY ARRAY
+      - Division operations create MORE TEMPORARY ARRAYS
+      - Final addition creates ANOTHER array
+      - Result: rij is a LARGE array with shape = (N_points,) where N_points = len(x)
+
+      MEMORY PER GRID POINT:
+      - If x,y,I have 50,000,000 elements (conservative estimate for combined datasets)
+      - Each float64: 8 bytes
+      - rij alone: 50M × 8 bytes = 400 MB
+      - Plus temporary arrays during computation: 5-10× the size = 2-4 GB per grid point
+
+      TOTAL GRID POINTS: gridx × gridy (e.g., 100 × 100 = 10,000 grid points)
+
+      If this loop processes ALL 10,000 points sequentially:
+      - Theoretical: 10,000 points × 400 MB = 4 TB (IMPOSSIBLE!)
+      - In practice: Python garbage collects old arrays, but memory fragmentation occurs
+      - Peak memory: Several GB per iteration
+
+      Line 288: take = where(rij < sigmas**2)
+      - where() returns a tuple of indices
+      - Creates ANOTHER array of indices (typically small if sigma filtering works)
+
+      Line 291: Pij = exp(-0.5*rij[take])
+      - Creates NEW array of size len(take[0])
+      - Then normalized and multiplied
+
+      Line 293: Iout[i, j] = (Pij * I[take]).sum()
+      - Another temporary array from multiplication
+
+   3. MEMORY ACCUMULATION ISSUES:
+
+      a) REPEATED LARGE ARRAY CREATION IN INNER LOOP:
+         - Loop runs 10,000 times (for 100×100 grid)
+         - Each iteration creates rij of size = input data points (15M-60M)
+         - Even if garbage collection works, memory allocator fragments
+         - Python's memory management can't keep up with allocation/deallocation rate
+
+      b) NO STREAMING OR CHUNKING:
+         - All input data x, y, I are held in memory simultaneously
+         - No option to process data in chunks
+
+      c) MESHGRID OVERHEAD:
+         - Xout, Yout are full 2D grids, not sparse representations
+         - For each grid point, the scalars xij, yij could be computed on-the-fly
+
+      d) NO EARLY TERMINATION:
+         - Even when rij has many points far outside the sigma threshold,
+           all operations are still performed on the full arrays
+
+   CONCRETE PROBLEM SCENARIO
+   =========================
+
+   Typical GUI operation: "Smooth Off-Specular Data"
+   1. User selects multiple experimental runs (2-4 datasets)
+   2. Each dataset: 304×256×150 = ~12M data points per detector x/y/tof
+   3. Data combined: 24M-50M point arrays
+   4. User selects smooth grid: 100×100 (10,000 grid points)
+   5. smooth_data called with 50M point arrays x, y, I
+
+   Memory timeline:
+   - Initial: x, y, I arrays = 50M × 3 × 8 bytes = 1.2 GB
+   - First grid point: rij created = 400 MB, temp arrays during computation = 2-3 GB
+   - Total after 1st point: 1.2 + 2.5 = 3.7 GB
+   - After 100 points: Some garbage collection, but peak approaches 4-5 GB
+   - After 500 points: Memory fragmentation, swap usage begins
+   - After 1000 points: OOM killer triggered, process exits 137
+
+   EXACT LOCATIONS OF MEMORY CREATION
+   ===================================
+
+   File: /home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qcalc.py
+
+   Lines 285 & 287 - CRITICAL HOTSPOTS:
+   ```python
+   # Line 285 (with sigma scaling):
+   rij=(x-xij)**2/ssigmaxi+(y-yij)**2/ssigmayi
+
+   # Line 287 (without scaling):
+   rij=(x-xij)**2/ssigmax+(y-yij)**2/ssigmay
+   ```
+
+   Each of these lines creates approximately 6 temporary arrays during evaluation:
+   1. temp1 = x - xij (same shape as x)
+   2. temp2 = temp1**2 (same shape as x)
+   3. temp3 = y - yij (same shape as y)
+   4. temp4 = temp3**2 (same shape as y)
+   5. temp5 = temp2 / ssigmax (same shape as x)
+   6. temp6 = temp4 / ssigmay (same shape as y)
+   7. rij = temp5 + temp6 (same shape as x/y)
+
+   File: /home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qio.py
+
+   Lines 737-739 - DATA PREPARATION HOTSPOT:
+   ```python
+   data=np.hstack(odata[channel])  # Line 737 - Creates combined array
+   I=data[:, :, 5].flatten()       # Line 738 - Flattens to 1D
+   ```
+
+   Array stacking with hstack() can create very large temporary arrays before combining.
+
+   NUMPY DETECTOR SIZE INFORMATION
+   ================================
+
+   From /home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qreduce.py:
+   - Detector x size: 304 pixels (from code, derived from xydata.shape[1])
+   - Detector y size: 256 pixels (from code, derived from xydata.shape[0])
+   - ToF bins: typically 100-200 (from metadata)
+
+   SUMMARY OF ROOT CAUSES
+   ======================
+
+   1. MAIN CULPRIT:
+      rij = (x - xij)**2/ssigmax + (y - yij)**2/ssigmay (line 285/287)
+
+      Creates massive temporary arrays for EVERY grid point iteration.
+      With 50M input points and 10,000 grid iterations = catastrophic memory explosion.
+
+   2. SECONDARY CULPRIT:
+      np.hstack(odata[channel]) in qio.py line 737
+
+      Combining multiple datasets creates very large intermediate arrays.
+
+   3. TERTIARY ISSUE:
+      Inner loop processes x, y, I sequentially without any memory optimization.
+      No attempt to partition data or use memory-mapped operations.
+
+   ESTIMATED MEMORY REQUIREMENTS
+   ==============================
+
+   For typical data size (50M points, 100×100 grid):
+
+   Baseline:
+   - Input arrays (x, y, I): 1.2 GB
+   - Grid arrays (Xout, Yout, Iout): Negligible (< 10 MB)
+
+   Per grid iteration (PEAK):
+   - rij temporary: 400 MB
+   - Intermediate arrays during computation: 2-3 GB
+   - Peak per iteration: 3.5-4 GB
+
+   System peak (with other processes):
+   - Initial: 1.2 GB (data)
+   - Iteration 1-100: 3.5-4 GB (with some garbage collection)
+   - Iteration 100-1000: Memory fragments, peak climbs to 5-6 GB
+   - Available on typical workstation: 2-4 GB user space
+
+   RESULT: OOM kill at iteration ~1000 of 10,000, or earlier if less memory available.

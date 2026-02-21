@@ -1,0 +1,108 @@
+[project]
+name = "quicknxs-v1"
+description = "QuickNXS v1 - Magnetism Reflectometer data reduction"
+version = "1.1.6"
+requires-python = ">=3.10,<3.13"
+
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools>=68.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["quicknxs*"]
+
+[tool.pixi.workspace]
+platforms = ["linux-64"]
+channels = ["conda-forge"]
+
+[tool.pixi.dependencies]
+python = ">=3.10,<3.13"
+pyqt = ">=5.15,<6"
+qtpy = "*"
+numpy = "*"
+matplotlib = ">=3.8"
+h5py = "*"
+scipy = "*"
+configobj = ">=5.0"
+ipython = ">=8"
+qtconsole = ">=5"
+ipykernel = "*"
+
+[tool.pixi.pypi-dependencies]
+quicknxs-v1 = { path = ".", editable = true }
+
+[tool.pixi.feature.test.dependencies]
+pytest = ">=8"
+pytest-cov = "*"
+pytest-qt = ">=4.4.0"
+pytest-timeout = ">=2.3"
+pytest-xvfb = ">=3.1.1"
+
+[tool.pixi.feature.dev.dependencies]
+ruff = "*"
+
+[tool.pixi.environments]
+default = { features = ["dev", "test"], solve-group = "default" }
+
+[tool.pixi.tasks]
+test = { cmd = "pytest", description = "Run the test suite" }
+test-core = { cmd = "pytest tests/qreduce_test.py tests/qcalc_test.py tests/qio_test.py -v", description = "Run non-GUI tests" }
+test-gui = { cmd = "pytest tests/main_gui_test.py -v", description = "Run GUI tests" }
+test-db = { cmd = "pytest tests/database_test.py -v", description = "Run database tests" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests/"]
+python_files = ["*_test.py"]
+timeout = 90
+timeout_method = "signal"
+filterwarnings = [
+  # Treat all warnings as errors so future code cannot introduce new warnings silently.
+  "error",
+  # numpy exposes a `test` attribute (a PytestTester object, not a function); pytest
+  # tries to collect it during module scanning and emits this harmless false-positive.
+  "ignore::pytest.PytestCollectionWarning",
+  # ipykernel 7.x warns that its own InProcessKernel.do_history is not async.
+  # This is an upstream bug in ipykernel itself; it is not actionable from our code.
+  "ignore::PendingDeprecationWarning:ipykernel",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# Qt Designer auto-generated UI files — E402 because Qt pattern places imports
+# at the bottom of the file (after the Ui_ class body), E501 for long generated lines.
+"quicknxs/icons_rc.py" = ["E501"]
+"quicknxs/default_interface.py" = ["E501", "E402"]
+"quicknxs/docked_interface.py" = ["E501", "E402"]
+"quicknxs/background_dialog.py" = ["E402", "E501"]
+"quicknxs/compare_widget.py" = ["E402"]
+"quicknxs/database_widget.py" = ["E402"]
+"quicknxs/gisans_dialog.py" = ["E402"]
+"quicknxs/nxs_widget.py" = ["E402"]
+"quicknxs/plot_dialog.py" = ["E402"]
+"quicknxs/point_picker_dialog.py" = ["E402"]
+"quicknxs/polarization_dialog.py" = ["E402"]
+"quicknxs/rawcompare_dialog.py" = ["E402"]
+"quicknxs/reduce_dialog.py" = ["E402"]
+"quicknxs/smooth_dialog.py" = ["E402"]
+# Data format template file — long lines are intentional column-aligned file headers.
+"quicknxs/config/output_templates.py" = ["E501"]
+# Third-party embedded libraries (should not be modified).
+"quicknxs/mpfit.py" = ["E501", "E402", "E741", "E722", "E721", "E701", "E702", "F841", "W293", "W291"]
+"quicknxs/buzhug/__init__.py" = ["F403", "F405"]
+"quicknxs/buzhug/buzhug.py" = ["F403", "F405", "E722", "E741"]
+"quicknxs/buzhug/buzhug_files.py" = ["E402"]
+# Scientific modules that use `from numpy import *` — a common numpy idiom
+# for interactive/computation code.  Refactoring to `import numpy as np`
+# throughout these large files is deferred; suppress the star-import warnings.
+"quicknxs/compare_plots.py" = ["F403", "F405"]
+"quicknxs/database.py" = ["F403", "F405"]
+"quicknxs/genx_data.py" = ["F403", "F405"]
+"quicknxs/qcalc.py" = ["F403", "F405"]
+"quicknxs/qreduce.py" = ["F403", "F405"]
+"quicknxs/rawcompare_plots.py" = ["F403", "F405"]

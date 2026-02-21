@@ -23,9 +23,9 @@ class DatabaseHandler(object):
 
   db=None
   fields=[]
-  
+
   def __init__(self):
-    self.fields=[('file_id', int), ('file_path', unicode),
+    self.fields=[('file_id', int), ('file_path', str),
             ('no_states', int), ('no_bins', int), ('first_bin', float), ('last_bin', float),
             ('xpix', float), ('ycenter', float), ('ywidth', float),
             ('ai', float), ('lambda_center', float)]
@@ -58,7 +58,7 @@ class DatabaseHandler(object):
   def get_record(self, dataset):
     '''
     Return the database record corresponding to a given dataset.
-    
+
     :param NXSData dataset: the dataset to analyze
     '''
     output=[int(dataset.number)]
@@ -79,21 +79,21 @@ class DatabaseHandler(object):
     tth=(data.dangle-data.dangle0)+(data.dpix-xpix)*grad_per_pixel
     output.append(float(tth/2.)) # ai
     output.append(float(data.lambda_center))
-  
+
     for ignore, key, ftype in config.DATABASE_ADDITIONAL_FIELDS:
       try:
         output.append(ftype(data.logs[key]))
       except KeyError:
         output.append(ftype(0.))
     return output
-  
+
   @log_call
   def add_record(self, dataset):
     '''
     Create a database record for a dataset and add it to the database.
-    
+
     :param NXSData dataset: the dataset to add
-    
+
     :returns bool: If the dataset is in the database after this operation
     '''
     db=self.get_database()
@@ -105,7 +105,7 @@ class DatabaseHandler(object):
         dataset=NXSData(dataset, use_caching=False)
       except KeyboardInterrupt:
         raise KeyboardInterrupt
-      except:
+      except Exception:
         logging.debug('Could not load dataset with index %i:'%dataset, exc_info=True)
         return False
       else:
@@ -113,7 +113,7 @@ class DatabaseHandler(object):
           return False
     try:
       record=self.get_record(dataset)
-    except:
+    except Exception:
       logging.debug('Could not create record for dataset %s:'%repr(dataset), exc_info=True)
       return None
     if len(db(file_id=dataset.number))>0:
@@ -134,7 +134,7 @@ class DatabaseHandler(object):
   def __call__(self, *args, **opts):
     '''
     Call the database select method when the handler is called.
-    
+
     Usage example:
       DatabaseHandler(ai=[0.1, 0.2], lambda_center=[3., 4.])
       # return all datasets whith alpha_i between 0.1 and 0.2 and lambda_center between 3 and 4.
@@ -147,15 +147,15 @@ class DatabaseHandler(object):
     elif len(args)==2:
       return db.select(*args, **opts)
     else:
-      raise ValueError, '__call__ expects 0 to 2 non keyword arguments'
+      raise ValueError('__call__ expects 0 to 2 non keyword arguments')
 
 
   def find_direct_beams(self, dataset):
     '''
     Search the database for a direct beam measurement that fits the given dataset.
-    
+
     :param NXSData dataset: the dataset to search a direct beam run for
-    
+
     :return: result of the database query for the appropriate direct beam runs
     '''
     data=dataset[0]

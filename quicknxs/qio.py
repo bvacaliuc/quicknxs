@@ -12,11 +12,11 @@ import numpy as np
 from logging import debug, info
 from time import strftime
 from zipfile import ZipFile
-from cPickle import loads, dumps
+from pickle import loads, dumps
 from .config import paths, instrument, output_templates
 from .decorators import log_call
 from .qcalc import smooth_data, DetectorTailCorrector
-from .qreduce import NXSData, NXSMultiData, Reflectivity, OffSpecular
+from .qreduce import NXSData, NXSMultiData, MRDataset, Reflectivity, OffSpecular
 from .version import str_version
 
 from . import genx_data
@@ -90,7 +90,7 @@ class HeaderCreator(object):
           for poly in bg[2]:
             poly=[poly[0][0], poly[0][1], poly[1][0], poly[1][1],
                   poly[2][0], poly[2][1], poly[3][0], poly[3][1]]
-            if not poly in self.bg_polys:
+            if poly not in self.bg_polys:
               self.bg_polys.append(poly)
             poly_ids.append(self.bg_polys.index(poly)+1)
           bg[2]=poly_ids
@@ -111,7 +111,7 @@ class HeaderCreator(object):
         if not item.origin[0].endswith('event.nxs'):
           continue
       event_opts=[item.read_options[option] for option in self.event_options]
-      if not event_opts in self.evts:
+      if event_opts not in self.evts:
         self.evts.append(event_opts)
 
   def _collect_global_options(self):
@@ -282,7 +282,7 @@ class HeaderCreator(object):
     # first run through all data and headers to determine each column widths
     for option in options:
       column_leni=len(option)
-      if any([type(di[option]) in [bool, type(None), str, unicode, list] for di in data]):
+      if any([type(di[option]) in [bool, type(None), str, list] for di in data]):
         item=u'%s'
         fstring=u'%%%%(%s)-%%is'%option
       elif type(data[0][option])  is int:
@@ -301,7 +301,7 @@ class HeaderCreator(object):
       output+=data_line%di
     return output
 
-  def __unicode__(self):
+  def __str__(self):
     output=self._get_general_header()
     output+=u'\n'
     for section in self.sections:
@@ -309,13 +309,6 @@ class HeaderCreator(object):
       output+=self._get_section(*section)
     output+=u'\n'
     return output
-
-  if sys.version_info[0]>=3:
-    def __str__(self):
-      return self.__unicode__()
-  else:
-    def __str__(self):
-      return self.__unicode__().encode('utf8', 'ignore')
 
   @classmethod
   def get_data_header(cls, names, units):
@@ -336,7 +329,7 @@ class HeaderCreator(object):
     return output+u'\n'
 
   def as_comments(self):
-    output=unicode(self)
+    output=str(self)
     return u'# '+u'\n# '.join([line for line in output.splitlines()])+'\n'
 
 
@@ -364,10 +357,10 @@ class HeaderParser(object):
   states_in_file=None
 
   def __init__(self, header, parse_meta=True):
-    if type(header) is not unicode:
-      header=unicode(header, 'utf8', 'ignore')
+    if isinstance(header, bytes):
+      header=header.decode('utf8', 'ignore')
     # if header is a single line, assume it is a file name, not a header string
-    if not '\n' in header:
+    if '\n' not in header:
       header=self.read_file_header(header)
     self.header=header
     self.sections={}
@@ -378,7 +371,8 @@ class HeaderParser(object):
 
   @staticmethod
   def read_file_header(fname):
-    text=unicode(open(fname, 'rb').read(), 'utf8')
+    with open(fname, 'rb') as _fh:
+      text=_fh.read().decode('utf8')
     header=[]
     for line in text.splitlines():
       if not line.startswith('#'):
@@ -389,6 +383,9 @@ class HeaderParser(object):
 
   def parse(self, callback=None):
     self.callback=callback
+    # Clear NXSData cache before loading to free memory from previously
+    # browsed files; each cached NXSData holds ~89 MB per channel.
+    NXSData._cache.clear()
     self._read_direct_beam()
     self._read_datasets()
 
@@ -398,7 +395,7 @@ class HeaderParser(object):
     '''
     hlines=self.header.splitlines()
     if not hlines[0].startswith('# Datafile created by QuickNXS'):
-      raise IOError, 'This is no file created by QuickNXS'
+      raise IOError('This is no file created by QuickNXS')
     self.quicknxs_version=hlines[0].strip().rsplit(' ', 1)[1]
     for line in hlines:
       if line.startswith('# Date:'):
@@ -414,7 +411,7 @@ class HeaderParser(object):
     This is then stored in a dictionary.
     '''
     hlines=self.header.splitlines()
-    hlines=map(lambda line: line.lstrip('#'), hlines)
+    hlines=[line.lstrip('#') for line in hlines]
     current_section=None
     for line in hlines:
       line=line.strip()
@@ -440,7 +437,7 @@ class HeaderParser(object):
       idata=dict(defaults)
       for i, key in enumerate(sitems):
         value=item[i]
-        if key in defaults and type(defaults[key]) in [str, unicode]:
+        if key in defaults and isinstance(defaults[key], str):
           idata[key]=value
         elif value in ['True', 'False', 'None'] or ',' in value or \
               ('[' in value and ']' in value):
@@ -449,7 +446,7 @@ class HeaderParser(object):
           try:
             value=float(value)
           except ValueError:
-            idata[key]=unicode(value)
+            idata[key]=str(value)
           else:
             if key in defaults and type(defaults[key]) is int:
               idata[key]=int(value)
@@ -463,10 +460,16 @@ class HeaderParser(object):
     Evaluate given sections with their default values.
     '''
     self.section_data={}
-    self.section_data['Direct Beam Runs']=self._evaluate_section('Direct Beam Runs',
-                                                                 self.direct_beam_defaults)
-    self.section_data['Data Runs']=self._evaluate_section('Data Runs',
-                                                          self.dataset_defaults)
+    if 'Direct Beam Runs' in self.sections:
+      self.section_data['Direct Beam Runs']=self._evaluate_section('Direct Beam Runs',
+                                                                   self.direct_beam_defaults)
+    else:
+      self.section_data['Direct Beam Runs']=[]
+    if 'Data Runs' in self.sections:
+      self.section_data['Data Runs']=self._evaluate_section('Data Runs',
+                                                            self.dataset_defaults)
+    else:
+      self.section_data['Data Runs']=[]
     if 'Event Mode Options' in self.sections:
       self.section_data['Event Mode Options']=self._evaluate_section(
                         'Event Mode Options', self.event_defaults)
@@ -486,9 +489,12 @@ class HeaderParser(object):
   def _get_dataset(self, options):
     fname=options['File']
     read_opts=dict(NXSData.DEFAULT_OPTIONS)
+    # Disable caching: each NXS file holds ~89 MB per channel; caching all
+    # files during header parsing causes unbounded memory growth → OOM.
+    read_opts['use_caching']=False
     if options['EVT_ID'] is not None:
-      if not "Event Mode Options" in self.section_data:
-        raise ValueError, 'No "Event Mode Options" section defined but EVT_ID is set'
+      if "Event Mode Options" not in self.section_data:
+        raise ValueError('No "Event Mode Options" section defined but EVT_ID is set')
       evt_opts=self.section_data["Event Mode Options"][int(options['EVT_ID'])-1]
       for key in ['bin_type', 'bins', 'event_split_bins', 'event_split_index']:
         read_opts[key]=evt_opts[key]
@@ -499,7 +505,7 @@ class HeaderParser(object):
       return NXSData(fname, **read_opts)
 
   def _collect_background_options(self):
-    if not 'Advanced Background Options' in self.section_data:
+    if 'Advanced Background Options' not in self.section_data:
       return
     self._bg_options=[]
     for item in self.section_data['Advanced Background Options']:
@@ -507,8 +513,8 @@ class HeaderParser(object):
       for key in ['bg_tof_constant', 'bg_scale_xfit', 'bg_scale_factor']:
         opt_item[key]=item[key]
       if item['bg_poly_regions'] is not None:
-        if not 'Background Polygon Regions' in self.section_data:
-          raise ValueError, 'No "Background Polygon Regions" section defined but bg_poly_regions is set'
+        if 'Background Polygon Regions' not in self.section_data:
+          raise ValueError('No "Background Polygon Regions" section defined but bg_poly_regions is set')
         opt_item['bg_poly_regions']=[]
         for index in item['bg_poly_regions']:
           poly=self.section_data['Background Polygon Regions'][index-1]
@@ -535,10 +541,20 @@ class HeaderParser(object):
         if key in db:
           calc_opts[key]=db[key]
       if db['BG_ID'] is not None:
-        if not 'Advanced Background Options' in self.section_data:
-          raise ValueError, 'No "Advanced Background Options" section defined but BG_ID is set'
+        if 'Advanced Background Options' not in self.section_data:
+          raise ValueError('No "Advanced Background Options" section defined but BG_ID is set')
         calc_opts.update(self._bg_options[int(db['BG_ID'])-1])
       norm=Reflectivity(data[0], **calc_opts)
+      # Free large 3D/2D arrays from each channel's MRDataset.
+      # Only scalar metadata (.number, .lambda_center) is needed downstream
+      # by loadExtraction → setNorm().  Each compressed blob is ~25 MB,
+      # decompressed ~89 MB.
+      for ds in data.values():
+        ds._data_zipped=None
+        ds.xydata=None
+        ds.xtofdata=None
+      MRDataset._cached_data=None
+      MRDataset._cached_object=None
       self.norms.append(norm)
       self.norm_data.append(data)
 
@@ -555,12 +571,14 @@ class HeaderParser(object):
         if key in db:
           calc_opts[key]=db[key]
       if db['BG_ID'] is not None:
-        if not 'Advanced Background Options' in self.section_data:
-          raise ValueError, 'No "Advanced Background Options" section defined but BG_ID is set'
+        if 'Advanced Background Options' not in self.section_data:
+          raise ValueError('No "Advanced Background Options" section defined but BG_ID is set')
         calc_opts.update(self._bg_options[int(db['BG_ID'])-1])
       calc_opts['normalization']=self.norms[int(db['DB_ID'])-1]
       refl=Reflectivity(data[0], **calc_opts)
       self.refls.append(refl)
+      # NXSData not stored; explicit del helps refcount GC free ~89 MB/channel
+      del data
 
 class Exporter(object):
   '''
@@ -581,6 +599,9 @@ class Exporter(object):
       ref.options.update(self.additional_options)
     self.file_header=HeaderCreator(self.refls)
     self.read_data()
+    # Clear NXSData file cache to free memory from previously browsed files.
+    # Our raw_data dict holds its own references, so our data survives.
+    self._clear_data_caches()
     self.output_data={}
     self.exported_files_all=[]
     self.exported_files_data=[]
@@ -606,7 +627,21 @@ class Exporter(object):
         self.indices.append(refli.options['number'])
     self.indices.sort()
     self.ind_str="+".join(map(str, self.indices))
-    self.ipts_str=self.raw_data.values()[0].experiment
+    self.ipts_str=list(self.raw_data.values())[0].experiment
+
+  @staticmethod
+  def _clear_data_caches():
+    '''Clear class-level caches to free memory.'''
+    import gc
+    NXSData._cache.clear()
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
+    gc.collect()
+
+  def release_raw_data(self):
+    '''Release raw data to free memory after all extractions are complete.'''
+    self.raw_data.clear()
+    self._clear_data_caches()
 
   @log_call
   def extract_reflectivity(self):
@@ -650,6 +685,8 @@ class Exporter(object):
       d[:, 2]=np.sqrt(p[:, 2]**2*dp_scale**2+m[:, 2]**2*dm_scale**2)
       output_data['SA']=d
     self.output_data['Specular']=output_data
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
 
   @log_call
   def extract_offspecular(self):
@@ -660,7 +697,6 @@ class Exporter(object):
     output_data['column_units']=[u'Å⁻¹', u'Å⁻¹', u'Å⁻¹', u'Å⁻¹', u'Å⁻¹', 'a.u.', 'a.u.']
     output_data['column_names']=['Qx', 'Qz', 'ki_z', 'kf_z', 'ki_z-kf_z', 'I', 'dI']
 
-
     ki_max=0.01
     for refli in self.refls:
       opts=refli.options
@@ -672,24 +708,35 @@ class Exporter(object):
         offspec=OffSpecular(fdata[channel], **opts)
         Qx, Qz, ki_z, kf_z, S, dS=(offspec.Qx, offspec.Qz, offspec.ki_z, offspec.kf_z,
                                    offspec.S, offspec.dS)
+        del offspec
 
-        rdata=np.array([Qx[:, PN:P0], Qz[:, PN:P0], ki_z[:, PN:P0], kf_z[:, PN:P0],
-                      ki_z[:, PN:P0]-kf_z[:, PN:P0], S[:, PN:P0], dS[:, PN:P0]],
-                    copy=False).transpose((1, 2, 0))
+        rdata=np.asarray([Qx[:, PN:P0], Qz[:, PN:P0], ki_z[:, PN:P0], kf_z[:, PN:P0],
+                      ki_z[:, PN:P0]-kf_z[:, PN:P0], S[:, PN:P0], dS[:, PN:P0]]).transpose((1, 2, 0))
         output_data[channel].append(rdata)
         ki_max=max(ki_max, ki_z.max())
+        del Qx, Qz, ki_z, kf_z, S, dS, rdata
     output_data['ki_max']=ki_max
     self.output_data['OffSpec']=output_data
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
 
   @log_call
-  def extract_offspecular_corr(self):
+  def extract_offspecular_corr(self, also_uncorrected=False):
     '''
     Extract the off-specular scattering for all datasets and correct it
     for the tails produced by the detector in x-direction.
+
+    :param also_uncorrected: If True, also store uncorrected off-specular data
+        in output_data['OffSpec'], avoiding a separate extract_offspecular() call.
     '''
+    import gc
     output_data=dict([(channel, []) for channel in self.channels])
     output_data['column_units']=[u'Å⁻¹', u'Å⁻¹', u'Å⁻¹', u'Å⁻¹', u'Å⁻¹', 'a.u.', 'a.u.']
     output_data['column_names']=['Qx', 'Qz', 'ki_z', 'kf_z', 'ki_z-kf_z', 'I', 'dI']
+    if also_uncorrected:
+      uncorr_output_data=dict([(channel, []) for channel in self.channels])
+      uncorr_output_data['column_units']=output_data['column_units']
+      uncorr_output_data['column_names']=output_data['column_names']
 
     corr_ds=self.norms[0]
     if type(corr_ds.origin) is list:
@@ -699,6 +746,7 @@ class Exporter(object):
       corr_data=NXSData(corr_ds.origin[0], **corr_ds.read_options)[0]
     debug('Correction from normalization '+repr(corr_data))
     corrector=DetectorTailCorrector(corr_data.xdata, x0=corr_ds.options['x_pos'])
+    del corr_data
 
     ki_max=0.01
     for refli in self.refls:
@@ -711,16 +759,28 @@ class Exporter(object):
         offspec=OffSpecular(fdata[channel], **opts)
         Qx, Qz, ki_z, kf_z, S, dS=(offspec.Qx, offspec.Qz, offspec.ki_z, offspec.kf_z,
                                    offspec.S, offspec.dS)
+        del offspec
+        if also_uncorrected:
+          rdata_uncorr=np.asarray([Qx[:, PN:P0], Qz[:, PN:P0], ki_z[:, PN:P0], kf_z[:, PN:P0],
+                        ki_z[:, PN:P0]-kf_z[:, PN:P0], S[:, PN:P0], dS[:, PN:P0]]).transpose((1, 2, 0))
+          uncorr_output_data[channel].append(rdata_uncorr)
+          del rdata_uncorr
         debug('sum(S) before '+repr(S.sum()))
         S=corrector(S)
         debug('sum(S) after '+repr(S.sum()))
-        rdata=np.array([Qx[:, PN:P0], Qz[:, PN:P0], ki_z[:, PN:P0], kf_z[:, PN:P0],
-                      ki_z[:, PN:P0]-kf_z[:, PN:P0], S[:, PN:P0], dS[:, PN:P0]],
-                    copy=False).transpose((1, 2, 0))
+        rdata=np.asarray([Qx[:, PN:P0], Qz[:, PN:P0], ki_z[:, PN:P0], kf_z[:, PN:P0],
+                      ki_z[:, PN:P0]-kf_z[:, PN:P0], S[:, PN:P0], dS[:, PN:P0]]).transpose((1, 2, 0))
         output_data[channel].append(rdata)
         ki_max=max(ki_max, ki_z.max())
+        del Qx, Qz, ki_z, kf_z, S, dS, rdata
     output_data['ki_max']=ki_max
     self.output_data['OffSpecCorr']=output_data
+    if also_uncorrected:
+      uncorr_output_data['ki_max']=ki_max
+      self.output_data['OffSpec']=uncorr_output_data
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
+    gc.collect()
 
   @log_call
   def smooth_offspec(self, settings, pb=None):
@@ -738,7 +798,7 @@ class Exporter(object):
         pb.info.setText(pbinfo+channel)
         pb.add=100*i
       data=np.hstack(odata[channel])
-      I=data[:, :, 5].flatten()
+      I=data[:, :, 5].flatten()  # noqa: E741
       Qzmax=data[:, :, 2].max()*2.
       if settings['xy_column']==0:
         x=data[:, :, 4].flatten()
@@ -761,10 +821,12 @@ class Exporter(object):
         output_data['column_names']=['ki_z', 'kf_z', 'I']
         axis_sigma_scaling=3
         xysigma0=Qzmax/6.
-      x, y, I=smooth_data(settings, x, y, I, callback=(pb and pb.progress), sigmas=settings['sigmas'],
+      del data  # release hstack copy before smoothing
+      x, y, I=smooth_data(settings, x, y, I, callback=(pb and pb.progress), sigmas=settings['sigmas'],  # noqa: E741
                           axis_sigma_scaling=axis_sigma_scaling, xysigma0=xysigma0)
       output_data[channel]=[np.array([x, y, I]).transpose((1, 2, 0))]
-    output_data['ki_max']=self.output_data['OffSpec']['ki_max']
+      del x, y, I  # release before next channel iteration
+    output_data['ki_max']=odata['ki_max']
     self.output_data['OffSpecSmooth']=output_data
 
   @log_call
@@ -792,50 +854,17 @@ class Exporter(object):
                        .replace('{type}', 'dat').replace('{numbers}', self.ind_str)
           if not check_exists(output):
             continue
-          of=open(output, 'wb')
-          # write the file header
-          of.write((self.file_header.as_comments()%{
-                                'datatype': key,
-                                'indices': self.ind_str,
-                                'states': channel,
-                                }).encode('utf8'))
-          of.write((self.file_header.get_data_comment(output_data['column_names'],
-                                                     output_data['column_units'])
-                    ).encode('utf8'))
-          # write the data
-          if type(value) is not list:
-            np.savetxt(of, value, delimiter='\t', fmt='%-18e')
-          else:
-            for filemap in value:
-              # separate first dimension steps by empty line
-              for scan in filemap:
-                np.savetxt(of, scan, delimiter='\t', fmt='%-18e')
-                of.write(u'\n'.encode('utf8'))
-            of.write(u'\n\n'.encode('utf8'))
-          of.close()
-          self.exported_files_all.append(output);self.exported_files_data.append(output)
-      if combined_ascii:
-        debug('Export combined_ascii')
-        output=ofname.replace('{item}', key).replace('{state}', 'all')\
-                     .replace('{instrument}', instrument.NAME)\
-                     .replace('{type}', 'dat').replace('{numbers}', self.ind_str)
-        if check_exists(output):
-          of=open(output, 'wb')
-          # write the file header
-          of.write((self.file_header.as_comments()%{
-                                'datatype': key,
-                                'indices': self.ind_str,
-                                'states': u", ".join(self.channels),
-                                }).encode('utf8'))
-          # write all channel data separated by three empty lines and one comment
-          for channel in output_data.keys():
-            if channel in ['column_names', 'column_units', 'ki_max']:
-              continue
-            of.write((u'# Start of channel %s\n'%channel).encode('utf8'))
+          with open(output, 'wb') as of:
+            # write the file header
+            of.write((self.file_header.as_comments()%{
+                                  'datatype': key,
+                                  'indices': self.ind_str,
+                                  'states': channel,
+                                  }).encode('utf8'))
             of.write((self.file_header.get_data_comment(output_data['column_names'],
                                                        output_data['column_units'])
                       ).encode('utf8'))
-            value=output_data[channel]
+            # write the data
             if type(value) is not list:
               np.savetxt(of, value, delimiter='\t', fmt='%-18e')
             else:
@@ -845,9 +874,42 @@ class Exporter(object):
                   np.savetxt(of, scan, delimiter='\t', fmt='%-18e')
                   of.write(u'\n'.encode('utf8'))
               of.write(u'\n\n'.encode('utf8'))
-            of.write((u'# End of channel %s\n\n\n'%channel).encode('utf8'))
-          of.close()
-          self.exported_files_all.append(output);self.exported_files_data.append(output)
+          self.exported_files_all.append(output)
+          self.exported_files_data.append(output)
+      if combined_ascii:
+        debug('Export combined_ascii')
+        output=ofname.replace('{item}', key).replace('{state}', 'all')\
+                     .replace('{instrument}', instrument.NAME)\
+                     .replace('{type}', 'dat').replace('{numbers}', self.ind_str)
+        if check_exists(output):
+          with open(output, 'wb') as of:
+            # write the file header
+            of.write((self.file_header.as_comments()%{
+                                  'datatype': key,
+                                  'indices': self.ind_str,
+                                  'states': u", ".join(self.channels),
+                                  }).encode('utf8'))
+            # write all channel data separated by three empty lines and one comment
+            for channel in output_data.keys():
+              if channel in ['column_names', 'column_units', 'ki_max']:
+                continue
+              of.write((u'# Start of channel %s\n'%channel).encode('utf8'))
+              of.write((self.file_header.get_data_comment(output_data['column_names'],
+                                                         output_data['column_units'])
+                        ).encode('utf8'))
+              value=output_data[channel]
+              if type(value) is not list:
+                np.savetxt(of, value, delimiter='\t', fmt='%-18e')
+              else:
+                for filemap in value:
+                  # separate first dimension steps by empty line
+                  for scan in filemap:
+                    np.savetxt(of, scan, delimiter='\t', fmt='%-18e')
+                    of.write(u'\n'.encode('utf8'))
+                of.write(u'\n\n'.encode('utf8'))
+              of.write((u'# End of channel %s\n\n\n'%channel).encode('utf8'))
+          self.exported_files_all.append(output)
+          self.exported_files_data.append(output)
     if matlab_data:
       debug('Export matlab')
       from scipy.io import savemat
@@ -859,7 +921,8 @@ class Exporter(object):
         if not check_exists(output):
           continue
         savemat(output, dictdata, oned_as='column')
-        self.exported_files_all.append(output);self.exported_files_data.append(output)
+        self.exported_files_all.append(output)
+        self.exported_files_data.append(output)
     if numpy_data:
       debug('Export numpy')
       for key, output_data in self.output_data.items():
@@ -870,7 +933,8 @@ class Exporter(object):
         if not check_exists(output):
           continue
         np.savez(output, **dictdata)
-        self.exported_files_all.append(output);self.exported_files_data.append(output)
+        self.exported_files_all.append(output)
+        self.exported_files_data.append(output)
 
   def dictize_data(self, output_data):
     '''
@@ -932,7 +996,8 @@ class Exporter(object):
         plotlines.append(output_templates.gp_line%dict(file_name=filename, channel=channel, index=i+1))
       params['plot_lines']=output_templates.GP_SEP.join(plotlines)
       script=output_templates.gp_template%params
-      open(output, 'wb').write(self.replace_gp(script).encode('ISO-8859-1', 'ignore'))
+      with open(output, 'wb') as _fh:
+        _fh.write(self.replace_gp(script).encode('ISO-8859-1', 'ignore'))
     else:
       # 3D plot
       if 'ki_max' in output_data:
@@ -1002,12 +1067,13 @@ class Exporter(object):
         plotlines+=output_templates.GP_SEP_3D%channel+output_templates.gp_line_3D%line_params
       params['plot_lines']=plotlines
       script=output_templates.gp_template_3D%params
-      open(output, 'wb').write(self.replace_gp(script).encode('ISO-8859-1', 'ignore'))
+      with open(output, 'wb') as _fh:
+        _fh.write(self.replace_gp(script).encode('ISO-8859-1', 'ignore'))
     self.exported_files_all.append(output)
     try:
       subprocess.call(['gnuplot', output], cwd=directory, shell=False,
                       env=GP_ENVIRONMENT)
-    except:
+    except Exception:
       pass
     else:
       folder=os.path.dirname(output)
@@ -1015,7 +1081,8 @@ class Exporter(object):
         output=os.path.join(folder, params['output']+'png')
       else:
         output=os.path.join(folder, params['output']+'png')
-      self.exported_files_all.append(output);self.exported_files_plots.append(output)
+      self.exported_files_all.append(output)
+      self.exported_files_plots.append(output)
 
   @log_call
   def create_genx_file(self, directory=paths.results,
@@ -1033,7 +1100,7 @@ class Exporter(object):
     else:
       template=os.path.join(paths.GENX_TEMPLATES, 'spinflip.gx')
     for key, output_data in self.output_data.items():
-      if not key in ['Specular', 'TrueSpecular']:
+      if key not in ['Specular', 'TrueSpecular']:
         continue
       output=ofname.replace('{item}', key).replace('{state}', 'all')\
                    .replace('{instrument}', instrument.NAME)\

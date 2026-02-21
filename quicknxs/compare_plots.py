@@ -5,8 +5,9 @@
 
 import os
 from numpy import *
-from PyQt4.QtGui import QWidget, QFileDialog, QTableWidgetItem, QDialog, QVBoxLayout, QColor, QColorDialog
-from PyQt4.QtCore import Qt
+from qtpy.QtWidgets import QWidget, QFileDialog, QTableWidgetItem, QDialog, QVBoxLayout, QColorDialog
+from qtpy.QtGui import QColor, QBrush
+from qtpy.QtCore import Qt
 from .compare_widget import Ui_Form
 
 class CompareWidget(QWidget):
@@ -18,15 +19,15 @@ class CompareWidget(QWidget):
     QWidget.__init__(self, parent)
     self.ui=Ui_Form()
     self.ui.setupUi(self)
-    self.ui.compareList.verticalHeader().setMovable(True)
-    self.ui.compareList.verticalHeader().sectionMoved.connect(self.draw)
+    #self.ui.compareList.verticalHeader().setMovable(True)
+    #self.ui.compareList.verticalHeader().sectionMoved.connect(self.draw)
     self.file_paths={}
 
   def open_file(self):
     filter_=u'Reflectivity (*.dat);;All (*.*)'
     names=QFileDialog.getOpenFileNames(self, u'Open reflectivity file...',
                                                directory=self.active_folder,
-                                               filter=filter_)
+                                               filter=filter_)[0]
     if names:
       self.active_folder=os.path.abspath(os.path.dirname(names[0]))
       for name in names:
@@ -46,12 +47,12 @@ class CompareWidget(QWidget):
     try:
       plotlabel=label.split("REF_M_", 1)[1]
       plotlabel=plotlabel.split("_Specular")[0]+"  "+plotlabel.split("Specular_")[1].split('.')[0]
-    except:
+    except Exception:
       plotlabel=label
     self.ui.compareList.setItem(idx, 0, item)
     item=QTableWidgetItem(color)
-    item.setBackgroundColor(QColor(color))
-    item.setTextColor(QColor('#ffffff'))
+    item.setBackground(QBrush(QColor(color)))
+    item.setForeground(QBrush(QColor('#ffffff')))
     item.setFlags(Qt.ItemIsEnabled)
     self.ui.compareList.setItem(idx, 1, item)
     self.ui.compareList.setItem(idx, 2, QTableWidgetItem(plotlabel))
@@ -81,7 +82,7 @@ class CompareWidget(QWidget):
         self.ui.comparePlot.set_xlabel(u'Q$_z$ [Å$^{-1}$]')
         self.ui.comparePlot.set_ylabel(u'R')
       self.ui.comparePlot.draw()
-    except:
+    except Exception:
       pass
 
   def edit_cell(self, row, column):
@@ -91,7 +92,7 @@ class CompareWidget(QWidget):
       result=QColorDialog.getColor(initial=color, parent=self)
       if result.isValid():
         color_item.setText(result.name())
-        color_item.setBackgroundColor(result)
+        color_item.setBackground(QBrush(result))
 
 class CompareDialog(QDialog):
   '''

@@ -6,16 +6,11 @@ number of blocks are read and the search is made on the buffer
 """
 
 from datetime import date, datetime
-import itertools
-
-# compatibility with Python 2.3
-try:
-    set([1])
-except NameError:
-    from sets import Set as set
 
 def rev(s):
     """ function used to compare strings in decreasing order"""
+    if isinstance(s, bytes):
+        return bytes([255-b for b in s])
     return ''.join([chr(255-ord(c)) for c in s])
 
 def make_search_func(db,field,value):
@@ -28,21 +23,21 @@ def make_search_func(db,field,value):
     if isinstance(value,(list,tuple)):
         value = list(value)
         if not len(value)==2:
-            raise ValueError,"If argument is a list, only 2 values \
-                should be passed (found %s)" %len(value)
-        if not db.fields[field] in [int,float,date,datetime]:
-            raise TypeError,"Search between values is only allowed for " \
-                "int, float, date and datetime (found %s)" %db.fields[field]
+            raise ValueError("If argument is a list, only 2 values "
+                "should be passed (found %s)" %len(value))
+        if db.fields[field] not in [int,float,date,datetime]:
+            raise TypeError("Search between values is only allowed for "
+                "int, float, date and datetime (found %s)" %db.fields[field])
         db._validate(field,value[0])
         db._validate(field,value[1])
         value.sort()
         # convert values in blocks (strings representation in field files)
         s1,s2 = [ db.f_encode[db.fields[field]](v) for v in value ]
         # search the common leading characters in s1 and s2
-        common = ''
+        common = b''
         for i in range(len(s1)):
-            if s1[i] == s2[i]:
-                common += s1[i]
+            if s1[i:i+1] == s2[i:i+1]:
+                common += s1[i:i+1]
             else:
                 break
         lc = len(common)
@@ -53,7 +48,7 @@ def make_search_func(db,field,value):
             """Function searching blocks in the buffer such that
             s1 <= block <= s2
             Return a dictionary mapping rank of the block to the block
-            
+
             The algorithm searches occurences of 'common', then checks
             that the rest of the block is between Min and Max
             """
@@ -71,7 +66,7 @@ def make_search_func(db,field,value):
                     rest = buf[pos+lc:pos+bl]
                     # compare rest of block to Min and Max
                     if Min <= rest <= Max:
-                        ranks[pos/bl] = block
+                        ranks[pos//bl] = block
                 pos += 1
             return ranks
 
@@ -82,8 +77,8 @@ def make_search_func(db,field,value):
             """Function searching blocks in the buffer such that
             block == v
             Return a dictionary mapping rank of the block to the block
-            
-            The algorithm searches occurences of the block v in the 
+
+            The algorithm searches occurences of the block v in the
             buffer
             """
             ranks = {}
@@ -93,7 +88,7 @@ def make_search_func(db,field,value):
                 if pos>-1:
                     if pos % bl == 0:
                         # pos is a block start
-                        ranks[pos/bl] = buf[pos:pos+bl]
+                        ranks[pos//bl] = buf[pos:pos+bl]
                     pos += 1
                 else:
                     break
@@ -105,23 +100,23 @@ def fast_select(db,names,**args):
     """Handles requests like select(['name'],age=23,name='pierre') when
     one of the arg keys is fixed length type ; uses a fast search algo
     instead of browsing all the records
-    
+
     The search functions are defined for all fixed-length arguments and
     used to select a subset of record rows in field files
     """
     # fixed and variable length fields
-    f_args = [ (k,v) for k,v in args.iteritems() 
+    f_args = [ (k,v) for k,v in args.items()
         if hasattr(db._file[k],'block_len') ]
-    v_args = [ (k,v) for (k,v) in args.iteritems() 
+    v_args = [ (k,v) for (k,v) in args.items()
         if not hasattr(db._file[k],'block_len') ]
     arg_names = [ k for k,v in f_args + v_args ]
-    no_args = [ n for n in names if not n in arg_names ]
+    no_args = [ n for n in names if n not in arg_names ]
     names = arg_names + no_args
 
-    [ db._file[k].seek(0) for k in names + args.keys() ]
+    [ db._file[k].seek(0) for k in names + list(args.keys()) ]
     max_len = max([ db._file[k[0]].block_len for k in f_args ])
-    num_blocks = db.BLOCKSIZE / max_len
-    funcs = dict([(k,make_search_func(db,k,v)) 
+    num_blocks = db.BLOCKSIZE // max_len
+    funcs = dict([(k,make_search_func(db,k,v))
                     for (k,v) in f_args])
     #fl_ranks = [] # absolute ranks in fixed length files
     bl_offset = 0 # offset of current chunck
@@ -148,8 +143,7 @@ def fast_select(db,names,**args):
             res[bl_offset+c] = [ ranks[k][c] for k,v in f_args ]
         bl_offset += num_blocks
 
-    fl_ranks = res.keys()
-    fl_ranks.sort()
+    fl_ranks = sorted(res.keys())
 
     # The field files for the other arguments are browsed ; if their
     # row is in the subset, test if the value for variable length arguments
@@ -162,7 +156,7 @@ def fast_select(db,names,**args):
     for f in other_files:
         f.seek(0)
 
-    for i,lines in enumerate(itertools.izip(*other_files)):
+    for i,lines in enumerate(zip(*other_files)):
         try:
             if i == fl_ranks[0]:
                 fl_ranks.pop(0)

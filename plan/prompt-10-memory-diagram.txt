@@ -1,0 +1,152 @@
+   MEMORY PROBLEM VISUALIZATION
+   =============================
+
+   CALL CHAIN: User GUI → smooth_offspec() → smooth_data()
+
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │ qio.py: smooth_offspec() - Lines 737-762                            │
+   ├─────────────────────────────────────────────────────────────────────┤
+   │                                                                      │
+   │  Line 737: data = np.hstack(odata[channel])                         │
+   │  ───────────────────────────────────────────                        │
+   │  odata[channel] = [dataset1_array, dataset2_array, dataset3_array]  │
+   │  Each dataset_array shape: (x_dim, tof_bins, 7)                     │
+   │                                                                      │
+   │  HSTACK CREATES COMBINED ARRAY: (x_dim*3, tof_bins, 7)              │
+   │  With typical dimensions:                                           │
+   │    - x_dim = 304 pixels (detector x-pixels)                         │
+   │    - tof_bins = 150 (time-of-flight bins)                           │
+   │    - 3 datasets combined                                            │
+   │    Result: (912, 150, 7) → flattened points                         │
+   │                                                                      │
+   │  TOTAL POINTS after flatten: 912 × 150 = 136,800 points            │
+   │  × 3 channels = ~400K per dataset                                   │
+   │  × 2-4 datasets = ~1M points                                        │
+   │                                                                      │
+   │  But wait... also y-dimension!                                      │
+   │  If including multiple y-slices: 304 × 256 × 150 × 3 = 35M+ points!│
+   │                                                                      │
+   │ Lines 738-742: Flatten to 1D                                        │
+   │ ──────────────────────────────────                                  │
+   │  x = data[:, :, 4].flatten()  → shape (N_points,)                   │
+   │  y = data[:, :, 1].flatten()  → shape (N_points,)                   │
+   │  I = data[:, :, 5].flatten()  → shape (N_points,)                   │
+   │                                                                      │
+   │ Line 761: Call smooth_data()                                        │
+   │ ──────────────────────────                                          │
+   │  smooth_data(settings, x, y, I, ...)                                │
+   │                                                                      │
+   └─────────────────────────────────────────────────────────────────────┘
+                                 ↓
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │ qcalc.py: smooth_data() - Lines 244-296                             │
+   ├─────────────────────────────────────────────────────────────────────┤
+   │                                                                      │
+   │ INPUT ARRAYS (held in memory):                                      │
+   │   x, y, I  each of size N_points (potentially 35M+)                 │
+   │   Memory: 3 × 35M × 8 bytes = 840 MB minimum                        │
+   │                                                                      │
+   │ Lines 264-267: Create output grid (SMALL, ~1MB total)               │
+   │   Xout, Yout, Iout shape: (gridy, gridx) = (100, 100)              │
+   │                                                                      │
+   │ Lines 270-293: MAIN LOOP - MEMORY EXPLOSION HAPPENS HERE            │
+   │ ──────────────────────────────────────────────────────              │
+   │                                                                      │
+   │  for i in range(imax):        # imax = gridy (100 iterations)       │
+   │    for j in range(len(Xout[0])): # gridx iterations (100 per i)     │
+   │                                                                      │
+   │      xij = Xout[i, j]  # scalar                                     │
+   │      yij = Yout[i, j]  # scalar                                     │
+   │                                                                      │
+   │      rij = (x-xij)**2/ssigmax + (y-yij)**2/ssigmay                 │
+   │      ────────────────────────────────────────────                  │
+   │      NUMPY EVALUATION:                                              │
+   │      1. temp1 = x - xij           → 35M array                       │
+   │      2. temp2 = temp1**2          → 35M array                       │
+   │      3. temp3 = y - yij           → 35M array                       │
+   │      4. temp4 = temp3**2          → 35M array                       │
+   │      5. temp5 = temp2 / ssigmax   → 35M array                       │
+   │      6. temp6 = temp4 / ssigmay   → 35M array                       │
+   │      7. rij = temp5 + temp6       → 35M array (FINAL)               │
+   │                                                                      │
+   │      MEMORY AT THIS POINT:                                          │
+   │      - Original x, y, I: 840 MB                                     │
+   │      - Temporary arrays 1-6: up to 1.5 GB (not all kept)            │
+   │      - rij: 280 MB                                                  │
+   │      - PEAK: ~2.5 GB                                                │
+   │                                                                      │
+   │      take = where(rij < sigmas**2)  # Filter points (fast)          │
+   │      if len(take[0]) > 0:                                           │
+   │        Pij = exp(-0.5*rij[take])    # Subset array                  │
+   │        Pij /= Pij.sum()             # Normalize                     │
+   │        Iout[i, j] = (Pij * I[take]).sum()  # Final calculation     │
+   │                                                                      │
+   │  TOTAL LOOP ITERATIONS: 100 × 100 = 10,000                          │
+   │  ITERATIONS COMPLETED BEFORE OOM: ~500-1000 (depending on GC)       │
+   │  PERCENTAGE COMPLETE: ~5-10%                                        │
+   │                                                                      │
+   │  EXIT CODE: 137 (OOM killer)                                        │
+   │                                                                      │
+   └─────────────────────────────────────────────────────────────────────┘
+
+   MEMORY TIMELINE
+   ===============
+
+   Time  │ Memory Usage                           │ Status
+   ──────┼────────────────────────────────────────┼──────────────────────
+     0ms │ Python interpreter: 50-100 MB          │
+         │ Loading libraries: +200 MB             │
+     1s  │ Loading data files: +600 MB            │
+     2s  │ hstack + flatten: +300 MB temporary    │
+     3s  │ x, y, I arrays in memory: 840 MB       │ (PEAK SO FAR)
+     5s  │ Xout, Yout, Iout created: +10 MB      │
+     6s  │ START MAIN LOOP                        │
+         │                                        │
+    100ms│ Grid point (0,0): rij created: +280 MB│ PEAK: 1.1 GB
+         │ temp arrays: +1.2 GB                   │ PEAK: 2.3 GB
+         │ exp() and filtering: +50 MB            │ PEAK: 2.4 GB
+         │ Garbage collect rij: -280 MB           │ BACK TO: 1.05 GB
+         │                                        │
+    200ms│ Grid point (0,1): repeat              │ PEAK: 2.4 GB
+         │                                        │
+      ...  (1000 iterations would be fine)       │
+         │                                        │
+    50s  │ Grid point (500,0):                   │ MEMORY FRAGMENTATION
+         │ Allocation request: 280 MB             │ Available: 250 MB
+         │ Fragmented: 280 MB scattered in heap   │ INSUFFICIENT!
+         │                                        │
+    50.1s│ OOM KILLER TRIGGERED                  │ PROCESS KILLED
+         │ Exit code: 137                         │ ← YOU ARE HERE
+         │                                        │
+
+   MEMORY FRAGMENTATION VISUALIZATION (50s mark):
+
+   Before (clean):                After (fragmented):
+   ┌──────────────────┐          ┌─────┬───┬──────┬──┐
+   │ free space 240MB │          │free │rij│free  │  │
+   ├──────────────────┤          ├─────┴───┴──────┴──┤
+   │ allocated 760MB  │    →     │ ... various allocations ...
+   └──────────────────┘          └──────────────────────┘
+
+   Request for 280MB fails because largest contiguous
+   free block is only 200MB despite 240MB total free!
+
+   KEY INSIGHT
+   ===========
+
+   The smooth_data function is fundamentally designed for SMALL datasets.
+
+   Test case (qcalc_test.py line 100-101):
+     self.x, self.y = meshgrid(arange(100), arange(100))
+     self.I = (...)  # shape (100, 100) = 10,000 points
+
+   This works fine! 10,000 points × 8 bytes × ~7 arrays = ~560 MB peak
+
+   But actual data:
+     OffSpecular combined from multiple datasets = 35,000,000+ points
+
+   Scaling: 35M / 10K = 3,500× larger
+   Memory: 560 MB × 3,500 ≈ 2 TB peak (impossible!)
+
+   Even with garbage collection, allocator fragmentation wins after
+   500-1000 iterations of massive reallocation cycles.

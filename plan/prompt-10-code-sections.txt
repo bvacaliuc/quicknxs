@@ -1,0 +1,214 @@
+   EXACT CODE SECTIONS CAUSING MEMORY PROBLEMS
+   =============================================
+
+   SECTION 1: PRIMARY HOTSPOT - qcalc.py (Lines 243-296)
+   ======================================================
+
+   File: /home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qcalc.py
+   Function: smooth_data()
+
+   @log_input
+   def smooth_data(settings, x, y, I, sigmas=3.,
+                   axis_sigma_scaling=None, xysigma0=0.06, callback=None):
+     '''
+     Smooth a irregular spaced dataset onto a regular grid.
+     Takes each intensities with a distance < 3*sigma
+     to a given grid point and averages their intensities
+     weighted by the gaussian of the distance.
+
+     :param dict settings: Contains options for 'grid', 'sigma' and 'region' of the algorithm
+     :param numpy.ndarray x: x-values of the original data
+     :param numpy.ndarray y: y-values of the original data
+     :param numpy.ndarray I: Intensity values of the original data
+     :param float sigmas: Range in units of sigma to search around a grid point
+     :param int axis_sigma_scaling: Defines how the sigmas change with the x/y value
+     :param float xysigma0: x/y value where the given sigmas are used
+     :param callback: Optional function to be called to display the calculation progress
+     '''
+     gridx, gridy=settings['grid']
+     sigmax, sigmay=settings['sigma']
+     x1, x2, y1, y2=settings['region']
+     xout=linspace(x1, x2, gridx)
+     yout=linspace(y1, y2, gridy)
+     Xout, Yout=meshgrid(xout, yout)
+     Iout=zeros_like(Xout)
+     ssigmax, ssigmay=sigmax**2, sigmay**2
+     imax=len(Xout)
+     for i in range(imax):
+       if callback is not None and i%5==0:
+         progress=float(i)/imax
+         callback(progress)
+       for j in range(len(Xout[0])):
+         xij=Xout[i, j]
+         yij=Yout[i, j]
+         if axis_sigma_scaling:
+           if axis_sigma_scaling==1: xyij=xij
+           elif axis_sigma_scaling==2: xyij=yij
+           elif axis_sigma_scaling==3: xyij=xij+yij
+           if xyij==0:
+             continue
+           ssigmaxi=ssigmax/xysigma0*xyij
+           ssigmayi=ssigmay/xysigma0*xyij
+           rij=(x-xij)**2/ssigmaxi+(y-yij)**2/ssigmayi # LINE 285 - MEMORY EXPLOSION!
+                                                       # CREATES 6-7 TEMPORARY ARRAYS
+         else:
+           rij=(x-xij)**2/ssigmax+(y-yij)**2/ssigmay   # LINE 287 - MEMORY EXPLOSION!
+                                                       # CREATES 6-7 TEMPORARY ARRAYS
+         take=where(rij<sigmas**2) # take points up to 3 sigma distance
+         if len(take[0])==0:
+           continue
+         Pij=exp(-0.5*rij[take])
+         Pij/=Pij.sum()
+         Iout[i, j]=(Pij*I[take]).sum()
+     if callback is not None:
+       callback(1.0)
+     return Xout, Yout, Iout
+
+
+   PROBLEM ANALYSIS:
+   ─────────────────
+
+   Line 285 & 287 Breakdown:
+     rij = (x-xij)**2/ssigmaxi + (y-yij)**2/ssigmayi
+
+     Step-by-step evaluation (NumPy order of operations):
+     1. x - xij                    → Creates array of shape (len(x),)
+     2. (x - xij)**2               → Creates another array of shape (len(x),)
+     3. (x - xij)**2 / ssigmaxi    → Creates another array
+     4. y - yij                    → Creates array of shape (len(y),)
+     5. (y - yij)**2               → Creates another array
+     6. (y - yij)**2 / ssigmayi    → Creates another array
+     7. Final addition             → Creates final rij array
+
+     Total temporary arrays: 6-7 arrays, each 280MB for 35M points
+     Memory bloat per iteration: 1.6-2.2 GB
+
+     This happens 10,000 times (100 × 100 grid)
+     Cumulative memory fragmentation causes OOM after ~500-1000 iterations
+
+
+   SECTION 2: DATA PREPARATION - qio.py (Lines 723-765)
+   ======================================================
+
+   File: /home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qio.py
+   Function: Exporter.smooth_offspec()
+
+     @log_call
+     def smooth_offspec(self, settings, pb=None):
+       '''
+       Create a smoothed dataset from the offspecular scattering.
+       '''
+       output_data={}
+       pbinfo="Smoothing Channel "
+       if 'OffSpecCorr' in self.output_data:
+         odata=self.output_data['OffSpecCorr']
+       else:
+         odata=self.output_data['OffSpec']
+       for i, channel in enumerate(self.channels):
+         if pb is not None:
+           pb.info.setText(pbinfo+channel)
+           pb.add=100*i
+         data=np.hstack(odata[channel])              # LINE 737 - COMBINES DATASETS
+                                                     # Creates potentially 35M+ point array
+         I=data[:, :, 5].flatten()                   # LINE 738 - FLATTENS TO 1D
+         Qzmax=data[:, :, 2].max()*2.
+         if settings['xy_column']==0:
+           x=data[:, :, 4].flatten()                 # LINE 741 - FLATTENS X
+           y=data[:, :, 1].flatten()                 # LINE 742 - FLATTENS Y
+           output_data['column_units']=[u'Å⁻¹', u'Å⁻¹', 'a.u.']
+           output_data['column_names']=['ki_z-kf_z', 'Qz', 'I']
+           axis_sigma_scaling=2
+           xysigma0=Qzmax/3.
+         elif settings['xy_column']==1:
+           x=data[:, :, 0].flatten()
+           y=data[:, :, 1].flatten()
+           output_data['column_units']=[u'Å⁻¹', u'Å⁻¹', 'a.u.']
+           output_data['column_names']=['Qx', 'Qz', 'I']
+           axis_sigma_scaling=2
+           xysigma0=Qzmax/3.
+         else:
+           x=data[:, :, 2].flatten()
+           y=data[:, :, 3].flatten()
+           output_data['column_units']=[u'Å⁻¹', u'Å⁻¹', 'a.u.']
+           output_data['column_names']=['ki_z', 'kf_z', 'I']
+           axis_sigma_scaling=3
+           xysigma0=Qzmax/6.
+         x, y, I=smooth_data(settings, x, y, I, callback=(pb and pb.progress),
+                             sigmas=settings['sigmas'],
+                             axis_sigma_scaling=axis_sigma_scaling,
+                             xysigma0=xysigma0)  # LINE 761 - CALLS smooth_data()
+                                                 # WITH 35M-POINT ARRAYS
+         output_data[channel]=[np.array([x, y, I]).transpose((1, 2, 0))]
+       output_data['ki_max']=self.output_data['OffSpec']['ki_max']
+       self.output_data['OffSpecSmooth']=output_data
+
+
+   PROBLEM ANALYSIS:
+   ─────────────────
+
+   Line 737: hstack creates combined array
+     odata[channel] is a list of OffSpecular datasets, each with shape (x_pixels, tof_bins, 7)
+     hstack() concatenates along axis 0
+     Result: (sum_of_all_x_pixels, tof_bins, 7)
+
+     If 4 datasets: (304*4, 150, 7) = ~128k-1M array elements
+     But when accounting for all pixel combinations: 35M+ elements possible
+
+   Lines 738-742: flatten() converts to 1D
+     Each flatten() creates a view/copy, but data is now in memory as:
+     - x: 1D array of 35M points
+     - y: 1D array of 35M points
+     - I: 1D array of 35M points
+     - Total: 840 MB for 35M points
+
+   Line 761: smooth_data() called with massive arrays
+     smooth_data expects reasonable size data (test case: 10K points)
+     Receives 35M-point arrays instead
+     Function attempts to process all 35M points for each of 10,000 grid points
+     Memory allocation fails around iteration 1000
+
+
+   SECTION 3: DETECTOR/DATA SIZE REFERENCE (qreduce.py)
+   ======================================================
+
+   File: /home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qreduce.py
+
+   Line 730: det_size_x = 0.2128  # horizontal size of detector [m]
+   Line 731: det_size_y = 0.1792  # vertical size of detector [m]
+
+   These translate to:
+     - xydata.shape[1] ≈ 304 pixels (x-dimension)
+     - xydata.shape[0] ≈ 256 pixels (y-dimension)
+
+   OffSpecular._calc_offspec() creates:
+     Line 1961: self.Qz = k[newaxis, :]*(sin(af)+sin(ai))[:, newaxis]
+                Shape: (x_pixels, tof_bins) = (304, 150)
+     Line 1962: self.Qx = k[newaxis, :]*(cos(af)-cos(ai))[:, newaxis]
+                Shape: (x_pixels, tof_bins) = (304, 150)
+     Line 1963: self.ki_z = k[newaxis, :]*sin(ai)[:, newaxis]
+                Shape: (x_pixels, tof_bins) = (304, 150)
+     Line 1964: self.kf_z = k[newaxis, :]*sin(af)[:, newaxis]
+                Shape: (x_pixels, tof_bins) = (304, 150)
+     Line 1976: self.S = self.I - self.BG[newaxis, :]
+                Shape: (x_pixels, tof_bins) = (304, 150)
+
+
+   MEMORY CALCULATION:
+   ───────────────────
+
+   Per OffSpecular measurement:
+     304 pixels × 150 tof_bins = 45,600 points per channel
+
+   Multiple measurements combined (extract_offspecular, qio.py line 675-676):
+     rdata=np.asarray([...7 components...]).transpose((1, 2, 0))
+     Result shape: (x_pixels, tof_bins, 7)
+
+     For multiple datasets combined via hstack:
+     If 3 datasets: (912, 150, 7) → 958,320 points
+     If with multiple y-slices through detector: 35,000,000+ points
+
+   Flattened for smoothing:
+     35M points × 8 bytes (float64) = 280 MB per array
+     × 3 arrays (x, y, I) = 840 MB baseline
+     × 6-7 temporary arrays during rij calculation = 1.6-2.2 GB per iteration
+

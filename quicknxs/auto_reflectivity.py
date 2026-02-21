@@ -4,41 +4,42 @@ Use the sample database to try to automatically generate reflectivity plots
 from the most current mesurements.
 '''
 
-import os, sys
+import os
+import sys
 import logging
 import numpy
 import atexit
 from numpy import sin, pi, where
 
-from cPickle import dumps, loads
-from threading import Thread, Event, _Event
+from pickle import dumps, loads
+from threading import Thread, Event
 from xml.etree import ElementTree
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpec
-from matplotlib import cm, colors
+from matplotlib import colors, colormaps
+from matplotlib.colors import LogNorm
 cmap=colors.LinearSegmentedColormap.from_list('default',
                   ['#0000ff', '#00ff00', '#ffff00', '#ff0000', '#bd7efc', '#000000'], N=256)
-cm.register_cmap('default', cmap=cmap)
-from matplotlib.colors import LogNorm
+colormaps.register(cmap, name='default')
 
-from . import database, qreduce, qcalc, console_logging
-from .config import instrument
-from .version import str_version
+from . import database, qreduce, qcalc, console_logging  # noqa: E402
+from .config import instrument  # noqa: E402
+from .version import str_version  # noqa: E402
 
-class GroupEvent(_Event):
+class GroupEvent(Event):
   '''
   A threading Event that will also trigger a root event when it is set.
   This is useful to wait for any of several events to get triggered.
   '''
   def __init__(self, root_event):
     self.root_event=root_event
-    _Event.__init__(self)
+    Event.__init__(self)
 
   def set(self):
     self.root_event.set()
-    _Event.set(self)
+    Event.set(self)
 
 class FileCom(Thread):
   '''
@@ -69,7 +70,7 @@ class FileCom(Thread):
         self._run()
       except KeyboardInterrupt:
         return
-      except:
+      except Exception:
         logging.warning('Error in FileCom:', exc_info=True)
         self.quit.wait(30.)
 
@@ -84,7 +85,7 @@ class FileCom(Thread):
       logging.info('External program has established connection')
       try:
         xml=ElementTree.parse(self.bind_path)
-      except:
+      except Exception:
         logging.warn('Communication error, could not parse xml string:', exc_info=True)
         self.clear_com()
         continue
@@ -102,7 +103,7 @@ class FileCom(Thread):
         else:
           value=eval(subele.get('value'))
         message_dict[key]=value
-      if not 'action' in message_dict:
+      if 'action' not in message_dict:
         logging.warn('Message contains no action, discarded')
         continue
       action=message_dict['action']
@@ -126,10 +127,11 @@ class FileCom(Thread):
         continue
 
   def clear_com(self):
-    open(self.bind_path, 'w').write('\n')
+    with open(self.bind_path, 'w') as _fh:
+      _fh.write('\n')
     self.last_com=os.path.getmtime(self.bind_path)
     try:
-      os.chmod(self.bind_path, 0666)
+      os.chmod(self.bind_path, 0o666)
     except OSError:
       pass
 
@@ -142,7 +144,7 @@ class FileCom(Thread):
     root=ElementTree.Element('QuickNXS_FileCom')
     for key, value in sorted(message_dict.items()):
       attrib={'type': type(value).__name__}
-      if type(value) in [str, unicode, int, float, bool, type(None)]:
+      if type(value) in [str, int, float, bool, type(None)]:
         attrib['pickled']='False'
         attrib['value']=repr(value)
       else:
@@ -154,7 +156,7 @@ class FileCom(Thread):
     logging.debug('Sending data')
     xml.write(cls.bind_path)
     try:
-      os.chmod(cls.bind_path, 0666)
+      os.chmod(cls.bind_path, 0o666)
     except OSError:
       pass
     logging.debug('Communication finished')
@@ -213,11 +215,11 @@ class FileWatchDog(Thread):
         self._run()
       except KeyboardInterrupt:
         return
-      except:
+      except Exception:
         logging.warning('Error in FileWatchDog:', exc_info=True)
         self.quit.wait(30.)
     logging.debug('FileWatchDog closed')
-  
+
   def _run(self):
     self.live_data_last_mtime=os.path.getmtime(instrument.LIVE_DATA)
     while not self.quit.isSet():
@@ -261,12 +263,13 @@ class ReflectivityBuilder(Thread):
     # start the daemon process
     logging.debug('Spawning daemon process')
     pid = os.fork()
-  
+
     if pid != 0:
       logging.debug('Daemon spawned with PID %i'%pid)
       try:
-        open(cls.PID_FILE, 'w').write(str(pid)+'\n')
-      except:
+        with open(cls.PID_FILE, 'w') as _fh:
+          _fh.write(str(pid)+'\n')
+      except Exception:
         logging.warn('Could not store pid %i in file:', exc_info=True)
       return
 
@@ -282,7 +285,7 @@ class ReflectivityBuilder(Thread):
 
     rb=cls(index)
     rb.start()
-    
+
     rb.newFileId=index
     rb.newFileName=fname
     rb.newFileImage=image_path
@@ -333,7 +336,7 @@ class ReflectivityBuilder(Thread):
         self._run()
       except KeyboardInterrupt:
         break
-      except:
+      except Exception:
         logging.warning('Error in ReflectivityBuilder:', exc_info=True)
         self.quit.wait(30.)
     self.com.quit.set()
@@ -430,7 +433,8 @@ class ReflectivityBuilder(Thread):
       title='+'.join([r[0].options['number'] for r in self.reflectivity_items])
       title+='+LiveData'
       self.plot_reflectivity(data, instrument.AUTOREFL_LIVE_IMAGE, title, False)
-      open(instrument.AUTOREFL_LIVE_INDEX, 'w').write('%i\n'%live_ds.number)
+      with open(instrument.AUTOREFL_LIVE_INDEX, 'w') as _fh:
+        _fh.write('%i\n'%live_ds.number)
       #------------- Plotting the current reflectivity including the live data ---------------#
 
   def check_and_plot_newfile(self):
@@ -458,7 +462,7 @@ class ReflectivityBuilder(Thread):
           logging.debug('Generate autoreduce raw image at %s'%self.newFileImage)
           try:
             self.plot_raw_only(self.newFileImage, self.newFileId)
-          except:
+          except Exception:
             logging.warn('Error in plot_raw_only:', exc_info=True)
       self.newFileId=None
       self.newFileImage=None
@@ -473,10 +477,10 @@ class ReflectivityBuilder(Thread):
     '''
     if start_idx is None:
       if not os.path.exists(instrument.LIVE_DATA):
-        raise RuntimeError, 'Cannont create automatic reflectivity without live data present'
+        raise RuntimeError('Cannont create automatic reflectivity without live data present')
       live_ds=qreduce.NXSData(instrument.LIVE_DATA, use_caching=False)
       if live_ds is None:
-        raise RuntimeError, 'Cannont create automatic reflectivity, live data is not readable'
+        raise RuntimeError('Cannont create automatic reflectivity, live data is not readable')
       self.current_index=live_ds.number
       self.live_data_idx=live_ds.number
       last_ai=self.get_ai(live_ds)
@@ -736,8 +740,8 @@ class ReflectivityBuilder(Thread):
       return dsinfo
 
   def get_cut_pts(self, ds):
-    l=ds.lambda_center
-    res=numpy.where((ds[0].lamda>=(l-1.45))&(ds[0].lamda<=(l+1.25)))[0]
+    lambda_center=ds.lambda_center
+    res=numpy.where((ds[0].lamda>=(lambda_center-1.45))&(ds[0].lamda<=(lambda_center+1.25)))[0]
     if len(res)<3:
       return 0, 0
     P0=len(ds[0].lamda)-res[-1]

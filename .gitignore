@@ -1,4 +1,5 @@
 .*
+!.github
 *~
 *.png
 *.pyo
@@ -7,3 +8,4 @@ MANIFEST
 doc/_*
 dist
 build
+strace.*

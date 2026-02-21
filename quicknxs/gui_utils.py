@@ -4,10 +4,11 @@
   data to user defined formats.
 '''
 
-import os, sys
+import os
+import sys
 from tempfile import gettempdir
 from zipfile import ZipFile, ZIP_DEFLATED
-from cStringIO import StringIO
+from io import BytesIO
 from time import sleep, time
 from numpy import hstack, array, where, histogram2d, log10, meshgrid, sqrt
 from logging import warning, debug, info
@@ -19,9 +20,9 @@ from email.mime.image import MIMEImage
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 
-from PyQt4.QtGui import QDialog, QMessageBox, QFileDialog, QVBoxLayout, QLabel, QProgressBar, \
+from qtpy.QtWidgets import QDialog, QMessageBox, QFileDialog, QVBoxLayout, QLabel, QProgressBar, \
                         QApplication, QSizePolicy, QListWidgetItem
-from PyQt4.QtCore import QThread, pyqtSignal
+from qtpy.QtCore import QThread, Signal as pyqtSignal
 
 from matplotlib.lines import Line2D
 from matplotlib.patches import Ellipse
@@ -32,7 +33,7 @@ from .mplwidget import MPLWidget
 from .plot_dialog import Ui_Dialog as UiPlot
 from .reduce_dialog import Ui_Dialog as UiReduction
 from .smooth_dialog import Ui_Dialog as UiSmooth
-from .qreduce import GISANS
+from .qreduce import GISANS, MRDataset
 from .qio import Exporter
 from .decorators import log_call, log_output
 from . import genx_data
@@ -63,11 +64,15 @@ class Reducer(object):
   export_optios.update(export)
   _overwrite_all=False
 
-  def __init__(self, parent, channels, refls):
-    self._parent_window=parent
-    self.cmap=parent.color
-    self.channels=list(channels) # make sure we don't alter the original list
-    self.refls=refls
+  def __init__(self, parent=None, channels=None, refls=None, **kwargs):
+    super().__init__(**kwargs)
+    if parent is not None:
+      self._parent_window=parent
+      self.cmap=parent.color
+    if channels is not None:
+      self.channels=list(channels) # make sure we don't alter the original list
+    if refls is not None:
+      self.refls=refls
     self.tempfiles=[]
     self._gisans_plots=[]
 
@@ -81,51 +86,60 @@ class Reducer(object):
     self.exporter=Exporter(self.channels, self.refls,
                            sample_length=opts['sampleSize'],
                            spin_asymmetry=opts['export_SA'])
-    info('Re-reading all datasets...')
-    self.exporter.read_data()
+    try:
+      # All extraction steps that need raw_data
+      if opts['exportSpecular']:
+        info('Extracting reflectivity...')
+        self.exporter.extract_reflectivity()
+      needs_offspec=opts['exportOffSpecular'] or opts['exportOffSpecularSmoothed']
+      needs_offspec_corr=opts['exportOffSpecularCorr']
+      if needs_offspec and not needs_offspec_corr:
+        info('Extracting off-specular data...')
+        self.exporter.extract_offspecular()
+      elif needs_offspec_corr:
+        info('Extracting corrected off-specular data...')
+        self.exporter.extract_offspecular_corr(also_uncorrected=needs_offspec)
+      if opts['exportGISANS']:
+        self.extract_gisans()
 
-    if opts['exportSpecular']:
-      info('Extracting reflectivity...')
-      self.exporter.extract_reflectivity()
-    if opts['exportOffSpecular'] or opts['exportOffSpecularSmoothed']:
-      info('Extracting off-specular data...')
-      self.exporter.extract_offspecular()
-    if opts['exportOffSpecularCorr']:
-      info('Extracting corrected off-specular data...')
-      self.exporter.extract_offspecular_corr()
-    if opts['exportOffSpecularSmoothed']:
-      self.smooth_offspec()
-      if not opts['exportOffSpecular']:
-        del(self.exporter.output_data['OffSpec'])
-    if opts['exportGISANS']:
-      self.extract_gisans()
+      # Raw data no longer needed — release it before memory-intensive smoothing
+      self.exporter.release_raw_data()
 
-    self.exporter.export_data(
-                              opts['foldername'], opts['naming'],
-                              multi_ascii=opts['multiAscii'],
-                              combined_ascii=opts['combinedAscii'],
-                              matlab_data=opts['matlab'],
-                              numpy_data=opts['numpy'],
-                              check_exists=self.check_exists,
-                              )
-    if opts['mantidplot'] and FROM_MANTID:
-      self.push_to_mantidplot()
-    if opts['gnuplot']:
-      info('Creating gnuplot scripts...')
-      self.exporter.create_gnuplot_scripts(opts['foldername'], opts['naming'])
-    if opts['genx']:
-      info('Creating genx file...')
-      self.exporter.create_genx_file(opts['foldername'], opts['naming'])
-    if opts['plot']:
-      info('Plotting...')
-      for title, output_data in self.exporter.output_data.items():
-        self.plot_result(output_data, title)
+      # Memory-intensive smoothing runs with raw_data freed
+      if opts['exportOffSpecularSmoothed']:
+        self.smooth_offspec()
+        if not opts['exportOffSpecular']:
+          del(self.exporter.output_data['OffSpec'])
 
-    if opts['emailSend']:
-      self.send_email()
-    for tmp in self.tempfiles:
-      os.remove(tmp)
-    info('Finished')
+      self.exporter.export_data(
+                                opts['foldername'], opts['naming'],
+                                multi_ascii=opts['multiAscii'],
+                                combined_ascii=opts['combinedAscii'],
+                                matlab_data=opts['matlab'],
+                                numpy_data=opts['numpy'],
+                                check_exists=self.check_exists,
+                                )
+      if opts['mantidplot'] and FROM_MANTID:
+        self.push_to_mantidplot()
+      if opts['gnuplot']:
+        info('Creating gnuplot scripts...')
+        self.exporter.create_gnuplot_scripts(opts['foldername'], opts['naming'])
+      if opts['genx']:
+        info('Creating genx file...')
+        self.exporter.create_genx_file(opts['foldername'], opts['naming'])
+      if opts['plot']:
+        info('Plotting...')
+        for title, output_data in self.exporter.output_data.items():
+          self.plot_result(output_data, title)
+
+      if opts['emailSend']:
+        self.send_email()
+      for tmp in self.tempfiles:
+        os.remove(tmp)
+      info('Finished')
+    finally:
+      if hasattr(self, 'exporter') and hasattr(self.exporter, 'raw_data'):
+        self.exporter.release_raw_data()
 
   @log_call
   def check_exists(self, filename):
@@ -155,7 +169,8 @@ class Reducer(object):
     '''
       Extract the GISANS data for all datasets.
     '''
-    output_data=dict([(channel, []) for channel in self.channels])
+    # For the preview dialog, only create GISANS objects for the first channel
+    preview_data=[]
     for refli in self.refls:
       opts=dict(refli.options)
       opts['gisans_no_DP']=False
@@ -163,39 +178,48 @@ class Reducer(object):
       opts['PN']=0
       index=opts['number']
       fdata=self.exporter.raw_data[index]
-      for channel in self.channels:
-        gisans=GISANS(fdata[channel], **opts)
-        output_data[channel].append(gisans)
-    dia=GISANSDialog(self._parent_window, output_data[self.channels[0]])
+      gisans=GISANS(fdata[self.channels[0]], **opts)
+      preview_data.append(gisans)
+    MRDataset._cached_data=None
+    MRDataset._cached_object=None
+    dia=GISANSDialog(self._parent_window, preview_data)
     result=dia.exec_()
     lmin=dia.ui.lambdaMin.value()
     lmax=dia.ui.lambdaMax.value()
     gridQy=dia.ui.gridQy.value()
     gridQz=dia.ui.gridQz.value()
     nslices=dia.ui.numberSlices.value()
-    dia.destroy()
     use_pf=dia.ui.usePf.isChecked()
+    no_dp=dia.ui.lambdaNoDirectPulse.isChecked()
+    dia.destroy()
+    del preview_data
     app=QApplication.instance()
     if result==QDialog.Accepted:
-      if not dia.ui.lambdaNoDirectPulse.isChecked():
-        output_data=dict([(channel, []) for channel in self.channels])
+      # Process one channel at a time to limit peak memory
+      output_data=dict([(channel, []) for channel in self.channels])
+      for channel in self.channels:
+        channel_datasets=[]
         for refli in self.refls:
           opts=dict(refli.options)
-          opts['gisans_no_DP']=dia.ui.lambdaNoDirectPulse.isChecked()
+          opts['gisans_no_DP']=no_dp
+          if not no_dp:
+            opts['P0']=0
+            opts['PN']=0
           index=opts['number']
           fdata=self.exporter.raw_data[index]
-          for channel in self.channels:
-            gisans=GISANS(fdata[channel], **opts)
-            output_data[channel].append(gisans)
-      for channel in self.channels:
-        thread=GISANSCalculation(output_data[channel], lmin, lmax, nslices, gridQy, gridQz,
+          gisans=GISANS(fdata[channel], **opts)
+          channel_datasets.append(gisans)
+        MRDataset._cached_data=None
+        MRDataset._cached_object=None
+        thread=GISANSCalculation(channel_datasets, lmin, lmax, nslices, gridQy, gridQz,
                                  use_pf=use_pf)
         thread.start()
         while not thread.isFinished():
           app.processEvents()
-        output_data[channel]=[]
+        del channel_datasets
         for item in thread.results:
           output_data[channel].append(array([item[1], item[2], item[0], item[5]]).transpose(1, 2, 0))
+        del thread
       for i in range(nslices):
         output=dict([(channel, [output_data[channel][i]]) for channel in self.channels])
         output['column_units']=['A^-1', 'A^-1', 'a.u.', 'a.u.']
@@ -221,8 +245,10 @@ class Reducer(object):
                       info_start=pbinfo+self.channels[0],
                       maximum=100*len(self.channels))
     pb.show()
-    self.exporter.smooth_offspec(settings, pb)
-    pb.destroy()
+    try:
+      self.exporter.smooth_offspec(settings, pb)
+    finally:
+      pb.destroy()
 
   @log_call
   def push_to_mantidplot(self):
@@ -337,7 +363,7 @@ class Reducer(object):
     fname=os.path.join(gettempdir(), 'plot_%i.png'%len(self.tempfiles))
     try:
       plot.canvas.print_figure(fname)
-    except:
+    except Exception:
       pass
     else:
       self.exported_files_plots.append(fname)
@@ -370,7 +396,7 @@ class Reducer(object):
       exported_files=self.exporter.exported_files_all
     if email.ZIPData:
       # create an in-memory zip file which gets attached to the mail
-      fobj=StringIO()
+      fobj=BytesIO()
       zipfile=ZipFile(fobj, 'w', ZIP_DEFLATED)
       for item in exported_files:
         zipfile.write(item, arcname=os.path.basename(item))
@@ -386,17 +412,19 @@ class Reducer(object):
       # read each file, which was exported and attach it to the mail
       for item in exported_files:
         try:
+          with open(item, 'rb') as _fh:
+            _data=_fh.read()
           if item.endswith('.png'):
-            mitem=MIMEImage(open(item, 'rb').read(), 'png')
+            mitem=MIMEImage(_data, 'png')
           elif item.endswith('.pdf'):
-            mitem=MIMEText(open(item, 'rb').read(), 'pdf')
+            mitem=MIMEText(_data, 'pdf')
           elif item.endswith('.dat') or item.endswith('.gp'):
-            mitem=MIMEText(open(item, 'rb').read())
+            mitem=MIMEText(_data)
           else:
             mitem=MIMEBase('application', item[-3:])
-            mitem.set_payload(open(item, 'rb').read())
+            mitem.set_payload(_data)
             encoders.encode_base64(mitem)
-        except:
+        except Exception:
           continue
         mitem.add_header('Content-Disposition', 'attachment', filename=os.path.basename(item))
         msg.attach(mitem)
@@ -405,10 +433,10 @@ class Reducer(object):
       debug('Trying to send data via smtp.ornl.gov')
       smtp=smtplib.SMTP(misc.SMTP_SERVER, timeout=10)
       smtp.sendmail(msg['From'],
-                    map(unicode.strip, msg['To'].split(',')+msg['CC'].split(',')),
+                    [s.strip() for s in msg['To'].split(',')+msg['CC'].split(',')],
                     msg.as_string())
       smtp.quit()
-    except:
+    except Exception:
       warning("Could not send email, perhaps you're not in the ORNL network.", exc_info=True)
     else:
       debug('Email sent successfully')
@@ -451,7 +479,7 @@ class ReduceDialog(QDialog, Reducer):
       Run the dialog and perform reflectivity extraction.
     '''
     if QDialog.exec_(self):
-      foldername=unicode(self.ui.directoryEntry.text())
+      foldername=str(self.ui.directoryEntry.text())
       if not os.path.exists(foldername):
         result=QMessageBox.question(self, 'Creat Folder?',
                       'The folder "%s" does not exist. Do you want to create it?'%foldername,
@@ -487,7 +515,7 @@ class ReduceDialog(QDialog, Reducer):
 
   def save_settings(self):
     ui=self.ui
-    paths.results=unicode(ui.directoryEntry.text())
+    paths.results=str(ui.directoryEntry.text())
     # update options from all UI stuff
     opts=self.export_optios
     for key in export.keys(): #@UndefinedVariable
@@ -499,11 +527,11 @@ class ReduceDialog(QDialog, Reducer):
         export[key]=option.value()
         opts[key]=option.value()
       else:
-        export[key]=unicode(option.text())
+        export[key]=str(option.text())
         opts[key]=option.text()
     self.save_email_texts()
-    opts['foldername']=unicode(self.ui.directoryEntry.text())
-    opts['naming']=unicode(self.ui.fileNameEntry.text())
+    opts['foldername']=str(self.ui.directoryEntry.text())
+    opts['naming']=str(self.ui.fileNameEntry.text())
     opts['sampleSize']=self.ui.sampleSize.value()
     opts['export_SA']=self.ui.export_SA.isChecked()
     # remove channels not selected for export
@@ -575,17 +603,17 @@ class PlotDialog(QDialog):
     Imin=1e10
     if plot.cplot is not None:
       for item in plot.canvas.ax.images:
-        I=item.get_array()
+        I=item.get_array()  # noqa: E741
         Imin=min(Imin, I[I>0].min())
       for item in plot.canvas.ax.collections:
-        I=item.get_array()
+        I=item.get_array()  # noqa: E741
         Imin=min(Imin, I[I>0].min())
       for item in plot.canvas.ax.images:
-        I=item.get_array()
+        I=item.get_array()  # noqa: E741
         I[I<=0]=Imin
         item.set_array(I)
       for item in plot.canvas.ax.collections:
-        I=item.get_array()
+        I=item.get_array()  # noqa: E741
         I[I<=0]=Imin
         item.set_array(I)
       plot.draw()
@@ -637,92 +665,94 @@ class SmoothDialog(QDialog):
       Plot the unsmoothed data.
     '''
     self.drawing=True
-    data=self.data
-    plot=self.ui.plot
-    plot.clear()
-    Qzmax=0.001
-    for item in data:
-      Qx=item[:, :, 0]
-      Qz=item[:, :, 1]
-      ki_z=item[:, :, 2]
-      kf_z=item[:, :, 3]
-      I=item[:, :, 5]
+    try:
+      data=self.data
+      plot=self.ui.plot
+      plot.clear()
+      Qzmax=0.001
+      for item in data:
+        Qx=item[:, :, 0]
+        Qz=item[:, :, 1]
+        ki_z=item[:, :, 2]
+        kf_z=item[:, :, 3]
+        I=item[:, :, 5]  # noqa: E741
 
-      Qzmax=max(ki_z.max()*2., Qzmax)
+        Qzmax=max(ki_z.max()*2., Qzmax)
+        if self.ui.kizmkfzVSqz.isChecked():
+          plot.pcolormesh((ki_z-kf_z), Qz, I, log=True,
+                          imin=1e-6, imax=1., shading='gouraud')
+        elif self.ui.qxVSqz.isChecked():
+          plot.pcolormesh(Qx, Qz, I, log=True,
+                          imin=1e-6, imax=1., shading='gouraud')
+        else:
+          plot.pcolormesh(ki_z, kf_z, I, log=True,
+                          imin=1e-6, imax=1., shading='gouraud')
       if self.ui.kizmkfzVSqz.isChecked():
-        plot.pcolormesh((ki_z-kf_z), Qz, I, log=True,
-                        imin=1e-6, imax=1., shading='gouraud')
+        plot.canvas.ax.set_xlim([-0.035, 0.035])
+        plot.canvas.ax.set_ylim([0., Qzmax*1.01])
+        plot.set_xlabel(u'k$_{i,z}$-k$_{f,z}$ [Å$^{-1}$]')
+        plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
+        x1=-0.03
+        x2=0.03
+        y1=0.
+        y2=Qzmax
+        sigma_pos=(0., Qzmax/3.)
+        sigma_ang=0.
+        self.ui.sigmasCoupled.setChecked(True)
+        self.ui.sigmaY.setEnabled(False)
+        self.ui.sigmaX.setValue(0.0005)
+        self.ui.sigmaY.setValue(0.0005)
       elif self.ui.qxVSqz.isChecked():
-        plot.pcolormesh(Qx, Qz, I, log=True,
-                        imin=1e-6, imax=1., shading='gouraud')
+        plot.canvas.ax.set_xlim([-0.0005, 0.0005])
+        plot.canvas.ax.set_ylim([0., Qzmax*1.01])
+        plot.set_xlabel(u'Q$_x$ [Å$^{-1}$]')
+        plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
+        x1=-0.0002
+        x2=0.0002
+        y1=0.
+        y2=Qzmax
+        sigma_pos=(0., Qzmax/3.)
+        sigma_ang=0.
+        self.ui.sigmasCoupled.setChecked(False)
+        self.ui.sigmaY.setEnabled(True)
+        self.ui.sigmaX.setValue(0.00001)
+        self.ui.sigmaY.setValue(0.0005)
       else:
-        plot.pcolormesh(ki_z, kf_z, I, log=True,
-                        imin=1e-6, imax=1., shading='gouraud')
-    if self.ui.kizmkfzVSqz.isChecked():
-      plot.canvas.ax.set_xlim([-0.035, 0.035])
-      plot.canvas.ax.set_ylim([0., Qzmax*1.01])
-      plot.set_xlabel(u'k$_{i,z}$-k$_{f,z}$ [Å$^{-1}$]')
-      plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
-      x1=-0.03
-      x2=0.03
-      y1=0.
-      y2=Qzmax
-      sigma_pos=(0., Qzmax/3.)
-      sigma_ang=0.
-      self.ui.sigmasCoupled.setChecked(True)
-      self.ui.sigmaY.setEnabled(False)
-      self.ui.sigmaX.setValue(0.0005)
-      self.ui.sigmaY.setValue(0.0005)
-    elif self.ui.qxVSqz.isChecked():
-      plot.canvas.ax.set_xlim([-0.0005, 0.0005])
-      plot.canvas.ax.set_ylim([0., Qzmax*1.01])
-      plot.set_xlabel(u'Q$_x$ [Å$^{-1}$]')
-      plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
-      x1=-0.0002
-      x2=0.0002
-      y1=0.
-      y2=Qzmax
-      sigma_pos=(0., Qzmax/3.)
-      sigma_ang=0.
-      self.ui.sigmasCoupled.setChecked(False)
-      self.ui.sigmaY.setEnabled(True)
-      self.ui.sigmaX.setValue(0.00001)
-      self.ui.sigmaY.setValue(0.0005)
-    else:
-      plot.canvas.ax.set_xlim([0., Qzmax/2.*1.01])
-      plot.canvas.ax.set_ylim([0., Qzmax/2.*1.01])
-      plot.set_xlabel(u'k$_{i,z}$ [Å$^{-1}$]')
-      plot.set_ylabel(u'k$_{f,z}$ [Å$^{-1}$]')
-      x1=0.0
-      x2=Qzmax/2.
-      y1=0.
-      y2=Qzmax/2.
-      sigma_pos=(Qzmax/6., Qzmax/6.)
-      sigma_ang=0.#-45.
-      self.ui.sigmasCoupled.setChecked(True)
-      self.ui.sigmaX.setValue(0.0005)
-      self.ui.sigmaY.setValue(0.0005)
-    if plot.cplot is not None:
-      plot.cplot.set_clim([1e-6, 1.])
-    self.rect_region=Line2D([x1, x1, x2, x2, x1], [y1, y2, y2, y1, y1])
-    self.sigma_1=Ellipse(sigma_pos, self.ui.sigmaX.value()*2, self.ui.sigmaY.value()*2,
-                            sigma_ang, fill=False)
-    self.sigma_2=Ellipse(sigma_pos, self.ui.sigmaX.value()*4, self.ui.sigmaY.value()*4,
-                            sigma_ang, fill=False)
-    self.sigma_3=Ellipse(sigma_pos, self.ui.sigmaX.value()*6, self.ui.sigmaY.value()*6,
-                            sigma_ang, fill=False)
-    plot.canvas.ax.add_line(self.rect_region)
-    plot.canvas.ax.add_artist(self.sigma_1)
-    plot.canvas.ax.add_artist(self.sigma_2)
-    plot.canvas.ax.add_artist(self.sigma_3)
-    plot.draw()
-    # set parameter values
-    self.ui.gridXmin.setValue(x1)
-    self.ui.gridXmax.setValue(x2)
-    self.ui.gridYmin.setValue(y1)
-    self.ui.gridYmax.setValue(y2)
-    self.updateGrid()
-    self.drawing=False
+        plot.canvas.ax.set_xlim([0., Qzmax/2.*1.01])
+        plot.canvas.ax.set_ylim([0., Qzmax/2.*1.01])
+        plot.set_xlabel(u'k$_{i,z}$ [Å$^{-1}$]')
+        plot.set_ylabel(u'k$_{f,z}$ [Å$^{-1}$]')
+        x1=0.0
+        x2=Qzmax/2.
+        y1=0.
+        y2=Qzmax/2.
+        sigma_pos=(Qzmax/6., Qzmax/6.)
+        sigma_ang=0.#-45.
+        self.ui.sigmasCoupled.setChecked(True)
+        self.ui.sigmaX.setValue(0.0005)
+        self.ui.sigmaY.setValue(0.0005)
+      if plot.cplot is not None:
+        plot.cplot.set_clim([1e-6, 1.])
+      self.rect_region=Line2D([x1, x1, x2, x2, x1], [y1, y2, y2, y1, y1])
+      self.sigma_1=Ellipse(sigma_pos, self.ui.sigmaX.value()*2, self.ui.sigmaY.value()*2,
+                              angle=sigma_ang, fill=False)
+      self.sigma_2=Ellipse(sigma_pos, self.ui.sigmaX.value()*4, self.ui.sigmaY.value()*4,
+                              angle=sigma_ang, fill=False)
+      self.sigma_3=Ellipse(sigma_pos, self.ui.sigmaX.value()*6, self.ui.sigmaY.value()*6,
+                              angle=sigma_ang, fill=False)
+      plot.canvas.ax.add_line(self.rect_region)
+      plot.canvas.ax.add_artist(self.sigma_1)
+      plot.canvas.ax.add_artist(self.sigma_2)
+      plot.canvas.ax.add_artist(self.sigma_3)
+      plot.draw()
+      # set parameter values
+      self.ui.gridXmin.setValue(x1)
+      self.ui.gridXmax.setValue(x2)
+      self.ui.gridYmin.setValue(y1)
+      self.ui.gridYmax.setValue(y2)
+      self.updateGrid()
+    finally:
+      self.drawing=False
 
   def updateSettings(self):
     if self.drawing:
@@ -761,7 +791,7 @@ class SmoothDialog(QDialog):
     '''
       Plot for y-projection has been clicked.
     '''
-    if event.button==1 and self.ui.plot.toolbar._active is None and \
+    if event.button==1 and not self.ui.plot.toolbar.mode and \
         event.xdata is not None:
       x=event.xdata
       y=event.ydata
@@ -836,7 +866,7 @@ class GISANSCalculation(QThread):
     PN=data.options['PN']
     # filter the points
     region=where((data.lamda[PN:P0]>=lmin)&(data.lamda[PN:P0]<=lmax))
-    I=data.S[:, :, region].flatten()
+    I=data.S[:, :, region].flatten()  # noqa: E741
     dI=data.dS[:, :, region].flatten()
     qy=data.Qy[:, :, region].flatten()
     if self.use_pf:
@@ -849,7 +879,7 @@ class GISANSCalculation(QThread):
       PN=data.options['PN']
       # filter the points
       region=where((data.lamda[PN:P0]>=lmin)&(data.lamda[PN:P0]<=lmax))
-      I=hstack([I, data.S[:, :, region].flatten()])
+      I=hstack([I, data.S[:, :, region].flatten()])  # noqa: E741
       dI=hstack([dI, data.dS[:, :, region].flatten()])
       qy=hstack([qy, data.Qy[:, :, region].flatten()])
       if self.use_pf:
@@ -964,7 +994,7 @@ class GISANSDialog(QDialog):
     Start a thread that calculates projections to be plotted.
     '''
     for child in self.ui.resultImageArea.children():
-      if not type(child) is MPLWidget:
+      if type(child) is not MPLWidget:
         continue
       child.setParent(None)
     self._listItems={}
@@ -1032,6 +1062,7 @@ class ProgressDialog(QDialog):
   def __init__(self, parent, title='', info_start='', maximum=100, add=0):
     QDialog.__init__(self, parent)
     self.add=add
+    self._last_process_time=0
     self.setWindowTitle(title)
     vbox=QVBoxLayout()
     self.info=QLabel(self)
@@ -1045,16 +1076,19 @@ class ProgressDialog(QDialog):
 
   def progress(self, value):
     param=value*100+self.add
-    self.progressBar.setValue(param)
-    app=QApplication.instance()
-    app.processEvents()
+    self.progressBar.setValue(int(param))
+    now=time()
+    if now - self._last_process_time > 0.2:
+      app=QApplication.instance()
+      app.processEvents()
+      self._last_process_time=now
 
 class DelayedTrigger(QThread):
   '''
     A loop that carries out tasks after a short delay.
     If the tasks are triggered again later, the first
     ones are ignored and the delay is reset.
-    
+
     This allows the GUI to be more responsive when changing
     parameters for e.g. a plot that takes longer time to
     draw.
@@ -1073,11 +1107,14 @@ class DelayedTrigger(QThread):
 
   def run(self):
     while self.stay_alive:
-      for name, items in self.actions.items():
+      to_activate=[]
+      for name, items in list(self.actions.items()):
         ti, args=items
         if time()-ti>self.delay:
-          self.activate.emit(name, args)
-          del(self.actions[name])
+          to_activate.append((name, args))
+      for name, args in to_activate:
+        self.actions.pop(name, None)
+        self.activate.emit(name, args)
       sleep(self.refresh)
 
   def __call__(self, action, *args):

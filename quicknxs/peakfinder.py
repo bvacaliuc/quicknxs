@@ -12,19 +12,19 @@ try:
   from scipy.stats.mstats import mquantiles
 except (ImportError, RuntimeError):
   # use the slightly slower quantiles function that does not rely on scipy
-  def mquantiles(data, prob, *ignore): return quantile(data, prob)
+  def mquantiles(data, prob, *ignore): return numpy.atleast_1d(quantile(data, prob))
 
 class PeakFinder(object):
   '''
-  Peak finder which can be reevaluated with different thresholds 
+  Peak finder which can be reevaluated with different thresholds
   without recalculation all steps.
   The steps performed are:
-  
+
     - CWT of the dataset (which also removes the baseline)
     - Finding ridged lines by walking through different CWT scales
     - Calculate signal to noise ratio (SNR)
-    - Identify the peaks from the ridged lines 
-      (this is where the user parameters enter and can be recalculated fast) 
+    - Identify the peaks from the ridged lines
+      (this is where the user parameters enter and can be recalculated fast)
   '''
 
   def __init__(self, xdata, ydata, resolution=5):
@@ -124,7 +124,7 @@ class PeakFinder(object):
     minimum_noise=float(minimum_noise_level*mquantiles(
                         noise_cwt,
                         0.95,
-                        3./8., 3./8.))
+                        3./8., 3./8.)[0])
     for info in ridge_info:
       scale=max(3, info[2]) # get a minimal width of 30 items for noise calculation
       signal=info[3]
@@ -132,9 +132,9 @@ class PeakFinder(object):
       base_right=int(info[1]+scale*5)
       noise=mquantiles(noise_cwt[base_left:base_right+1],
                        0.95,
-                       3./8., 3./8.)
-      noise=numpy.nan_to_num(noise)
-      noise=float(max([minimum_noise, noise]))
+                       3./8., 3./8.)[0]
+      noise=float(numpy.nan_to_num(noise))
+      noise=max(minimum_noise, noise)
       info.append(signal/noise)
 
   def _find_local_max(self, data, steps=3):
@@ -162,7 +162,7 @@ class PeakFinder(object):
                 estimate_center=False):
     '''
     Return a list of peaks fulfilling the defined conditions.
-    
+
     :param snr: Minimal signal to noise ratio
     :param min_width: Minimal peak width
     :param max_width: Maximal peak width
@@ -170,7 +170,7 @@ class PeakFinder(object):
     :param analyze: Store information to analyze the filtering
     :param double_peak_detection: Perform a second run, where the ridge_length is reduced near found peaks
     :param estimate_center: Use the x position of the ridge maximum to estimate peak position
-    
+
     :return: List of found peaks as (x0, width, I0, ridge length, SNR)
     '''
     xdata=self.xdata
@@ -181,19 +181,19 @@ class PeakFinder(object):
     ridge_info=self.ridge_info
 
     if analyze:
-      self.length_filtered=filter(lambda item: item[0]<ridge_length,
-                     ridge_info)
-      self.snr_filtered=filter(lambda item: item[5]<snr, ridge_info)
+      self.length_filtered=list(filter(lambda item: item[0]<ridge_length,
+                     ridge_info))
+      self.snr_filtered=list(filter(lambda item: item[5]<snr, ridge_info))
     # filter for signal to noise ratio
-    ridge_info=filter(lambda item: item[5]>=snr, ridge_info)
+    ridge_info=list(filter(lambda item: item[5]>=snr, ridge_info))
     if double_peak_detection:
       # store peaks filtered by ridge length
-      ridge_filtered=filter(lambda item: (item[0]<ridge_length)&
+      ridge_filtered=list(filter(lambda item: (item[0]<ridge_length)&
                             (item[0]>=double_peak_reduced_ridge_length),
-                            ridge_info)
+                            ridge_info))
     # filter for minimum ridge line length
-    ridge_info=filter(lambda item: item[0]>=ridge_length,
-                     ridge_info)
+    ridge_info=list(filter(lambda item: item[0]>=ridge_length,
+                     ridge_info))
     # calculate peak info from ridge info
     # peak info items are [center_position, width, intensity]
     peak_info=[]
@@ -227,8 +227,8 @@ class PeakFinder(object):
       info.append(item[5])
       peak_info.append(info)
     # filter for peak width
-    peak_info=filter(lambda item: (item[1]>=min_width)&(item[1]<=max_width),
-                     peak_info)
+    peak_info=list(filter(lambda item: (item[1]>=min_width)&(item[1]<=max_width),
+                     peak_info))
     if double_peak_detection:
       # detect double-peaks by reducing the ridge-length filtering in adjacency of
       # strong peaks
@@ -272,13 +272,13 @@ class PeakFinder(object):
         adjecent_peaks+=[item for item in double_peak_info if
                         (item[0]>=(peaki[0]-peaki[3]/2.*peaki[1]))
                         and (item[0]<=(peaki[0]+peaki[3]/2.*peaki[1]))
-                        and not item in adjecent_peaks
+                        and item not in adjecent_peaks
                         ]
       peak_info+=adjecent_peaks
     if analyze:
-      width_filtered=zip(ridge_info, peak_info)
-      self.width_filtered=filter(lambda item: \
-              (item[1][1]<min_width)|(item[1][1]>max_width), width_filtered)
+      width_filtered=list(zip(ridge_info, peak_info))
+      self.width_filtered=list(filter(lambda item: \
+              (item[1][1]<min_width)|(item[1][1]>max_width), width_filtered))
     peak_info.sort()
     return peak_info
 
@@ -344,7 +344,7 @@ class Cwt:
     Used by subclass which provides the method wf(self,s_omega)
     wf is the Fourier transform of the wavelet function.
     Returns an instance.
-    
+
     Naming convention roughly follows [CTorrance1998]_.
     """
 
@@ -402,7 +402,8 @@ class Cwt:
         else a linear scale
         """
         if scaling=="log":
-            if notes<=0: notes=1
+            if notes<=0:
+              notes=1
             # adjust nscale so smallest scale is 1
             noctave=self._log2(2.*ndata/largestscale)
             self.nscale=notes*noctave
@@ -413,7 +414,8 @@ class Cwt:
             nmax=ndata/largestscale/2
             self.scales=numpy.arange(float(2), float(nmax))
             self.nscale=len(self.scales)
-        else: raise ValueError, "scaling must be linear or log"
+        else:
+          raise ValueError("scaling must be linear or log")
         return
 
     def getdata(self):

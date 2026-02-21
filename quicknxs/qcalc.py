@@ -3,6 +3,7 @@
 Module for calculations used in data reduction and automatic algorithms.
 '''
 
+import builtins as _builtins
 from numpy import *
 from logging import debug, info #@Reimport
 from .decorators import log_input, log_both
@@ -18,15 +19,15 @@ __all__=['get_total_reflection', 'get_scaling', 'get_xpos', 'get_yregion',
 def get_total_reflection(refl, return_npoints=False):
   """
   Calculate the intensity of the total reflection plateau in one dataset.
-  Starting from low Q points it searches for a drop in intensity to 
+  Starting from low Q points it searches for a drop in intensity to
   locate the andge and than returns the weighted mean.
-  
+
   :param quicknxs.qreduce.Reflectivity refl: Used to get the reflected intensity
-  
+
   :returns: scaling, (number of points used for weighted mean)
   """
-  if not type(refl) is Reflectivity:
-    raise ValueError, "'refl' needs to be a Reflectiviy object"
+  if type(refl) is not Reflectivity:
+    raise ValueError("'refl' needs to be a Reflectiviy object")
   last=refl.options['PN']
   first=len(refl.R)-refl.options['P0']
   R=refl.R[last:first]
@@ -48,16 +49,16 @@ def get_total_reflection(refl, return_npoints=False):
 def get_scaling(refl1, refl2, add_points=0, polynom=3):
   """
   Calculate the scaling factor needed to stich one dataset to another.
-  
+
   :param quicknxs.qreduce.Reflectivity refl1: First reflectivity object
   :param quicknxs.qreduce.Reflectivity refl2: Second reflectivity object, to be scaled
   :param int add_points: Number of points of both datasets considered outside the overlapping region
   :param int polynom: Degree of polynom to use for fitting, 0 is Gaussian
-  
+
   :returns: scaling, array of fitted x and y
   """
   if not (type(refl1) is Reflectivity and type(refl2) is Reflectivity):
-    raise ValueError, "'refl1' and 'refl2' need to be Reflectiviy objects"
+    raise ValueError("'refl1' and 'refl2' need to be Reflectiviy objects")
   last=refl1.options['PN']
   first=len(refl1.R)-refl1.options['P0']
   R1=refl1.R[last:first]
@@ -76,7 +77,7 @@ def get_scaling(refl1, refl2, add_points=0, polynom=3):
     # if either reflectivity has only zero intensity, return a scaling factor of 1.
     return 1., array([refl1.Q[0], refl2.Q[-1]]), array([0., 0.])
   try:
-    reg1=max(0, where(Q1<=Q2.max())[0][0]-add_points)
+    reg1=_builtins.max(0, where(Q1<=Q2.max())[0][0]-add_points)
     reg2=where(Q2>=Q1.min())[0][-1]+1+add_points
   except IndexError:
     # take at least one point, if no overlap
@@ -91,7 +92,7 @@ def get_xpos(data, dangle0_overwrite=None, direct_pixel_overwrite=-1,
              snr=3., min_width=1.5, max_width=20, ridge_length=15, return_pf=False, refine=True):
   """
   Calculate the specular or direct beam peak position from data x-projection.
-  
+
   :param quicknxs.qreduce.MRDataset data: Raw data used to find the x-position
   :param float dangle0_overwrite: If not None, overwrite dataset dangle0 with this value
   :param float direct_pixel_overwrite: If !=-1, overwrite dataset direct pixel with this value
@@ -101,11 +102,11 @@ def get_xpos(data, dangle0_overwrite=None, direct_pixel_overwrite=-1,
   :param float ridge_length: Parameter of the peakfinder, giving the peak strength
   :param bool return_pf: Return the peak finder object together with the center value
   :param bool refine: Fit the peak position after peak detection
-  
+
   :returns: x_center, (Peakfinder)
   """
   if type(data) is not MRDataset:
-    raise ValueError, "'data' needs to be a MRDataset object"
+    raise ValueError("'data' needs to be a MRDataset object")
   if data.total_counts==0:
     # for datasets with no counts return the direct pixel from the metadata
     if return_pf:
@@ -142,7 +143,7 @@ def get_xpos(data, dangle0_overwrite=None, direct_pixel_overwrite=-1,
     delta_pix=abs(pix_position-x_peaks)
     x_peak=x_peaks[delta_pix.argmin()]
     wpeak=wpeaks[delta_pix.argmin()]
-  except:
+  except Exception:
     x_peak=pix_position
     wpeak=min_width
     debug('Error in getting pixel from detected peaks, taking default value:', exc_info=True)
@@ -150,7 +151,7 @@ def get_xpos(data, dangle0_overwrite=None, direct_pixel_overwrite=-1,
     # refine position with gaussian after background subtraction, FWHM=2.355*sigma
     # use limited range around the peak to avoid fitting into a different peak
     fit_halfwidth=int(wpeak)
-    fit_data=(xproj-median(xproj))[max(0, x_peak-fit_halfwidth):x_peak+fit_halfwidth+1]
+    fit_data=(xproj-median(xproj))[_builtins.max(0, x_peak-fit_halfwidth):x_peak+fit_halfwidth+1]
     x_peak=refine_gauss(fit_data, fit_halfwidth, wpeak)-fit_halfwidth+x_peak
   if return_pf:
     return float(x_peak), pf
@@ -161,13 +162,13 @@ def get_xpos(data, dangle0_overwrite=None, direct_pixel_overwrite=-1,
 def get_yregion(data):
   """
   Calculate the beam y region from data y-projection.
-  
+
   :param quicknxs.qreduce.MRDataset data: Raw data used to find the y-region
-  
+
   :returns: y_center, y_width, y_bg
   """
   if type(data) is not MRDataset:
-    raise ValueError, "'data' needs to be a MRDataset object"
+    raise ValueError("'data' needs to be a MRDataset object")
   yproj=data.ydata
   # find the central peak region with intensities larger than the median
   y_bg=median(yproj)
@@ -186,17 +187,17 @@ def get_BGscale(data, pos, width, bg_pos, bg_width):
   Estimate a scaling factor for the background by comparing the average
   background intensity in the x-projection with the intensity left and right
   of the reflected beam.
-  
+
   :param quicknxs.qreduce.MRDataset data: Raw data used to find the y-region
   :param float pos: position of the reflected beam
   :param float width: width of reflected beam
   :param float bg_pos: central position of the background region
   :param float bg_width: width of the background region
-  
+
   :returns: scaling factor
   """
   xproj=data.xdata
-  refI=xproj[max(0, int(bg_pos-bg_width/2)):int(bg_pos+bg_width/2)].mean()
+  refI=xproj[_builtins.max(0, int(bg_pos-bg_width/2)):int(bg_pos+bg_width/2)].mean()
   bgI=(xproj[int(round(pos-1.5*width)):int(round(pos-0.5*width))].mean()+
        xproj[int(round(pos+0.5*width)):int(round(pos+1.5*width))].mean())/2.
   return bgI/refI
@@ -205,7 +206,7 @@ def get_BGscale(data, pos, width, bg_pos, bg_width):
 def refine_gauss(data, pos, width, return_params=False):
   '''
   Fit a gaussian function to a given dataset and return the x0 position.
-  
+
   :param numpy.ndarray data: Intensity data to be used for the fit
   :param float pos: Starting value for the peak center
   :param float width: Starting value for the peak width
@@ -213,7 +214,7 @@ def refine_gauss(data, pos, width, return_params=False):
   '''
   if pos<0 or pos>(len(data)-1):
     pos=len(data)/2
-  p0=[data[int(pos)], pos, max(1., width)]
+  p0=[data[int(pos)], pos, _builtins.max(1., width)]
   parinfo=[{'value': p0[i], 'fixed':0, 'limited':[0, 0],
             'limits':[0., 0.]} for i in range(3)]
   parinfo[0]['limited']=[True, False]
@@ -240,7 +241,7 @@ def refine_gauss(data, pos, width, return_params=False):
     return res.params[1]
 
 @log_input
-def smooth_data(settings, x, y, I, sigmas=3.,
+def smooth_data(settings, x, y, I, sigmas=3.,  # noqa: E741
                 axis_sigma_scaling=None, xysigma0=0.06, callback=None):
   '''
   Smooth a irregular spaced dataset onto a regular grid.
@@ -274,9 +275,12 @@ def smooth_data(settings, x, y, I, sigmas=3.,
       xij=Xout[i, j]
       yij=Yout[i, j]
       if axis_sigma_scaling:
-        if axis_sigma_scaling==1: xyij=xij
-        elif axis_sigma_scaling==2: xyij=yij
-        elif axis_sigma_scaling==3: xyij=xij+yij
+        if axis_sigma_scaling==1:
+          xyij=xij
+        elif axis_sigma_scaling==2:
+          xyij=yij
+        elif axis_sigma_scaling==3:
+          xyij=xij+yij
         if xyij==0:
           continue
         ssigmaxi=ssigmax/xysigma0*xyij
@@ -290,6 +294,8 @@ def smooth_data(settings, x, y, I, sigmas=3.,
       Pij=exp(-0.5*rij[take])
       Pij/=Pij.sum()
       Iout[i, j]=(Pij*I[take]).sum()
+  if callback is not None:
+    callback(1.0)
   return Xout, Yout, Iout
 
 ######## helper functions ###############
@@ -347,7 +353,7 @@ def _refineOverlap(x1, y1, dy1, x2, y2, dy2, polynom):
   Refine a polynomial to the logarithm of two datasets while
   scaling the first dataset as well. Return the resulting
   scaling parameter and the refined function for plotting.
-  
+
   :returns: scaling, array of fitted x and y
   '''
   x1=x1.astype(float64)
@@ -447,7 +453,7 @@ class DetectorTailCorrector(object):
     else:
       result=zeros(self.mshape)
       lendiff=self.mshape-data.shape[0]
-      result[lendiff/2:data.shape[0]+lendiff/2]=data
+      result[lendiff//2:data.shape[0]+lendiff//2]=data
       data=result.copy()
     rdiff=data-self.convole_data(result)
     last_diff=abs(rdiff).sum()

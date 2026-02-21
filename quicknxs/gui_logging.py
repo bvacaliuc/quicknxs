@@ -13,7 +13,7 @@ import atexit
 import logging
 import traceback
 import inspect
-from cStringIO import StringIO
+from io import StringIO
 from numpy import seterr, seterrcall
 from .version import str_version
 from .config import paths, misc, proxy
@@ -33,7 +33,7 @@ elif misc.debug_mode:
 else:
   _log_levels=misc.default_log_levels
 for item, level in _log_levels.items():
-  exec '%s_LEVEL=logging.%s'%(item, level)
+  globals()['%s_LEVEL'%item] = getattr(logging, level)
 
 def excepthook_overwrite(*exc_info):
   logging.critical('python error', exc_info=exc_info)
@@ -79,7 +79,7 @@ def pid_exists(pid):
         return False
     try:
         os.kill(pid, 0)
-    except OSError, e:
+    except OSError as e:
         return e.errno==errno.EPERM
     else:
         return True
@@ -89,7 +89,8 @@ def check_runstate():
   Check for running application by this user.
   '''
   if os.path.exists(paths.STATE_FILE):
-    pid=int(open(paths.STATE_FILE).readline().split()[-1])
+    with open(paths.STATE_FILE) as _fh:
+      pid=int(_fh.readline().split()[-1])
     running=pid_exists(pid)
     return running
   else:
@@ -161,7 +162,7 @@ class QtHandler(logging.Handler):
     msg=record.msg
     if record.levelno!=logging.INFO:
       msg=record.levelname+': '+msg
-    self.main_window.ui.statusbar.showMessage(msg, 5000.)
+    self.main_window.ui.statusbar.showMessage(msg, 5000)
     # make sure the message gets displayed during method executions
     self.main_window.ui.statusbar.update()
 
@@ -169,7 +170,7 @@ class QtHandler(logging.Handler):
     '''
       Warning messages display a dialog to the user.
     '''
-    from PyQt4.QtGui import QMessageBox
+    from qtpy.QtWidgets import QMessageBox
     if record.exc_info:
       msg=u'%s\nError Message:\n%s:   %s'%(record.msg, record.exc_info[0].__name__, record.exc_info[1])
       QMessageBox.warning(self.main_window, 'QuickNXS '+record.levelname, msg)
@@ -180,8 +181,8 @@ class QtHandler(logging.Handler):
     '''
       More urgent error messages allow to send a bug report.
     '''
-    from PyQt4.QtGui import QMessageBox
-    from PyQt4.QtCore import Qt
+    from qtpy.QtWidgets import QMessageBox
+    from qtpy.QtCore import Qt
     mbox=QMessageBox(self.main_window)
     mbox.setIcon(QMessageBox.Critical)
     mbox.setTextFormat(Qt.RichText)
@@ -232,7 +233,8 @@ class QtHandler(logging.Handler):
         msg.preamble=text
         msg.attach(MIMEText(text))
 
-        mitem=MIMEText(open(paths.LOG_FILE, 'r').read(), 'log')
+        with open(paths.LOG_FILE, 'r') as _fh:
+          mitem=MIMEText(_fh.read(), 'log')
         mitem.add_header('Content-Disposition', 'attachment', filename='debug.log')
         msg.attach(mitem)
 
@@ -240,7 +242,7 @@ class QtHandler(logging.Handler):
         smtp.sendmail(msg['From'], msg['To'].split(','), msg.as_string())
         smtp.quit()
         logging.info('Mail sent')
-      except:
+      except Exception:
         logging.warning('problem sending the mail', exc_info=True)
       else:
         # after successful email notification the same error is not reported twice

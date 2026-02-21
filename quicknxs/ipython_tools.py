@@ -19,7 +19,7 @@ class StringRepr(str):
 
 class NiceDict(dict):
   '''
-  A dictionary object with a html list representation displaying 
+  A dictionary object with a html list representation displaying
   keys, values and value types sorted by key.
   '''
   def _repr_html_(self):
@@ -30,7 +30,7 @@ class NiceDict(dict):
       if hasattr(value, '_repr_html_'):
         try:
           valrepr=value._repr_html_()
-        except:
+        except Exception:
           pass
       output+='<tr><td>%s</td><td>%s</td><td>%s</td></tr>\n'%(key, valrepr,
                                                               type(value).__name__)
@@ -39,7 +39,7 @@ class NiceDict(dict):
 
 class PlottableArray(ndarray):
   '''
-  A numpy array that displays a plotted representation, when it is shown in the qt console. 
+  A numpy array that displays a plotted representation, when it is shown in the qt console.
   '''
   _log=False
 
@@ -52,7 +52,7 @@ class PlottableArray(ndarray):
 
   def _repr_png_(self):
     # to prevent problems with other modules import needed stuff on the fly
-    from cStringIO import StringIO
+    from io import BytesIO as StringIO
     from matplotlib.colors import LogNorm
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -115,10 +115,10 @@ class AttributePloter(object):
     self._attrs=attrs
 
   def __getattribute__(self, name):
-    if name.startswith('_') or not name in self._attrs:
+    if name.startswith('_') or name not in self._attrs:
       return object.__getattribute__(self, name)
     else:
       return PlottableArray(getattr(self._parent, name))
 
   def __dir__(self):
-    return self.__dict__.keys()+self._attrs
+    return list(self.__dict__.keys())+self._attrs

@@ -11,8 +11,9 @@ The logformat should be:
 
 import time
 import logging
-from PyQt4.QtGui import QMainWindow, QTreeWidgetItem, QFileDialog, QColor
-from PyQt4.QtCore import Qt, QFileSystemWatcher, QObject, pyqtSignal
+from qtpy.QtWidgets import QMainWindow, QTreeWidgetItem, QFileDialog
+from qtpy.QtGui import QColor, QBrush
+from qtpy.QtCore import Qt, QFileSystemWatcher, QObject, Signal as pyqtSignal
 from .quicklog_window import Ui_MainWindow
 
 class Logfile(QObject):
@@ -35,14 +36,14 @@ class Logfile(QObject):
 
     self.watch=QFileSystemWatcher([filename])
     self.watch.fileChanged.connect(self.update_text)
-  
+
   def read_text(self):
     fh=open(self.fname, 'rb')
     fh.seek(self.curpos)
     text=fh.read()
     self.curpos=fh.tell()
     fh.close()
-    text=unicode(text, encoding=self.encoding)
+    text=text.decode(self.encoding) if isinstance(text, bytes) else text
     return text
 
   def analyze_text(self, text):
@@ -59,7 +60,7 @@ class Logfile(QObject):
         logging.warn('Error reading entry text "%s":'%entry_text, exc_info=True)
         continue
       self.entries.append(entry)
-  
+
   def update_text(self):
     text=self.read_text()
     pre_update=len(self.entries)
@@ -82,7 +83,7 @@ class LogEntry(object):
     :param unicode text: Line or liens of text in the logfile to analyze
     '''
     lines=text.split(u'\n', 1)
-    map(unicode.strip, lines)
+    lines=[line.strip() for line in lines]
 
     if len(lines)==1:
       fline=lines[0]
@@ -97,7 +98,7 @@ class LogEntry(object):
       self.thread=fline_items[2].strip()
       cline=fline_items[3]
     else:
-      raise ValueError, 'Unknown format in line %s'%fline
+      raise ValueError('Unknown format in line %s'%fline)
 
     self.severity=eval('logging.'+fline_items[0].strip(u' []'))
     self.time=time.strptime(fline_items[1].strip(), u'%Y-%m-%d %H:%M:%S,%f')
@@ -159,14 +160,14 @@ class QuicklogWindow(QMainWindow):
 
   def openFile(self, filename=None):
     if filename is None:
-      filename=QFileDialog.getOpenFileName(self, caption=u'Select logfile')
+      filename=QFileDialog.getOpenFileName(self, caption=u'Select logfile')[0]
     self.showLog(Logfile(filename))
     self.logfile_name=filename
 
   def showLog(self, logfile):
     '''
     Display the Logfile object in the ui treeview.
-    
+
     :param Logfile logfile: An Logfile instance to be displayed.
     '''
     self.logfile=None
@@ -181,7 +182,8 @@ class QuicklogWindow(QMainWindow):
     if threads:
       self.ui.filterThread.show()
       self.ui.filterThreadLabel.show()
-      map(self.ui.filterThread.addItem, threads)
+      for t in threads:
+        self.ui.filterThread.addItem(t)
     else:
       self.ui.filterThread.hide()
       self.ui.filterThreadLabel.hide()
@@ -215,11 +217,11 @@ class QuicklogWindow(QMainWindow):
       root=TreeWidgetTimeItem([entry.sseverity, entry.time, ctxt,
                             entry.source_file, str(entry.source_line), entry.source_method], 1)
       if entry.severity>=logging.ERROR:
-        root.setTextColor(0, QColor(255, 0, 0))
+        root.setForeground(0, QBrush(QColor(255, 0, 0)))
       elif entry.severity>=logging.WARN:
-        root.setTextColor(0, QColor(150, 150, 0))
+        root.setForeground(0, QBrush(QColor(150, 150, 0)))
       elif entry.severity<logging.INFO:
-        root.setTextColor(0, QColor(100, 100, 100))
+        root.setForeground(0, QBrush(QColor(100, 100, 100)))
 
       self.ui.logTree.addTopLevelItem(root)
       if entry.comment_text:

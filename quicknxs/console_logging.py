@@ -5,7 +5,8 @@ debug information to a file and info level for the command line.
 As at least two threads are used it adds thread information to the messages.
 '''
 
-import sys, os
+import sys
+import os
 import logging.handlers
 
 logfile_handler=None
@@ -31,8 +32,11 @@ def setup_logging(log_level=logging.INFO, filename='/tmp/quicknxs.log', setup_co
     rollover=False
   logfile=logging.handlers.RotatingFileHandler(filename, encoding='utf8', mode='a',
                                                maxBytes=200*1024**2, backupCount=20)
-  if rollover: logfile.doRollover()
-  formatter=logging.Formatter('[%(levelname)s] - %(asctime)s - %(threadName)s - %(filename)s:%(lineno)i:%(funcName)s %(message)s', '')
+  if rollover:
+    logfile.doRollover()
+  formatter=logging.Formatter(
+    '[%(levelname)s] - %(asctime)s - %(threadName)s - %(filename)s:%(lineno)i:%(funcName)s %(message)s', ''
+  )
   logfile.setFormatter(formatter)
   logfile.setLevel(logging.DEBUG)
   logger.addHandler(logfile)

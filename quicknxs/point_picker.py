@@ -6,7 +6,7 @@ A dialog to delete unwanted points from a reflectivity curve.
 import sys
 import numpy as np
 from os import path
-from PyQt4.QtGui import QDialog, QTableWidgetItem
+from qtpy.QtWidgets import QDialog, QTableWidgetItem
 from .point_picker_dialog import Ui_Dialog
 
 class PointPicker(QDialog):
@@ -15,8 +15,8 @@ class PointPicker(QDialog):
   from a list of αi,Q,I values or directly on the plot.
   The dialog is created with the filename where the data is taken from. Optionally
   the pre_filter list can be given, which is a list of indices to be selected on startup.
-  
-  When the user accepts the dialog, the current selection 
+
+  When the user accepts the dialog, the current selection
   is stored in the filtered_idxs attribute.
   '''
   origin_file=None
@@ -93,17 +93,15 @@ class PointPicker(QDialog):
   def plot(self):
     '''
     Draw lines for the filtered data colored by incident angle values and
-    black dots for removed points. 
+    black dots for removed points.
     '''
     plot=self.ui.plot
 
     # collect information about the current view
-    if len(plot.toolbar._views)>0:
-      spos=plot.toolbar._views._pos
-      view=plot.toolbar._views[spos]
-      position=plot.toolbar._positions[spos]
+    if len(plot.toolbar._nav_stack)>0:
+      nav_state=plot.toolbar._nav_stack()
     else:
-      view=None
+      nav_state=None
 
     plot.clear()
     # collect filtered data
@@ -127,10 +125,9 @@ class PointPicker(QDialog):
     plot.legend()
 
     # keep old zoom position
-    if view is not None:
+    if nav_state is not None:
       plot.toolbar.push_current()
-      plot.toolbar._views.push(view)
-      plot.toolbar._positions.push(position)
+      plot.toolbar._nav_stack.push(nav_state)
       plot.toolbar._update_view()
     plot.draw()
 
@@ -155,7 +152,7 @@ class PointPicker(QDialog):
     '''
     Callback for mouse button pressed on plot.
     '''
-    if self.ui.plot.toolbar._active is None and event.button==1 and \
+    if not self.ui.plot.toolbar.mode and event.button==1 and \
       event.xdata is not None:
       # no tool is selected and a button was pressed inside the plot
       x=event.xdata
@@ -172,7 +169,8 @@ class PointPicker(QDialog):
     fpath, fname=path.split(self.origin_file)
     pre, post=fname.rsplit('_', 1)
     outfile=path.join(fpath, pre+'_filtered_'+post)
-    original_lines=open(self.origin_file, 'r').readlines()
+    with open(self.origin_file, 'r') as _fh:
+      original_lines=_fh.readlines()
     output=open(outfile, 'w')
     # collect indices of filtered regions
     reg=self.plot_region
@@ -193,7 +191,8 @@ class PointPicker(QDialog):
     value=np.array([self.Qz[reg], self.R[reg], self.dR[reg], self.dQz[reg], self.ai[reg]])
     if sys.version_info[0]>2:
       output.close()
-      outbytes=open(outfile, 'rb').read()
+      with open(outfile, 'rb') as _fh:
+        outbytes=_fh.read()
       output=open(outfile, 'wb')
       output.write(outbytes)
     np.savetxt(output, value.T, delimiter='\t', fmt='%-18e')
