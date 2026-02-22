@@ -24,13 +24,46 @@ automatically from git tags at install/build time.
 - At a tag: version is exactly `1.x.y`
 - Check the current version: `pixi run show-version`
 
-### Agent team workflow
-To release a new version, simply create and push a tag:
-```bash
-git tag v1.x.y
-git push origin v1.x.y
+### Branch model
+
 ```
-No manual edits to any source file are needed.
+master  — READ-ONLY: tracks upstream aglavic/quicknxs; never write to this branch
+qa      — highest "ours" branch; receives release tags; terminal stable branch
+next    — integration branch; all feature PRs target next
+```
+
+**`master` must never be committed to or merged into in this fork.**
+
+### Release process
+
+```
+Feature PRs → next
+                │
+                ├─ cut RC tag: v1.X.0rc1  (on next)
+                │   CI: lint + test + publish (creates GitHub pre-release)
+                │
+                ├─ iterate: rc2, rc3, ... as needed
+                │
+                │  promote: git push origin next:qa
+                │
+                └─ cut release tag: v1.X.0  (on qa)
+                    CI: lint + test + publish (creates GitHub release)
+```
+
+- **RC tags** (`v1.X.0rcN`) — pre-release; CI creates a GitHub pre-release automatically
+- **Release tags** (`v1.X.0`) — stable; CI creates a GitHub release automatically
+- Tags are cut manually; no file edits needed (versioningit derives the version from the tag)
+
+To promote `next` to `qa`:
+```bash
+git push origin next:qa          # fast-forward if no divergence
+```
+
+To cut a tag and trigger CI + GitHub Release:
+```bash
+git tag v1.X.0rc1 && git push origin v1.X.0rc1   # RC
+git tag v1.X.0    && git push origin v1.X.0       # release
+```
 
 ## Capabilites and Role
 
