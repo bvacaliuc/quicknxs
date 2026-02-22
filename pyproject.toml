@@ -1,12 +1,27 @@
 [project]
 name = "quicknxs-v1"
 description = "QuickNXS v1 - Magnetism Reflectometer data reduction"
-version = "1.1.6"
+dynamic = ["version"]
 requires-python = ">=3.10,<3.13"
+
+[tool.versioningit.vcs]
+method = "git"
+default-tag = "1.0.0"
+
+[tool.versioningit.next-version]
+method = "minor"
+
+[tool.versioningit.format]
+distance = "{next_version}.dev{distance}"
+dirty = "{version}"
+distance-dirty = "{next_version}.dev{distance}"
+
+[tool.versioningit.write]
+file = "quicknxs/_version.py"
 
 [build-system]
 build-backend = "setuptools.build_meta"
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=68.0", "versioningit"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -46,6 +61,7 @@ ruff = "*"
 default = { features = ["dev", "test"], solve-group = "default" }
 
 [tool.pixi.tasks]
+show-version = { cmd = "python -m versioningit", description = "Show the current computed version" }
 test = { cmd = "pytest", description = "Run the test suite" }
 test-core = { cmd = "pytest tests/qreduce_test.py tests/qcalc_test.py tests/qio_test.py -v", description = "Run non-GUI tests" }
 test-gui = { cmd = "pytest tests/main_gui_test.py -v", description = "Run GUI tests" }

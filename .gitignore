@@ -9,3 +9,5 @@ doc/_*
 dist
 build
 strace.*
+# versioningit generated file
+quicknxs/_version.py
