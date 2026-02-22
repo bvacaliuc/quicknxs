@@ -51,6 +51,37 @@ chmod 600 /path/to/tempfile
   permissions atomically), run `chmod 600 <path>` in the very next Bash call
   before the file is used.
 
+## CI/CD
+
+### Branching model
+- **`next`** is the default integration branch — all PRs target `next`
+- **`master`** is the legacy stable branch — leave it alone; never commit directly to it
+- Feature/fix branches follow `feature/**`, `bug/**`, `fix/**`, `chore/**` naming
+- Always ensure your branch is up to date with `origin/next` before opening a PR
+
+### Branch protection
+- Both `next` and `master` require `lint` and `test` CI checks to pass before merge
+- `next` has `enforce_admins: true` — no bypass, even via API; always go through a PR
+- Never force-push to any protected branch
+
+### GitHub Actions workflows
+- **`ci.yml`** — lint (`ruff check quicknxs/`) + test (`pytest --cov=quicknxs`) on every push/PR
+- **`update-lockfile.yml`** — monthly pixi.lock refresh; opens a PR on `chore/update-pixi-lockfile`
+
+### Required secrets (Settings → Secrets and variables → Actions)
+- **`CODECOV_TOKEN`** — upload coverage reports to Codecov after each test run
+- **`WORKFLOW_PAT`** — classic PAT with repo *Contents* and *Pull requests* write access;
+  required because `GITHUB_TOKEN` pushes are silenced by GitHub's anti-loop protection,
+  meaning `peter-evans/create-pull-request` would create a PR branch that never receives
+  CI and therefore can never be merged automatically.  If this PAT expires, re-encrypt
+  and re-upload it via the GitHub Secrets API using PyNaCl sealed box encryption.
+
+### GitHub Actions gotchas
+- `workflow_dispatch` check runs do **not** satisfy PR branch protection — only check runs
+  triggered by a `push` or `pull_request` event count toward required status checks
+- The `GITHUB_TOKEN` anti-loop rule suppresses push events from actions using that token;
+  any workflow that creates branches and needs CI to run on them must use a PAT instead
+
 ## Diagnosing Memory Faults (OOM / SIGKILL / Exit 137)
 
 When investigating crashes caused by memory exhaustion (exit code 137 = SIGKILL from OOM killer):
