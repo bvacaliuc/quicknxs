@@ -1,5 +1,5 @@
-[![CI](https://github.com/bvacaliuc/quicknxs/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/bvacaliuc/quicknxs/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/bvacaliuc/quicknxs/branch/master/graph/badge.svg)](https://codecov.io/gh/bvacaliuc/quicknxs)
+[![CI](https://github.com/bvacaliuc/quicknxs/actions/workflows/ci.yml/badge.svg?branch=next)](https://github.com/bvacaliuc/quicknxs/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/bvacaliuc/quicknxs/branch/next/graph/badge.svg)](https://codecov.io/gh/bvacaliuc/quicknxs)
 
 # QuickNXS v1
 
