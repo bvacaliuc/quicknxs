@@ -64,6 +64,26 @@ chmod 600 /path/to/tempfile
 - `next` has `enforce_admins: true` — no bypass, even via API; always go through a PR
 - Never force-push to any protected branch
 
+### Agent workflow conventions
+**Session batching (Option C):** Open one PR per logical task, not one per file changed.
+All commits for a given task go on a single feature branch and land in a single PR.
+This keeps CI overhead proportional to the work, not to the number of files touched.
+
+**Auto-merge (Option B):** After opening a PR, immediately enable auto-merge via the API
+so the PR merges itself once CI passes — no need to poll or wait.
+
+```python
+# Enable auto-merge on a PR (call after gh API pull create)
+curl -s -X PUT \
+  -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  "https://api.github.com/repos/bvacaliuc/quicknxs/pulls/{pr_number}/merge" \
+  ...
+# Or enable the auto_merge flag via GraphQL / REST enablePullRequestAutoMerge
+```
+
+Concretely, use the GitHub API merge endpoint with `merge_method: merge` once CI
+has completed — or configure the PR for auto-merge at creation time and move on.
+
 ### GitHub Actions workflows
 - **`ci.yml`** — lint (`ruff check quicknxs/`) + test (`pytest --cov=quicknxs`) on every push/PR
 - **`update-lockfile.yml`** — monthly pixi.lock refresh; opens a PR on `chore/update-pixi-lockfile`
