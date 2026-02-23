@@ -98,11 +98,6 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Set up pixi environment
-        uses: prefix-dev/setup-pixi@a0af7a228712d6121d37aba47adf55c1332c9c2e  # v0.9.4
-        with:
-          cache: true
-
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -111,8 +106,7 @@ jobs:
           IS_RC="${{ contains(github.ref, 'rc') }}"
           PRERELEASE_FLAG=""
           if [ "${IS_RC}" = "true" ]; then PRERELEASE_FLAG="--prerelease"; fi
-          VERSION_NUMBER="$(pixi run show-version)"
-          echo "Tag: ${VERSION}  |  Computed version: ${VERSION_NUMBER}"
+          echo "Creating GitHub Release for ${VERSION}"
           gh release create "${VERSION}" \
             --title "QuickNXS ${VERSION}" \
             --generate-notes \
