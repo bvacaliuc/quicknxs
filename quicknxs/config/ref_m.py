@@ -52,3 +52,11 @@ DATABASE_DIRECT_BEAM_COMPARE=[
                               ('s1h', 'S1VHeight', float, 1.0),
                               ('s2h', 'S2VHeight', float, 1.0),
                                ]
+
+# Instrument-specific constants for data reduction
+POLY_CORR_PARAMS=[-4.74152261e-05,-4.62469580e-05, 1.25995446e-02, 2.13654008e-02,
+                  1.02334517e+01] # parameters for polynomial detector sensitivity correction
+ANALYZER_IN=(0, 100) # position and maximum deviation of analyzer in working position
+NEW_ANALYZER_IN=(-620, 150) # position and maximum deviation of analyzer (post-2017)
+POLARIZER_IN=(-348., 50.) # position and maximum deviation of polarizer
+SUPERMIRROR_IN=(19.125, 10.) # position and maximum deviation of the supermirror translation

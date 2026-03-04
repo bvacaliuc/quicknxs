@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 #-*- coding: utf8 -*-
 '''
-  Small program for quick access to SNS magnetism reflectometer raw data.
+  Small program for quick access to SNS reflectometer raw data.
+  Supports both the Magnetism Reflectometer (REF_M) and
+  the Liquids Reflectometer (REF_L).
 '''
 
 import os
 os.environ["QT_API"] = "pyqt5"
 import sys
+import argparse
 import matplotlib
 matplotlib.use("QtAgg")
 
@@ -20,7 +23,7 @@ except NameError:
 # first thing to do is starting the logging system
 from quicknxs.gui_logging import setup_system, check_runstate
 
-def _run(argv=[]):
+def _run(argv=[], instrument='ref_m'):
   from qtpy.QtWidgets import QApplication, QSplashScreen
   from qtpy.QtGui import QPixmap
   from qtpy.QtCore import Qt
@@ -39,7 +42,7 @@ def _run(argv=[]):
   splash.show()
   # set instrument configuration
   from quicknxs import config
-  config.instrument=config.proxy.add_alias('ref_m', 'instrument')
+  config.instrument=config.proxy.add_alias(instrument, 'instrument')
 
   from quicknxs.main_gui import MainGUI
   window=MainGUI(argv)
@@ -48,11 +51,17 @@ def _run(argv=[]):
   return app.exec_()
 
 if __name__=='__main__':
+  parser=argparse.ArgumentParser(description='QuickNXS - SNS Reflectometer Data Reduction')
+  parser.add_argument('--instrument', choices=['ref_m', 'ref_l'], default='ref_m',
+                      help='Instrument to configure for (default: ref_m)')
+  args, remaining=parser.parse_known_args()
+
   if check_runstate():
     # make sure the debug.log is not overwritten and only one version
     # of the program per user is running
     print("Another instance is already running")
     sys.exit(0)
   setup_system()
-  if 'QuickNXS.app' in sys.argv[0]: sys.argv.pop(-1)
-  sys.exit(_run(sys.argv[1:]))
+  if remaining and 'QuickNXS.app' in remaining[0]:
+    remaining.pop(-1)
+  sys.exit(_run(remaining, instrument=args.instrument))

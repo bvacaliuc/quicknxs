@@ -37,13 +37,22 @@ from .ipython_tools import AttributePloter, StringRepr, NiceDict
 
 ### Parameters needed for some calculations.
 H_OVER_M_NEUTRON=3.956034e-7 # h/m_n [m²/s]
-ANALYZER_IN=(0, 100) # position and maximum deviation of analyzer in it's working position
-NEW_ANALYZER_IN=(-620, 150) # position and maximum deviation of analyzer in it's working position
-POLARIZER_IN=(-348., 50.) # position and maximum deviation of polarizer in it's working position
-SUPERMIRROR_IN=(19.125, 10.) # position and maximum deviation of the supermirror translation
-POLY_CORR_PARAMS=[-4.74152261e-05,-4.62469580e-05, 1.25995446e-02, 2.13654008e-02,
-                  1.02334517e+01] # parameters used in polynomial detector sensitivity correction
 DETECTOR_SENSITIVITY={}
+
+# Instrument-specific constants: read from config, with fallback defaults for REF_M
+def _get_instrument_constant(name, default):
+  '''Get an instrument-specific constant from config, falling back to default.'''
+  return getattr(instrument, name, default)
+
+# These are used directly in _read_file_MR and is_analyzer_in;
+# they are REF_M-specific but kept as module-level for backward compatibility
+ANALYZER_IN=_get_instrument_constant('ANALYZER_IN', (0, 100))
+NEW_ANALYZER_IN=_get_instrument_constant('NEW_ANALYZER_IN', (-620, 150))
+POLARIZER_IN=_get_instrument_constant('POLARIZER_IN', (-348., 50.))
+SUPERMIRROR_IN=_get_instrument_constant('SUPERMIRROR_IN', (19.125, 10.))
+POLY_CORR_PARAMS=_get_instrument_constant('POLY_CORR_PARAMS',
+                  [-4.74152261e-05,-4.62469580e-05, 1.25995446e-02, 2.13654008e-02,
+                   1.02334517e+01])
 # measurement type mapping of states
 MAPPING_12FULL=(
                  (u'++ (0V)', u'entry-off_off_Ezero'),
@@ -90,8 +99,8 @@ MAPPING_EFIELD=(
 USE_COMPRESSION=not ('biganalysis' in node() or 'mrac' in node())
 
 # used for * imports
-__all__=['NXSData', 'MRDataset', 'Reflectivity', 'OffSpecular', 'GISANS', 'time_from_header',
-         'locate_file']
+__all__=['NXSData', 'MRDataset', 'LRDataset', 'Reflectivity', 'OffSpecular', 'GISANS',
+         'time_from_header', 'locate_file']
 
 _bincount=bincount
 def bincount(x, weights=None, minlength=None):
@@ -258,6 +267,29 @@ class NXSData(object, metaclass=OptionsDocMeta):
     except IOError:
       debug('Could not read nxs file %s'%filename, exc_info=True)
       return False
+    # Detect instrument beamline from file
+    first_entry=list(nxs.keys())[0]
+    try:
+      beamline_raw=nxs[first_entry]['instrument/beamline'][()][0]
+      beamline=beamline_raw.decode('utf-8') if isinstance(beamline_raw, bytes) else str(beamline_raw)
+    except KeyError:
+      beamline='4A' # default to REF_M for files without beamline field
+    self._beamline=beamline
+
+    if beamline=='4B':
+      return self._read_file_LR(filename, nxs, start)
+    else:
+      return self._read_file_MR(filename, nxs, start)
+
+  def _read_file_MR(self, filename, nxs, start):
+    '''
+    Load data from a REF_M (beamline 4A) Nexus file.
+    Handles polarization state detection and channel mapping.
+
+    :param str filename: Path to file to read
+    :param h5py.File nxs: Open HDF5 file handle
+    :param float start: Start time for performance tracking
+    '''
     # analyze channels
     channels=list(nxs.keys())
     debug('Channels in file: '+repr(channels))
@@ -391,6 +423,74 @@ class NXSData(object, metaclass=OptionsDocMeta):
     #print time()-start
     if not is_ancient:
       nxs.close()
+    if empty_channels:
+      warn('No counts for state %s'%(','.join(empty_channels)))
+    return True
+
+  def _read_file_LR(self, filename, nxs, start):
+    '''
+    Load data from a REF_L (beamline 4B) Nexus file.
+    REF_L data is always unpolarized (single entry channel).
+
+    :param str filename: Path to file to read
+    :param h5py.File nxs: Open HDF5 file handle
+    :param float start: Start time for performance tracking
+    '''
+    # REF_L files have a single 'entry' channel (unpolarized)
+    channels=list(nxs.keys())
+    debug('LR Channels in file: '+repr(channels))
+    try:
+      max_counts=max([nxs[channel][u'total_counts'][()][0] for channel in channels])
+    except KeyError:
+      warn('total_counts not defined in channels')
+      return False
+    for channel in list(channels):
+      if nxs[channel][u'total_counts'][()][0]<(self.COUNT_THREASHOLD*max_counts):
+        channels.remove(channel)
+    if len(channels)==0:
+      debug('No valid channels in file')
+      return False
+
+    self.measurement_type='Unpolarized'
+    # map each entry to a channel name
+    mapping=[]
+    for channel in channels:
+      dest=channel.lstrip('entry-') if channel!='entry' else 'x'
+      mapping.append((dest, channel))
+
+    # get runtime for event mode splitting
+    total_duration=time_from_header('', nxs=nxs)
+
+    progress=0.1
+    if self._options['callback']:
+      self._options['callback'](progress)
+    self._read_times.append(time()-start)
+    i=1
+    empty_channels=[]
+    for dest, channel in mapping:
+      raw_data=nxs[channel]
+      if filename.endswith('event.nxs'):
+        data=LRDataset.from_event(raw_data, self._options,
+                                  callback=self._options['callback'],
+                                  callback_offset=progress,
+                                  callback_scaling=0.9/len(channels),
+                                  tof_overwrite=self._options['event_tof_overwrite'],
+                                  total_duration=total_duration)
+        if data is None:
+          empty_channels.append(dest)
+          continue
+      else:
+        data=LRDataset.from_histogram(raw_data, self._options)
+      self._channel_data.append(data)
+      self._channel_names.append(dest)
+      self._channel_origin.append(channel)
+      progress=0.1+0.9*float(i)/len(channels)
+      if self._options['callback']:
+        self._options['callback'](progress)
+      i+=1
+      self._read_times.append(time()-self._read_times[-1]-start)
+
+    nxs.close()
     if empty_channels:
       warn('No counts for state %s'%(','.join(empty_channels)))
     return True
@@ -1103,7 +1203,8 @@ class MRDataset(object):
     self.number=int(data['run_number'][()][0])
     self.merge_warnings=str(data['SNSproblem_log_geom/data'][()][0])
 
-    detector_id=str(data['instrument/SNSgeometry_file_name'][()][0])
+    detector_id_raw=data['instrument/SNSgeometry_file_name'][()][0]
+    detector_id=detector_id_raw.decode('utf-8') if isinstance(detector_id_raw, bytes) else str(detector_id_raw)
     if detector_id in instrument.DETECTOR_REGION:
       self.active_area_x=instrument.DETECTOR_REGION[detector_id][0]
       self.active_area_y=instrument.DETECTOR_REGION[detector_id][1]
@@ -1291,6 +1392,138 @@ class MRDataset(object):
     '''A attribute to quickly plot data in the qt console'''
     return AttributePloter(self, ['xdata', 'xydata', 'ydata', 'xtofdata', 'tofdata', 'data'])
 
+
+class LRDataset(MRDataset):
+  '''
+  Representation of one measurement channel of the Liquids Reflectometer (REF_L).
+  Inherits from MRDataset and overrides _collect_info() to read REF_L-specific
+  HDF5 paths for metadata extraction.
+  '''
+  dpix=151 #: default direct beam pixel for REF_L
+
+  def _collect_info(self, data):
+    '''
+    Extract header information from a REF_L HDF5 file.
+    REF_L uses different NeXus paths for angles, distances, and slits
+    compared to REF_M.
+
+    :param h5py._hl.group.Group data:
+    '''
+    self.origin=(os.path.abspath(data.file.filename), data.name.lstrip('/'))
+    self.logs=NiceDict()
+    self.log_minmax=NiceDict()
+    self.log_units=NiceDict()
+    if 'DASlogs' in data:
+      if 'proton_charge' in data['DASlogs']:
+        stimes=data['DASlogs/proton_charge/time'][()]
+        stimes=stimes[::10]
+        stimesl, stimesc, stimesr=stimes[:-2], stimes[1:-1], stimes[2:]
+        stimes=stimesc[((stimesr-stimesc)<1.)&((stimesc-stimesl)<1.)]
+      else:
+        stimes=None
+      for motor, item in data['DASlogs'].items():
+        if motor in ['proton_charge', 'frequency', 'Veto_pulse']:
+          continue
+        try:
+          if 'units' in item['value'].attrs:
+            units_attr=item['value'].attrs['units']
+            self.log_units[motor]=units_attr.decode('utf8') if isinstance(units_attr, bytes) else str(units_attr)
+          else:
+            self.log_units[motor]=u''
+          val=item['value'][()]
+          if val.shape[0]==1:
+            self.logs[motor]=val[0]
+            self.log_minmax[motor]=(val[0], val[0])
+          else:
+            if stimes is not None:
+              vtime=item['time'][()]
+              sidx=searchsorted(vtime, stimes, side='right')
+              sidx=maximum(sidx-1, 0)
+              val=val[sidx]
+            if len(val)==0:
+              self.logs[motor]=NaN
+              self.log_minmax[motor]=(NaN, NaN)
+            else:
+              self.logs[motor]=val.mean()
+              self.log_minmax[motor]=(val.min(), val.max())
+        except Exception:
+          continue
+      self.lambda_center=data['DASlogs/LambdaRequest/value'][()][0]
+
+    # REF_L uses TwoTheta/readback for detector angle (not DANGLE)
+    self.dangle=data['instrument/bank1/TwoTheta/readback'][()][0]
+    self.dangle0=0. # REF_L has no DANGLE0 offset
+    # REF_L uses Theta/readback for sample angle (not sample/SANGLE)
+    self.sangle=data['instrument/bank1/Theta/readback'][()][0]
+
+    self.proton_charge=data['proton_charge'][()][0]
+    self.total_counts=data['total_counts'][()][0]
+    self.total_time=data['duration'][()][0]
+
+    # REF_L stores per-pixel distances; use mean for sample-detector distance
+    self.dist_sam_det=data['instrument/bank1/distance'][()].mean()
+    # REF_L moderator distance is negative (direction convention)
+    self.dist_mod_det=-data['instrument/moderator/distance'][()][0]+self.dist_sam_det
+    self.dist_mod_mon=self.dist_mod_det-2.75 # approximate monitor offset
+
+    self.det_size_x=data['instrument/bank1/origin/shape/size'][()][0]
+    self.det_size_y=data['instrument/bank1/origin/shape/size'][()][1]
+
+    # REF_L slit widths are in DASlogs, not instrument/aperture paths
+    try:
+      self.slit1_width=data['DASlogs/S1HWidth/value'][()].mean()
+    except KeyError:
+      self.slit1_width=3.
+    try:
+      self.slit2_width=data['DASlogs/S2HWidth/value'][()].mean()
+    except KeyError:
+      self.slit2_width=2.
+    try:
+      self.slit3_width=data['DASlogs/S3HWidth/value'][()].mean()
+    except KeyError:
+      self.slit3_width=0.05
+    try:
+      self.slit4_width=data['DASlogs/S4HWidth/value'][()].mean()
+    except KeyError:
+      self.slit4_width=0.
+
+    # REF_L slit distances from instrument/aperture (only 1 and 2 are reliably present)
+    try:
+      self.slit1_dist=-data['instrument/aperture1/distance'][()][0]*1000.
+    except KeyError:
+      self.slit1_dist=2600.
+    try:
+      self.slit2_dist=-data['instrument/aperture2/distance'][()][0]*1000.
+    except KeyError:
+      self.slit2_dist=2019.
+    # Slit 3 and 4 distances may not be present in REF_L files
+    try:
+      self.slit3_dist=-data['instrument/aperture3/distance'][()][0]*1000.
+    except KeyError:
+      self.slit3_dist=714.
+    try:
+      self.slit4_dist=-data['instrument/aperture4/distance'][()][0]*1000.
+    except KeyError:
+      self.slit4_dist=500.
+
+    self.experiment=str(data['experiment_identifier'][()][0])
+    self.number=int(data['run_number'][()][0])
+    try:
+      self.merge_warnings=str(data['SNSproblem_log_geom/data'][()][0])
+    except KeyError:
+      self.merge_warnings=''
+
+    # Active area from detector geometry file
+    try:
+      detector_id_raw=data['instrument/SNSgeometry_file_name'][()][0]
+      detector_id=detector_id_raw.decode('utf-8') if isinstance(detector_id_raw, bytes) else str(detector_id_raw)
+      if detector_id in instrument.DETECTOR_REGION:
+        self.active_area_x=instrument.DETECTOR_REGION[detector_id][0]
+        self.active_area_y=instrument.DETECTOR_REGION[detector_id][1]
+    except KeyError:
+      pass
+
+
 def is_analyzer_in(position, trans_position, start_time_str):
     """
         Determine whether the analyzer is in.
@@ -1447,6 +1680,8 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
     self.slits=[(dataset.slit1_width, dataset.slit1_dist),
                 (dataset.slit2_width, dataset.slit2_dist),
                 (dataset.slit3_width, dataset.slit3_dist)]
+    if hasattr(dataset, 'slit4_width'):
+      self.slits.append((dataset.slit4_width, dataset.slit4_dist))
 
     if all_options['extract_fan'] and all_options['normalization'] is not None:
       self._calc_fan(dataset)
@@ -1518,9 +1753,13 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
       return data/DETECTOR_SENSITIVITY[self.options['sensitivity_correction']][:, :, newaxis]
     elif self.options['sensitivity_correction']=='polynomial':
       # use polynomial form to generate sensitivity map
+      poly_params=_get_instrument_constant('POLY_CORR_PARAMS', POLY_CORR_PARAMS)
+      if poly_params is None:
+        warn('No polynomial sensitivity correction parameters available for this instrument')
+        return data
       X, Y=meshgrid(arange(data.shape[0]), arange(data.shape[1]))
       X, Y=X.T.astype(float), Y.T.astype(float)
-      ax, ay, bx, by, c=POLY_CORR_PARAMS
+      ax, ay, bx, by, c=poly_params
       Isens=ax*X**2+ay*Y**2+bx*X+by*Y+c
       Isens/=Isens.mean()
       DETECTOR_SENSITIVITY[self.options['sensitivity_correction']]=Isens
@@ -1895,6 +2134,8 @@ class OffSpecular(Reflectivity):
     self.slits=[(dataset.slit1_width, dataset.slit1_dist),
                 (dataset.slit2_width, dataset.slit2_dist),
                 (dataset.slit3_width, dataset.slit3_dist)]
+    if hasattr(dataset, 'slit4_width'):
+      self.slits.append((dataset.slit4_width, dataset.slit4_dist))
 
     self._calc_offspec(dataset)
 
@@ -2020,6 +2261,8 @@ class GISANS(Reflectivity):
     self.slits=[(dataset.slit1_width, dataset.slit1_dist),
                 (dataset.slit2_width, dataset.slit2_dist),
                 (dataset.slit3_width, dataset.slit3_dist)]
+    if hasattr(dataset, 'slit4_width'):
+      self.slits.append((dataset.slit4_width, dataset.slit4_dist))
 
     self._calc_gisans(dataset)
 
