@@ -1,5 +1,5 @@
 Metadata-Version: 2.4
 Name: quicknxs-v1
-Version: 1.1.6
+Version: 1.2.0rc1
 Summary: QuickNXS v1 - Magnetism Reflectometer data reduction
 Requires-Python: <3.13,>=3.10
