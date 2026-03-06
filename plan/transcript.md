@@ -474,3 +474,37 @@ yes and please make sure to leave detailed checkpoint info in memory as you prog
 
 I performed one of the manual GUI launch with 'make gui INSTRUMENT=ref_l' and the gui loaded. I tried to load (non-existent) run 70476 and got no response. Please ensure that there be an ERROR log entry when an action cannot be taken. Then, I tried to load (existing) run 83586. This time I got a CRITICAL python error. The exception handling brought up the dialog asking to email support (that is good!). This time, I chose to let it email the admin, but that process failed with a timeout. After the timeout, the UI showed parts of the loaded run. I notice that there are still items on the UI that refer to ref_m (such as SANGLE, etc.), these should be displayed according to the instrument or hidden if not appropriate. This is a good time to work on these issues. The debug log in ~/.quicknxs/debug.log should have the detail.from my session. I also made a screenshot of the UI after loading showing the partial load where the SANGLE I refer to is show. The screenshot is saved in ~/.quicknxs/debug.png. I would like to review your plan before you execute it.
 
+The plan that claude will do is listed inline:
+```
+● The plan is written at plan/fix-refl-gui-issues.md. Here's the summary:                                                                                    
+                                                                 
+  Three Issues, Four Changes                                                                                                                                 
+                                                                 
+  Issue 1: Silent failure on broken file → Change 1: Add error logging                                                                                       
+                                                                 
+  - Upgrade _read_file() IOError log from DEBUG to WARNING (qreduce.py)
+  - Add ERROR log in _fileOpenDone() when data is None (main_gui.py)
+
+  Issue 2: CRITICAL crash on valid REF_L file → Change 2: Fix type checks
+
+  - get_xpos() and get_yregion() in qcalc.py use type(data) is not MRDataset — strict identity check that rejects LRDataset
+  - Fix: change to isinstance(data, MRDataset) — works because LRDataset inherits from MRDataset and exposes all the same attributes
+
+  Issue 3: REF_M labels shown for REF_L → Change 3: Runtime label updates
+
+  - Add _updateInstrumentLabels() to MainGUI that sets label text based on active instrument
+  - REF_L shows "TwoTheta" / "Theta" instead of "DANGLE" / "SANGLE"
+  - No .ui file edits needed — labels changed at runtime in Python
+
+  Change 4: Tests
+
+  - Test get_xpos() and get_yregion() accept LRDataset without crashing
+
+  Risks noted
+
+  - Peak-finding algorithm was designed for REF_M geometry; should work for REF_L but may need tuning later
+  - DANGLE0 override left functional for REF_L (harmless at 0.0) rather than hidden
+
+  Please review and let me know if you'd like any adjustments before I start executing.
+```
+
