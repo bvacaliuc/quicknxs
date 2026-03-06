@@ -39,20 +39,20 @@ from .ipython_tools import AttributePloter, StringRepr, NiceDict
 H_OVER_M_NEUTRON=3.956034e-7 # h/m_n [m²/s]
 DETECTOR_SENSITIVITY={}
 
-# Instrument-specific constants: read from config, with fallback defaults for REF_M
-def _get_instrument_constant(name, default):
-  '''Get an instrument-specific constant from config, falling back to default.'''
-  return getattr(instrument, name, default)
+# REF_M-specific constants (ANALYZER_IN, NEW_ANALYZER_IN, POLARIZER_IN,
+# SUPERMIRROR_IN, POLY_CORR_PARAMS) live in config/ref_m.py and are
+# accessed at point-of-use via the instrument config object.
 
-# These are used directly in _read_file_MR and is_analyzer_in;
-# they are REF_M-specific but kept as module-level for backward compatibility
-ANALYZER_IN=_get_instrument_constant('ANALYZER_IN', (0, 100))
-NEW_ANALYZER_IN=_get_instrument_constant('NEW_ANALYZER_IN', (-620, 150))
-POLARIZER_IN=_get_instrument_constant('POLARIZER_IN', (-348., 50.))
-SUPERMIRROR_IN=_get_instrument_constant('SUPERMIRROR_IN', (19.125, 10.))
-POLY_CORR_PARAMS=_get_instrument_constant('POLY_CORR_PARAMS',
-                  [-4.74152261e-05,-4.62469580e-05, 1.25995446e-02, 2.13654008e-02,
-                   1.02334517e+01])
+def _get_instrument_config(name, default=None):
+  '''Safely read an instrument config constant, returning default if missing.
+
+  ConfigHolder raises KeyError (not AttributeError) for missing keys,
+  so getattr()'s default parameter does not work. This helper catches both.
+  '''
+  try:
+    return instrument[name]
+  except KeyError:
+    return default
 # measurement type mapping of states
 MAPPING_12FULL=(
                  (u'++ (0V)', u'entry-off_off_Ezero'),
@@ -265,7 +265,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
     try:
       nxs=h5py.File(filename, mode='r')
     except IOError:
-      debug('Could not read nxs file %s'%filename, exc_info=True)
+      warn('Could not read nxs file %s'%filename, exc_info=True)
       return False
     # Detect instrument beamline from file
     first_entry=list(nxs.keys())[0]
@@ -355,8 +355,8 @@ class NXSData(object, metaclass=OptionsDocMeta):
           else:
             self.measurement_type='Polarization Analysis'
             mapping=list(MAPPING_FULLPOL)
-        elif abs(pol-POLARIZER_IN[0])<POLARIZER_IN[1] or \
-             abs(smpt-SUPERMIRROR_IN[0])<SUPERMIRROR_IN[1]: # is bender or supermirror polarizer is in position
+        elif abs(pol-instrument.POLARIZER_IN[0])<instrument.POLARIZER_IN[1] or \
+             abs(smpt-instrument.SUPERMIRROR_IN[0])<instrument.SUPERMIRROR_IN[1]:
           if channels[0] in [m[1] for m in MAPPING_12HALF]:
             self.measurement_type='Polarized w/E-Field'
             mapping=list(MAPPING_12HALF)
@@ -725,15 +725,15 @@ class XMLData(NXSData):
       smpt=0.
 
     # select the type of measurement that has been used
-    if abs(ana-ANALYZER_IN[0])<ANALYZER_IN[1]: # is analyzer is in position
+    if abs(ana-instrument.ANALYZER_IN[0])<instrument.ANALYZER_IN[1]: # is analyzer is in position
       if channels[0] in [m[1] for m in MAPPING_12FULL]:
         self.measurement_type='Polarization Analysis w/E-Field'
         mapping=list(MAPPING_12FULL)
       else:
         self.measurement_type='Polarization Analysis'
         mapping=list(MAPPING_FULLPOL)
-    elif abs(pol-POLARIZER_IN[0])<POLARIZER_IN[1] or \
-         abs(smpt-SUPERMIRROR_IN[0])<SUPERMIRROR_IN[1]: # is bender or supermirror polarizer is in position
+    elif abs(pol-instrument.POLARIZER_IN[0])<instrument.POLARIZER_IN[1] or \
+         abs(smpt-instrument.SUPERMIRROR_IN[0])<instrument.SUPERMIRROR_IN[1]:
       if channels[0] in [m[1] for m in MAPPING_12HALF]:
         self.measurement_type='Polarized w/E-Field'
         mapping=list(MAPPING_12HALF)
@@ -1528,22 +1528,25 @@ def is_analyzer_in(position, trans_position, start_time_str):
     """
         Determine whether the analyzer is in.
         The analyzer position has changed in August 2017.
+        Uses ANALYZER_IN and NEW_ANALYZER_IN from the instrument config (REF_M only).
 
         :param position: position of the analyzer lift
         :param trans_position: position of the analyzer translation
         :param start_time_str: time as a string
     """
-    is_analyzer_in = abs(position-ANALYZER_IN[0])<ANALYZER_IN[1]
+    analyzer_in=instrument.ANALYZER_IN
+    new_analyzer_in=instrument.NEW_ANALYZER_IN
+    result=abs(position-analyzer_in[0])<analyzer_in[1]
     try:
         date_str = start_time_str.split('T')[0]
         parts_str = date_str.split('-')
         year_month_int = int("%s%s" % (parts_str[0], parts_str[1]))
         if year_month_int >= 201708:
-            is_analyzer_in = abs(trans_position-NEW_ANALYZER_IN[0])<NEW_ANALYZER_IN[1]
+            result=abs(trans_position-new_analyzer_in[0])<new_analyzer_in[1]
     except Exception:
         warn("Problem parsing start time: use more recent definition for analyzer position")
-        is_analyzer_in = abs(trans_position-NEW_ANALYZER_IN[0])<NEW_ANALYZER_IN[1]
-    return is_analyzer_in
+        result=abs(trans_position-new_analyzer_in[0])<new_analyzer_in[1]
+    return result
 
 def time_from_header(filename, nxs=None):
   '''
@@ -1753,7 +1756,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
       return data/DETECTOR_SENSITIVITY[self.options['sensitivity_correction']][:, :, newaxis]
     elif self.options['sensitivity_correction']=='polynomial':
       # use polynomial form to generate sensitivity map
-      poly_params=_get_instrument_constant('POLY_CORR_PARAMS', POLY_CORR_PARAMS)
+      poly_params=_get_instrument_config('POLY_CORR_PARAMS')
       if poly_params is None:
         warn('No polynomial sensitivity correction parameters available for this instrument')
         return data

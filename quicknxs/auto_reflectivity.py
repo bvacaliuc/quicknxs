@@ -47,7 +47,6 @@ class FileCom(Thread):
   a file as analysis servers don't allow socket communication.
   This is used to notify the daemon about new translated files.
   '''
-  bind_path=instrument.autorefl_folder+'REF_M_autorefl.com'
   parent=None
   MAX_READ_TIME=1
   daemon=True
@@ -56,6 +55,7 @@ class FileCom(Thread):
   def __init__(self, parent):
     Thread.__init__(self, name='FileCom')
     self.parent=parent
+    self.bind_path=instrument.autorefl_folder+instrument.NAME+'_autorefl.com'
     self.quit=Event()
     self.quit.clear()
 

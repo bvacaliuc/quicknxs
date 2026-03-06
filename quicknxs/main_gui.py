@@ -35,7 +35,7 @@ from .rawcompare_plots import RawCompare
 from .separate_plots import ReductionPreviewDialog
 from .database_dialog import DatabaseDialog
 from .version import str_version
-from logging import info, warning, debug
+from logging import info, warning, error, debug
 
 class gisansCalcThread(QtCore.QThread):
   '''
@@ -129,6 +129,7 @@ class MainGUI(QtWidgets.QMainWindow):
     self.ui.setupUi(self)
     install_gui_handler(self)
     self.setWindowTitle(u'QuickNXS   %s'%str_version)
+    self._updateInstrumentLabels()
 
     # widgets in the statusbar
     self.x_position_indicator=QtWidgets.QLabel(u" x=%g"%0.)
@@ -222,6 +223,32 @@ class MainGUI(QtWidgets.QMainWindow):
         self.trigger('automaticExtraction', argv)
     else:
       self.ui.numberSearchEntry.setFocus()
+
+  def _updateInstrumentLabels(self):
+    '''Update UI labels to match the active instrument terminology.'''
+    if instrument.NAME != 'REF_L':
+      return
+    # Radio buttons for angle trust
+    self.ui.trustDANGLE.setText('TwoTheta')
+    self.ui.trustSANGLE.setText('Theta')
+    # Dataset display labels
+    self.ui.label_11.setText('TwoTheta')
+    self.ui.label_12.setText('Theta')
+    self.ui.label_13.setText('Theta-calc')
+    self.ui.label_15.setText(u'TwoTheta\u2080')
+    # Tooltips
+    tip = ('Overwrite the TwoTheta\u2080 value. '
+           'REF_L normally has no offset (0.0).')
+    self.ui.label_19.setToolTip(tip)
+    self.ui.dangle0Overwrite.setToolTip(tip)
+    self.ui.label_15.setToolTip(
+      'Two theta offset; for REF_L this is normally 0.0')
+    self.ui.datasetDangle0.setToolTip(
+      'Two theta offset; for REF_L this is normally 0.0')
+    # Reduction table header tooltip (column 11 = TTH)
+    item = self.ui.reductionTable.horizontalHeaderItem(11)
+    if item is not None:
+      item.setToolTip('TwoTheta - TwoTheta\u2080')
 
   def run_ipython(self):
     '''
@@ -393,6 +420,7 @@ class MainGUI(QtWidgets.QMainWindow):
   def _fileOpenDone(self, data=None, filename=None, do_plot=None):
     base=os.path.basename(filename)
     if data is None:
+      error('Failed to load file: %s'%base)
       self.ui.currentChannel.setText(u'<b>!!!NO DATA IN FILE %s!!!</b>'%base)
       return
     self.channels=data.keys()

@@ -105,8 +105,8 @@ def get_xpos(data, dangle0_overwrite=None, direct_pixel_overwrite=-1,
 
   :returns: x_center, (Peakfinder)
   """
-  if type(data) is not MRDataset:
-    raise ValueError("'data' needs to be a MRDataset object")
+  if not isinstance(data, MRDataset):
+    raise ValueError("'data' needs to be a MRDataset or LRDataset object")
   if data.total_counts==0:
     # for datasets with no counts return the direct pixel from the metadata
     if return_pf:
@@ -167,8 +167,8 @@ def get_yregion(data):
 
   :returns: y_center, y_width, y_bg
   """
-  if type(data) is not MRDataset:
-    raise ValueError("'data' needs to be a MRDataset object")
+  if not isinstance(data, MRDataset):
+    raise ValueError("'data' needs to be a MRDataset or LRDataset object")
   yproj=data.ydata
   # find the central peak region with intensities larger than the median
   y_bg=median(yproj)

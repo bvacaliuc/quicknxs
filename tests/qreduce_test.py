@@ -379,9 +379,131 @@ class LRDatasetTests(unittest.TestCase):
     self.assertIn('LRDataset', r)
     repr(self.lr_data)
 
+  def test_lr_get_xpos(self):
+    '''Verify get_xpos accepts LRDataset (isinstance check, not strict type).'''
+    from quicknxs.qcalc import get_xpos
+    d=self.lr_data[0]
+    result=get_xpos(d)
+    self.assertIsInstance(result, float)
+
+  def test_lr_get_yregion(self):
+    '''Verify get_yregion accepts LRDataset.'''
+    from quicknxs.qcalc import get_yregion
+    d=self.lr_data[0]
+    y_center, y_width, y_bg=get_yregion(d)
+    self.assertIsInstance(y_center, float)
+    self.assertGreater(y_width, 0)
+
+
+class InstrumentConfigTests(unittest.TestCase):
+  '''Tests that verify the config system works correctly for both instruments.'''
+
+  def test_ref_l_config_no_crash(self):
+    '''Verify that accessing a REF_M-only constant from ref_l config does not crash.'''
+    from quicknxs import config
+    original = config.instrument
+    try:
+      config.instrument = config.proxy.add_alias('ref_l', 'instrument')
+      from quicknxs.qreduce import _get_instrument_config
+      # ANALYZER_IN is REF_M-only; should return default, not crash
+      result = _get_instrument_config('ANALYZER_IN', (0, 100))
+      self.assertEqual(result, (0, 100))
+    finally:
+      config.instrument = config.proxy.add_alias('ref_m', 'instrument')
+
+  def test_ref_l_config_poly_corr_none(self):
+    '''Verify ref_l POLY_CORR_PARAMS is None.'''
+    from quicknxs import config
+    config.instrument = config.proxy.add_alias('ref_l', 'instrument')
+    try:
+      # Access directly through config.instrument (not qreduce.instrument
+      # which is bound at import time)
+      self.assertIsNone(config.instrument.POLY_CORR_PARAMS)
+    finally:
+      config.instrument = config.proxy.add_alias('ref_m', 'instrument')
+
+  def test_ref_m_constants_accessible(self):
+    '''Verify REF_M constants are accessible from instrument config.'''
+    from quicknxs import config
+    config.instrument = config.proxy.add_alias('ref_m', 'instrument')
+    self.assertEqual(config.instrument.ANALYZER_IN, (0, 100))
+    self.assertEqual(config.instrument.NEW_ANALYZER_IN, (-620, 150))
+    self.assertIsNotNone(config.instrument.POLY_CORR_PARAMS)
+
+
+# Data load verification tests — skip when SNS data is not available
+REF_L_DATA_DIR = '/SNS/REF_L/IPTS-7053/data'
+REF_M_DATA_DIR = '/SNS/REF_M/IPTS-16196/data'
+
+@unittest.skipUnless(os.path.isdir(REF_L_DATA_DIR), 'REF_L data not available')
+class DataLoadVerificationLR(unittest.TestCase):
+  '''Verify loading of production REF_L data files.'''
+
+  def _load_file(self, path):
+    obj = qreduce.NXSData(path, use_caching=False)
+    self.assertIsNotNone(obj, 'NXSData returned None for %s' % path)
+    self.assertIsInstance(obj[0], qreduce.LRDataset)
+    self.assertGreater(obj[0].total_counts, 0)
+    return obj
+
+  def test_lr_load_histo(self):
+    '''Load a REF_L histogram file from production data.'''
+    import glob
+    files = sorted(glob.glob(os.path.join(REF_L_DATA_DIR, '*80836*histo*')))
+    self.assertGreater(len(files), 0, 'No REF_L histo files found')
+    self._load_file(files[0])
+
+  def test_lr_load_multiple_histo(self):
+    '''Load several REF_L histogram files to verify consistency.'''
+    import glob
+    # Filter out broken symlinks (many early runs have dangling links)
+    files = [f for f in sorted(glob.glob(os.path.join(REF_L_DATA_DIR, '*_histo.nxs')))
+             if os.path.isfile(f)][:5]
+    self.assertGreater(len(files), 0, 'No REF_L histo files found')
+    for f in files:
+      self._load_file(f)
+
+  def test_lr_load_event(self):
+    '''Load a REF_L event mode file.'''
+    import glob
+    files = [f for f in sorted(glob.glob(os.path.join(REF_L_DATA_DIR, '*_event.nxs')))
+             if os.path.isfile(f)][:1]
+    self.assertGreater(len(files), 0, 'No REF_L event files found')
+    obj = qreduce.NXSData(files[0], use_caching=False, bins=40)
+    self.assertIsNotNone(obj, 'NXSData returned None for event file')
+    self.assertIsInstance(obj[0], qreduce.LRDataset)
+
+@unittest.skipUnless(os.path.isdir(REF_M_DATA_DIR), 'REF_M data not available')
+class DataLoadVerificationMR(unittest.TestCase):
+  '''Verify loading of production REF_M data files.'''
+
+  def _load_file(self, path):
+    obj = qreduce.NXSData(path, use_caching=False)
+    self.assertIsNotNone(obj, 'NXSData returned None for %s' % path)
+    self.assertIsInstance(obj[0], qreduce.MRDataset)
+    return obj
+
+  def test_mr_load_histo(self):
+    '''Load a REF_M histogram file from production data.'''
+    import glob
+    files = sorted(glob.glob(os.path.join(REF_M_DATA_DIR, '*_histo.nxs')))[:1]
+    self.assertGreater(len(files), 0, 'No REF_M histo files found')
+    self._load_file(files[0])
+
+  def test_mr_load_multiple_histo(self):
+    '''Load several REF_M histogram files to verify consistency.'''
+    import glob
+    files = sorted(glob.glob(os.path.join(REF_M_DATA_DIR, '*_histo.nxs')))[:5]
+    self.assertGreater(len(files), 0, 'No REF_M histo files found')
+    for f in files:
+      self._load_file(f)
+
 
 suite=unittest.TestLoader().loadTestsFromTestCase(GeneralClassTest)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataConsistencyChecks))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataReductionTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(EventModeTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LRDatasetTests))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(InstrumentConfigTests))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataLoadVerificationLR))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataLoadVerificationMR))

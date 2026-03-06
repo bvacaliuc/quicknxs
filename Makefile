@@ -1,7 +1,9 @@
-.PHONY: gui install test test-core test-gui test-db lint clean reduce-headless strace strace-full strace-reduce
+.PHONY: gui install test test-core test-gui test-db lint clean reduce-headless strace strace-full strace-reduce load-test batch-load-test
+
+INSTRUMENT ?= ref_m
 
 gui: install
-	pixi run python scripts/quicknxs
+	pixi run python scripts/quicknxs --instrument $(INSTRUMENT)
 
 install:
 	pixi install
@@ -70,3 +72,11 @@ strace-full: install
 	echo "=== strace complete (exit $$?) ==="; \
 	echo "Output files:"; \
 	ls -lhS strace.* 2>/dev/null || echo "  (no output files found)"
+
+load-test: install
+	@test -n "$(FILE)" || (echo "Usage: make load-test FILE=/path/to/file.nxs"; exit 1)
+	pixi run python scripts/load_test.py --file "$(FILE)"
+
+batch-load-test: install
+	@test -n "$(DIR)" || (echo "Usage: make batch-load-test DIR=/path/to/data/"; exit 1)
+	pixi run python scripts/load_test.py --dir "$(DIR)" $(if $(PATTERN),--pattern "$(PATTERN)",)
