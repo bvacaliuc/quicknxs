@@ -28,6 +28,37 @@ changes to reduction, plotting, or export are required.
 - Single `entry/` only — even for REF_M polarization (no separate Off_Off entries)
 - Pixel ordering: `idfillbyfirst="y"` → `event_id = x_pixel * n_y + y_pixel`
 
+### Format transition (REF_L)
+
+REF_L has a much cleaner transition than REF_M:
+
+- Only **4 IPTS** have both `data/` and `nexus/` directories
+- Only **25 runs** exist in both formats, and always in *different* IPTS (not same IPTS)
+- **~250 IPTS** have only `.nxs.h5` files (no histo counterpart)
+- All `.nxs.h5` files (earliest: run 133969, Dec 2015) have **full metadata**
+  (LambdaRequest, thi, ths) — no missing-metadata era
+- The overlapping h5 files are empty (zero events) — likely DAS restart artifacts
+
+**REF_L detector geometry change (October 2014):**
+- Before run 117198: `data_x_y` shape `(304, 256)`, IDF `REF_L_geom_2011_08_24.xml`
+- After run 117198:  `data_x_y` shape `(256, 304)`, IDF `REF_L_geom_2014_10_09.xml`
+- All `.nxs.h5` files are post-transition, so always `(256, 304)`
+- Old histo files are unaffected (shape is embedded in `bank1/data`)
+
+**REF_L IDF format change:**
+- 2014 IDF (valid-from 2014-10-10): tube-based detector (256 tubes × 304 pixels each),
+  no `xpixels`/`ypixels` attributes, detector z=0.00035 m, moderator z=-13.63 m
+- 2024 IDF (valid-from 2024-08-26): rectangular panel with `xpixels=256, ypixels=304`,
+  detector z=1.362 m, moderator z=-13.685 m
+- The `_get_detector_dimensions()` helper must fall back to instrument name when
+  `xpixels`/`ypixels` attributes are not in the XML (tube-based IDF)
+
+**REF_L distances are NOT hardcodeable:**
+- Moderator distance: 13.63 m (2016 IDF) vs 13.685 m (2025 IDF)
+- Sample-detector distance: must be parsed from XML or read from
+  `DASlogs/BL4B:Det:TH:DlyDet:BasePath` (source-to-detector, 14.91 m in 2016 vs 15.5 m in 2025)
+- `DASlogs/distance_sample_detector` is -1.0 (invalid) when present
+
 ### Format transition (REF_M)
 
 Analysis of the complete REF_M dataset reveals the transition was **not a clean break**.
@@ -318,14 +349,21 @@ def _collect_info_h5(self, data):
     self.slit2_width = _get_daslog_value(data, 'S2HWidth', default=2.0)
     self.slit3_width = _get_daslog_value(data, 'S3HWidth', default=0.05)
 
-    # Distances — different source than old format
+    # Distances — try DASlogs first, then fall back to instrument XML
     sdd_mm = _get_daslog_value(data, 'SampleDetDis',
-                 fallback_key='BL4A:Mot:SampleDetDis', default=2555.05)
-    self.dist_sam_det = sdd_mm * 1e-3
+                 fallback_key='BL4A:Mot:SampleDetDis', default=None)
+    mod_sam_mm = _get_daslog_value(data, 'BL4A:Mot:ModeratorSamDis', default=None)
 
-    mod_sam_mm = _get_daslog_value(data, 'BL4A:Mot:ModeratorSamDis', default=18703.0)
-    self.dist_mod_det = mod_sam_mm * 1e-3 + self.dist_sam_det
-    self.dist_mod_mon = mod_sam_mm * 1e-3 - 2.75
+    if sdd_mm is not None and mod_sam_mm is not None:
+        self.dist_sam_det = sdd_mm * 1e-3
+        self.dist_mod_det = mod_sam_mm * 1e-3 + self.dist_sam_det
+        self.dist_mod_mon = mod_sam_mm * 1e-3 - 2.75
+    else:
+        # Fall back to instrument XML (same approach as REF_L)
+        mod_z, det_z = _get_distances_from_xml(data)
+        self.dist_sam_det = det_z
+        self.dist_mod_det = abs(mod_z) + self.dist_sam_det
+        self.dist_mod_mon = abs(mod_z) - 2.75
 
     # Detector size from instrument XML
     n_x, n_y = _get_detector_dimensions(data)
@@ -384,9 +422,10 @@ def _collect_info_h5(self, data):
                            fallback_key='BL4B:Mot:si:Y:Gap:Readback', default=1.2)
     self.slit3_width = 0.05  # REF_L default
 
-    # Distances from instrument XML (fixed geometry)
-    self.dist_sam_det = 1.362  # from instrument XML detector1 z
-    self.dist_mod_det = 13.685 + self.dist_sam_det  # moderator z + sample-det
+    # Distances — parse from instrument XML (values changed over time)
+    mod_z, det_z = _get_distances_from_xml(data)
+    self.dist_sam_det = det_z  # detector z from XML (m)
+    self.dist_mod_det = abs(mod_z) + self.dist_sam_det  # |moderator z| + sample-det
     self.dist_mod_mon = self.dist_mod_det - 2.75
 
     # Detector size
@@ -463,6 +502,39 @@ def _get_daslog_value(data, key, fallback_key=None, default=None):
     if default is not None:
         return default
     raise KeyError(f'DASlogs key {key} not found')
+
+
+def _get_distances_from_xml(data):
+    """
+    Parse moderator and detector distances from the instrument XML.
+    Returns (moderator_z, detector_z) in meters.
+    Falls back to instrument-specific defaults if parsing fails.
+    """
+    import re
+    try:
+        xml_raw = data['instrument/instrument_xml/data'][()][0]
+        xml = xml_raw.decode('utf-8') if isinstance(xml_raw, bytes) else str(xml_raw)
+
+        # Moderator distance (always present as <location z="..."/>)
+        mod = re.search(r'type="moderator".*?location z="(-?[\d.]+)"', xml, re.DOTALL)
+        mod_z = float(mod.group(1)) if mod else -13.685
+
+        # Detector distance: look for detector1 z value
+        det = re.search(r'name="detector1".*?val="([\d.]+)"', xml, re.DOTALL)
+        det_z = float(det.group(1)) if det else 1.362
+
+        return mod_z, det_z
+    except (KeyError, IndexError):
+        # Detect instrument for defaults
+        try:
+            name_raw = data['instrument/name'][()][0]
+            name = name_raw.decode('utf-8') if isinstance(name_raw, bytes) else str(name_raw)
+            if name == 'REF_L':
+                return -13.685, 1.362
+            else:
+                return -18.703, 2.555
+        except KeyError:
+            return -18.703, 2.555
 
 
 def _decode(value):
@@ -682,6 +754,33 @@ class TestGetDaslogValue:
 Run: → **FAIL**
 
 **GREEN — Implement `_get_daslog_value()` and `_decode()` in `qreduce.py`:**
+Run test again → **PASS**
+
+#### Step 1.3: `_get_distances_from_xml()` helper
+
+**RED — Write failing test first:**
+```python
+@pytest.mark.skipif(not os.path.exists(H5_REF_L), reason='No access to SNS data')
+class TestGetDistancesFromXml:
+    def test_ref_l_2025(self):
+        import h5py
+        from quicknxs.qreduce import _get_distances_from_xml
+        with h5py.File(H5_REF_L, 'r') as f:
+            mod_z, det_z = _get_distances_from_xml(f['entry'])
+        assert abs(mod_z - (-13.685)) < 0.01
+        assert abs(det_z - 1.362) < 0.01
+
+    def test_ref_m(self):
+        import h5py
+        from quicknxs.qreduce import _get_distances_from_xml
+        with h5py.File(H5_REF_M, 'r') as f:
+            mod_z, det_z = _get_distances_from_xml(f['entry'])
+        assert abs(mod_z - (-18.703)) < 0.01
+        # REF_M detector z comes from SampleDetDis logfile ref, not fixed value
+```
+Run: → **FAIL**
+
+**GREEN — Implement `_get_distances_from_xml()` in `qreduce.py`:**
 Run test again → **PASS**
 
 ### Phase 2: Metadata extraction (Changes 3-4)
@@ -1098,7 +1197,8 @@ Run: → Should **PASS** (if not, fix regressions before proceeding)
 | `/SNS/REF_M/IPTS-9801/nexus/REF_M_29742.nxs.h5` | REF_M | .nxs.h5 | 497,637 | Polarized run (3 states), has histo counterpart |
 | `/SNS/REF_M/IPTS-9801/data/REF_M_29742_histo.nxs` | REF_M | histo | 497,635 | Reference: Off_Off(234k) + On_Off(263k) + unfiltered(63) |
 | `/SNS/REF_M/IPTS-24338/nexus/REF_M_43568.nxs.h5` | REF_M | .nxs.h5 | 2,113,831 | High-count h5-only run (no histo), full metadata |
-| `/SNS/REF_L/IPTS-36119/nexus/REF_L_220030.nxs.h5` | REF_L | .nxs.h5 | 85,387 | REF_L event loading |
+| `/SNS/REF_L/IPTS-36119/nexus/REF_L_220030.nxs.h5` | REF_L | .nxs.h5 | 85,387 | REF_L event loading (2025 IDF, rectangular panel) |
+| `/SNS/REF_L/IPTS-14316/nexus/REF_L_138523.nxs.h5` | REF_L | .nxs.h5 | 2,607 | REF_L with 2014 tube-based IDF, different distances |
 | `/SNS/REF_M/IPTS-16196/nexus/REF_M_29015.nxs.h5` | REF_M | .nxs.h5 | 14,863 | Early commissioning (no LambdaRequest) |
 | `/SNS/REF_M/IPTS-16196/0/25899/NeXus/REF_M_25899_histo.nxs` | REF_M | histo | 107,686 | Backward compat: polarized histo |
 | `/SNS/REF_L/IPTS-7053/0/80836/NeXus/REF_L_80836_histo.nxs` | REF_L | histo | 25,234 | Backward compat: REF_L histo |
