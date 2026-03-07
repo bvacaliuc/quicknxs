@@ -10,12 +10,14 @@ changes to reduction, plotting, or export are required.
 
 ## Background
 
-### Legacy format (`*_histo.nxs`)
+### Legacy format (`*_histo.nxs` and `*_event.nxs`)
 - Pre-histogrammed 3D data at `bank1/data` with shape `(n_x, n_y, n_tof)`
 - Projected 2D views: `data_x_y`, `data_x_time_of_flight`, `data_y_time_of_flight`
 - Metadata at structured instrument paths (`instrument/bank1/DANGLE/value`, etc.)
 - REF_M: multiple entries for polarization states (Off_Off, On_On, etc.)
 - REF_L: single `entry/` (unpolarized)
+- Old event files (`*_event.nxs`) also have separate entries per polarization state,
+  each with its own `bank1_events/` — so `from_event()` can process them per-channel
 
 ### Modern format (`*.nxs.h5`)
 - Raw events only: `bank1_events/event_id` + `event_time_offset` (both large arrays)
@@ -25,6 +27,43 @@ changes to reduction, plotting, or export are required.
   beamline-prefixed keys (e.g., `DASlogs/DANGLE/average_value`)
 - Single `entry/` only — even for REF_M polarization (no separate Off_Off entries)
 - Pixel ordering: `idfillbyfirst="y"` → `event_id = x_pixel * n_y + y_pixel`
+
+### Format transition (REF_M)
+
+Analysis of the complete REF_M dataset reveals the transition was **not a clean break**.
+Many IPTS directories contain the **same run numbers in both formats**:
+
+- **42 IPTS** have both `data/` (histo) and `nexus/` (h5) directories
+- In most of these, the run ranges **completely overlap** (every run has both formats)
+- The overlap era spans roughly runs 29732–34727+ (July 2018 onward)
+- Example: IPTS-9801 has 70 overlapping runs (29732–29801), including polarized data
+
+**Validation**: For overlapping run REF_M_29750 (unpolarized), the XY projection from
+binning `.nxs.h5` events matches the `_histo.nxs` histogram with 0.999992 correlation
+(29 count difference out of 19,195 events, max 2 counts/pixel). This confirms:
+- Pixel ID mapping `event_id = x * 256 + y` is correct for REF_M
+- The detector dimensions `(304, 256)` match the histo format
+
+**Metadata availability**: All production `.nxs.h5` files (runs 29732+) have complete
+DASlogs (`LambdaRequest`, `DANGLE`, `SANGLE`, etc.). Only the earliest commissioning
+runs in IPTS-16196 (runs 29001–29016, May 2018) lack wavelength data.
+
+### Polarization in `.nxs.h5` format
+
+**Critical difference**: Old `_event.nxs` files pre-sort events into separate entries
+per polarization state (`entry-Off_Off`, `entry-On_Off`, etc.). The new `.nxs.h5`
+format puts ALL events into a single `entry/bank1_events/`, with polarization state
+changes recorded as a time-series in `DASlogs/PolarizerState`.
+
+Example (run 29742, IPTS-9801):
+- Histo: `entry-Off_Off` (234,896 counts) + `entry-On_Off` (262,676) + `entry-unfiltered` (63)
+- H5: single `entry/` with 497,637 total events, `DASlogs/PolarizerState` shape=(188,)
+
+**Implication for this plan**: For the initial implementation, polarized `.nxs.h5` files
+will be loaded as **unpolarized** (all events combined). This is a documented limitation.
+When a corresponding `_histo.nxs` file exists on disk, `locate_file()` will prefer it
+(since histo files preserve polarization channels). Proper event-level polarization
+filtering using `PolarizerState` time-series is deferred to future work (Phase 8).
 
 ### Key differences by instrument
 
@@ -441,12 +480,18 @@ def _decode(value):
 The current implementation only searches for `*_histo.nxs` and `*_event.nxs` patterns.
 It must also search the `nexus/` subdirectory for `*.nxs.h5` files.
 
+**Important**: Legacy formats are searched **first** and preferred when both exist.
+This is critical because (a) `_histo.nxs` files preserve polarization channels that
+`.nxs.h5` does not separate, and (b) the overlap era (runs ~29732–34727+) has many
+runs available in both formats. Only when no legacy file is found does the search
+fall through to `.nxs.h5`.
+
 ```python
 def locate_file(number, histogram=True, old_format=False, verbose=True):
     if verbose:
         info('Trying to locate file number %s...' % number)
 
-    # Try legacy formats first (preferred for backward compatibility)
+    # Try legacy formats first (preferred — preserves polarization channels)
     if histogram:
         search = glob(os.path.join(instrument.data_base,
                       (instrument.BASE_SEARCH % number) + u'histo.nxs'))
@@ -543,7 +588,9 @@ Each step lists the test to write first, then the code to implement.
 import pytest
 import os
 
-H5_REF_M = '/SNS/REF_M/IPTS-16196/nexus/REF_M_29015.nxs.h5'
+H5_REF_M = '/SNS/REF_M/IPTS-9801/nexus/REF_M_29750.nxs.h5'
+H5_REF_M_HISTO = '/SNS/REF_M/IPTS-9801/data/REF_M_29750_histo.nxs'
+H5_REF_M_NOLAMDA = '/SNS/REF_M/IPTS-16196/nexus/REF_M_29015.nxs.h5'
 H5_REF_L = '/SNS/REF_L/IPTS-36119/nexus/REF_L_220030.nxs.h5'
 
 @pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
@@ -582,14 +629,14 @@ class TestGetDaslogValue:
         from quicknxs.qreduce import _get_daslog_value
         with h5py.File(H5_REF_M, 'r') as f:
             dangle = _get_daslog_value(f['entry'], 'DANGLE')
-        assert abs(dangle - 13.364) < 0.01
+        assert abs(dangle - 15.005) < 0.01
 
     def test_ref_m_sangle(self):
         import h5py
         from quicknxs.qreduce import _get_daslog_value
         with h5py.File(H5_REF_M, 'r') as f:
             sangle = _get_daslog_value(f['entry'], 'SANGLE')
-        assert abs(sangle - (-0.467)) < 0.01
+        assert abs(sangle - 0.332) < 0.01
 
     def test_ref_l_ths(self):
         import h5py
@@ -611,7 +658,7 @@ class TestGetDaslogValue:
         with h5py.File(H5_REF_M, 'r') as f:
             val = _get_daslog_value(f['entry'], 'NONEXISTENT',
                                    fallback_key='DANGLE')
-        assert abs(val - 13.364) < 0.01
+        assert abs(val - 15.005) < 0.01
 
     def test_missing_key_raises(self):
         import h5py
@@ -653,12 +700,12 @@ class TestMRDatasetCollectInfoH5:
             ds = MRDataset()
             ds._collect_info_h5(f['entry'])
         # Verify key metadata was extracted
-        assert abs(ds.dangle - 13.364) < 0.01
-        assert abs(ds.sangle - (-0.467)) < 0.01
+        assert abs(ds.dangle - 15.005) < 0.01
+        assert abs(ds.sangle - 0.332) < 0.01
         assert ds.proton_charge > 0
-        assert ds.total_counts == 14863
-        assert ds.number == 29015
-        assert ds.experiment == 'IPTS-16196'
+        assert ds.total_counts == 19195
+        assert ds.number == 29750
+        assert ds.experiment == 'IPTS-9801'
         assert ds.dist_sam_det > 0
         assert ds.dist_mod_det > ds.dist_sam_det
         assert ds.slit1_width > 0
@@ -774,7 +821,38 @@ Run: → **FAIL** (NXSData doesn't know how to read .nxs.h5 files yet)
 
 Run test again → **PASS**
 
-#### Step 3.3: REF_L loading
+#### Step 3.3: Cross-validation against histo counterpart
+
+**RED — Write failing test first:**
+```python
+    @pytest.mark.skipif(not os.path.exists(H5_REF_M_HISTO),
+                        reason='No access to SNS data')
+    def test_ref_m_matches_histo(self):
+        """Compare event-binned XY projection against known-good histo data"""
+        import h5py
+        import numpy as np
+        from quicknxs.qreduce import NXSData
+        # Load event data
+        h5_data = NXSData(H5_REF_M, use_caching=False)
+        assert h5_data is not None
+        h5_xy = h5_data[0].xydata  # shape (256, 304) transposed
+        # Load histo reference
+        histo_data = NXSData(H5_REF_M_HISTO, use_caching=False)
+        assert histo_data is not None
+        histo_xy = histo_data[0].xydata
+        # Compare: correlation > 0.999
+        corr = np.corrcoef(h5_xy.ravel(), histo_xy.ravel())[0, 1]
+        assert corr > 0.999, f'XY correlation {corr:.6f} too low'
+        # Max per-pixel difference should be small
+        diff = np.abs(h5_xy - histo_xy)
+        assert diff.max() < 10, f'Max pixel diff {diff.max()} too large'
+```
+Run: → **FAIL** (from_event_h5 not implemented)
+
+**GREEN — Already implemented in Step 3.2; test just validates correctness:**
+Run test again → **PASS**
+
+#### Step 3.4: REF_L loading
 
 **RED — Write failing test first:**
 ```python
@@ -797,27 +875,27 @@ Run: → **FAIL**
 **GREEN — Implement `LRDataset.from_event_h5()` and routing in `_read_file_LR()`:**
 Run test again → **PASS**
 
-#### Step 3.4: REF_M file with full metadata
+#### Step 3.5: Graceful degradation for missing metadata
 
 **RED — Write failing test first:**
 ```python
-H5_REF_M_FULL = '/SNS/REF_M/IPTS-16196/nexus/REF_M_45600.nxs.h5'
-
-    @pytest.mark.skipif(not os.path.exists(H5_REF_M_FULL),
+    @pytest.mark.skipif(not os.path.exists(H5_REF_M_NOLAMDA),
                         reason='No access to SNS data')
-    def test_ref_m_full_metadata(self):
-        """REF_M run 45600+ has LambdaRequest and chopper data"""
+    def test_ref_m_missing_lambda_graceful(self):
+        """Early commissioning files lack LambdaRequest — should use default"""
         from quicknxs.qreduce import NXSData
-        data = NXSData(H5_REF_M_FULL)
-        if data is None:
-            pytest.skip('File has no events')
+        data = NXSData(H5_REF_M_NOLAMDA, use_caching=False)
+        assert data is not None
         ds = data[0]
-        assert abs(ds.lambda_center - 5.35) < 0.1  # known from DASlogs
+        # Should have loaded with default lambda
+        assert ds.lambda_center == 3.37  # default fallback
+        assert ds.data is not None
+        assert ds.total_counts == 14863
 ```
-Run: → **FAIL** or **SKIP** (depending on event count)
+Run: → **FAIL**
 
-**GREEN — Verify metadata extraction handles full-metadata files:**
-Run test again → **PASS** (or SKIP for empty files)
+**GREEN — Ensure `_collect_info_h5()` handles missing DASlogs gracefully:**
+Run test again → **PASS**
 
 ### Phase 4: File search (Changes 6, 8)
 **Agent team: 1 agent (can run in parallel with Phase 3)**
@@ -829,15 +907,15 @@ Run test again → **PASS** (or SKIP for empty files)
 @pytest.mark.skipif(not os.path.exists('/SNS/REF_M/IPTS-16196/nexus/'),
                     reason='No access to SNS data')
 class TestLocateFile:
-    def test_locate_h5_ref_m(self):
+    def test_locate_h5_only_run(self):
+        """Run that only exists as .nxs.h5 (no histo counterpart)"""
         from quicknxs.qreduce import locate_file
         from quicknxs.config import ref_m
-        from quicknxs.config import __init__ as config_init
-        # Temporarily set instrument to ref_m
         import quicknxs.config as cfg
         orig = cfg.instrument
         cfg.instrument = ref_m
         try:
+            # Run 29015 only exists as .nxs.h5 (IPTS-16196 commissioning)
             result = locate_file(29015, verbose=False)
             assert result is not None
             assert result.endswith('.nxs.h5')
@@ -845,7 +923,22 @@ class TestLocateFile:
         finally:
             cfg.instrument = orig
 
-    def test_locate_histo_still_works(self):
+    def test_locate_histo_preferred_over_h5(self):
+        """When both formats exist, histo is preferred (preserves polarization)"""
+        from quicknxs.qreduce import locate_file
+        from quicknxs.config import ref_m
+        import quicknxs.config as cfg
+        orig = cfg.instrument
+        cfg.instrument = ref_m
+        try:
+            # Run 29750 exists in both formats (IPTS-9801 overlap zone)
+            result = locate_file(29750, verbose=False)
+            assert result is not None
+            assert 'histo.nxs' in result, f'Expected histo, got: {result}'
+        finally:
+            cfg.instrument = orig
+
+    def test_locate_old_histo_still_works(self):
         from quicknxs.qreduce import locate_file
         from quicknxs.config import ref_m
         import quicknxs.config as cfg
@@ -980,7 +1073,7 @@ Run: → Should **PASS** (if not, fix regressions before proceeding)
 | Risk | Mitigation |
 |---|---|
 | REF_M .nxs.h5 files have no LambdaRequest in DASlogs | Fall back to `BL4A:Det:TH:BL:Lambda`, then `BL4A:Chop:Gbl:Wavelength:Req`; early 2018 commissioning files (runs 29xxx) have NO wavelength/chopper data at all — use default 3.37 Å and warn. Note: the buzhug database at `/SNS/REF_M/shared/quicknxs_database/` covers runs 18081–28832 only (all from `*_histo.nxs`); it does NOT cover the .nxs.h5 era (runs 29001+), so it cannot serve as a fallback. |
-| Polarization states lost in .nxs.h5 format | Document limitation; .nxs.h5 is treated as unpolarized |
+| Polarization states lost in .nxs.h5 format | `locate_file()` prefers `_histo.nxs` when available (preserves polarization); `.nxs.h5` loaded as unpolarized; event-level polarization filtering deferred to Phase 8 (future work) |
 | Dead-time correction not applied | lr_reduction applies it but quicknxsv1 doesn't for _event.nxs either; defer to future work |
 | Slit distances not in new format | Use known instrument constants (stable geometry) |
 | Memory pressure from large event arrays | Events are discarded after binning; 3D histogram is same size as legacy |
@@ -1000,21 +1093,32 @@ Run: → Should **PASS** (if not, fix regressions before proceeding)
 
 | File | Instrument | Format | Events | Purpose |
 |---|---|---|---|---|
-| `/SNS/REF_M/IPTS-16196/nexus/REF_M_29015.nxs.h5` | REF_M | .nxs.h5 | 14,863 | REF_M event loading |
+| `/SNS/REF_M/IPTS-9801/nexus/REF_M_29750.nxs.h5` | REF_M | .nxs.h5 | 19,195 | **Primary**: unpolarized, full metadata, has histo counterpart |
+| `/SNS/REF_M/IPTS-9801/data/REF_M_29750_histo.nxs` | REF_M | histo | 19,166 | Reference for validating event-to-histo conversion |
+| `/SNS/REF_M/IPTS-9801/nexus/REF_M_29742.nxs.h5` | REF_M | .nxs.h5 | 497,637 | Polarized run (3 states), has histo counterpart |
+| `/SNS/REF_M/IPTS-9801/data/REF_M_29742_histo.nxs` | REF_M | histo | 497,635 | Reference: Off_Off(234k) + On_Off(263k) + unfiltered(63) |
+| `/SNS/REF_M/IPTS-24338/nexus/REF_M_43568.nxs.h5` | REF_M | .nxs.h5 | 2,113,831 | High-count h5-only run (no histo), full metadata |
 | `/SNS/REF_L/IPTS-36119/nexus/REF_L_220030.nxs.h5` | REF_L | .nxs.h5 | 85,387 | REF_L event loading |
-| `/SNS/REF_M/IPTS-16196/0/25899/NeXus/REF_M_25899_histo.nxs` | REF_M | histo | N/A | Backward compat |
-| `/SNS/REF_L/IPTS-7053/0/80836/NeXus/REF_L_80836_histo.nxs` | REF_L | histo | N/A | Backward compat |
-| `/SNS/REF_M/IPTS-16196/nexus/REF_M_45600.nxs.h5` | REF_M | .nxs.h5 | 0 | REF_M with full metadata (LambdaRequest present) |
+| `/SNS/REF_M/IPTS-16196/nexus/REF_M_29015.nxs.h5` | REF_M | .nxs.h5 | 14,863 | Early commissioning (no LambdaRequest) |
+| `/SNS/REF_M/IPTS-16196/0/25899/NeXus/REF_M_25899_histo.nxs` | REF_M | histo | 107,686 | Backward compat: polarized histo |
+| `/SNS/REF_L/IPTS-7053/0/80836/NeXus/REF_L_80836_histo.nxs` | REF_L | histo | 25,234 | Backward compat: REF_L histo |
+
+### Cross-validation test data (overlap zone)
+
+The overlap zone in IPTS-9801 (runs 29732–29801) provides **ground-truth validation**:
+the same data exists in both formats, allowing pixel-by-pixel comparison of event-binned
+histograms against the pre-histogrammed data. Validated: run 29750 shows 0.999992
+correlation with max 2 counts/pixel difference.
 
 ### Note on test data quality
 
-- REF_M runs 29001-29016 are from early 2018 commissioning and **lack wavelength/chopper
-  DASlogs entirely**. Run 29015 has 14,863 events but no LambdaRequest. These files will
-  use default wavelength (3.37 Å) for TOF binning.
-- REF_M runs 45593+ have full metadata including LambdaRequest, chopper speed, etc.
+- REF_M runs 29001-29016 (IPTS-16196, May 2018) are early commissioning and **lack
+  wavelength/chopper DASlogs entirely**. These use default wavelength with a warning.
+- All production `.nxs.h5` files (runs 29732+, July 2018 onward) have full metadata.
 - REF_L runs 220030+ have full metadata.
-- For production testing, prefer runs with full metadata. The early commissioning files
-  are useful for testing graceful degradation only.
+- The buzhug database at `/SNS/REF_M/shared/quicknxs_database/` covers runs 18081–28832
+  only (all from `*_histo.nxs`). It does NOT cover the `.nxs.h5` era — no overlap exists
+  between the database and the missing-metadata commissioning files.
 
 ---
 
@@ -1042,6 +1146,24 @@ Once `.nxs.h5` loading is implemented, the database could be extended to index m
 files. The format transition is clean (no overlap): REF_M histo ends at run 28832,
 `.nxs.h5` starts at 29001. Both formats could coexist in the same database since
 `add_record()` stores `file_path` which preserves the format distinction.
+
+### Phase 8: Event-level polarization filtering for `.nxs.h5`
+
+For polarized REF_M measurements in `.nxs.h5` format, events must be separated by
+polarization state using the `DASlogs/PolarizerState` time-series. The approach:
+
+1. Read `PolarizerState` values and timestamps from DASlogs
+2. Read `bank1_events/event_time_zero` (pulse times) and `event_index` (event-to-pulse mapping)
+3. For each event, determine which polarization state was active at that pulse time
+4. Bin events separately per polarization state → separate MRDataset objects
+
+This mirrors what the DAS histogramming does to produce the `entry-Off_Off` etc.
+channels in `_histo.nxs` files. The `PolarizerState` log has ~188 entries per run
+(state changes every ~few hundred pulses), so the time-correlation is efficient.
+
+**Validation strategy**: Use the 70 overlapping runs in IPTS-9801 (29732–29801) that
+have both polarized `_histo.nxs` and `.nxs.h5` files. Compare per-channel histograms
+from event filtering against the pre-sorted histo data.
 
 ### Dead-time correction
 
