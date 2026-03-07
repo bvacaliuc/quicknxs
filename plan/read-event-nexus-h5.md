@@ -526,68 +526,449 @@ def time_from_header(filename, nxs=None):
 
 ---
 
-## Implementation Phases
+## Implementation Phases (Red/Green TDD)
 
-### Phase 1: Core event reading (Changes 1-5)
+Each phase follows strict red/green TDD: write a failing test first (RED), then
+implement the minimum code to make it pass (GREEN), then refactor if needed.
+Each step lists the test to write first, then the code to implement.
+
+### Phase 1: Helper functions (Changes 5)
 **Agent team: 1 primary agent**
 
-1. Add `_get_detector_dimensions()`, `_get_daslog_value()`, `_decode()` helpers
-2. Add `MRDataset._collect_info_h5()` for REF_M
-3. Add `LRDataset._collect_info_h5()` for REF_L
-4. Add `MRDataset.from_event_h5()` class method
-5. Add `LRDataset.from_event_h5()` class method (override if needed, or inherit)
-6. Add format detection (`_is_event_h5`) in `_read_file()`
-7. Route to `from_event_h5()` in `_read_file_MR()` and `_read_file_LR()`
+#### Step 1.1: `_get_detector_dimensions()` helper
 
-**Tests:**
-- Unit test: `_get_detector_dimensions()` with real `.nxs.h5` file
-- Unit test: `_get_daslog_value()` with real `.nxs.h5` file
-- Integration test: `NXSData('/SNS/REF_M/IPTS-16196/nexus/REF_M_29015.nxs.h5')` returns valid data
-- Integration test: `NXSData('/SNS/REF_L/IPTS-36119/nexus/REF_L_220030.nxs.h5')` returns valid data
-- Verify: `data.shape == (n_x, n_y, n_tof)` matches expectations
-- Verify: `xydata`, `xtofdata` projections are correct
-- Verify: metadata (angles, distances, proton charge) is correct
+**RED — Write failing test first:**
+```python
+# tests/test_event_h5.py
+import pytest
+import os
 
-### Phase 2: File search and routing (Changes 6-9)
-**Agent team: 1 agent (can run in parallel with Phase 1 tests)**
+H5_REF_M = '/SNS/REF_M/IPTS-16196/nexus/REF_M_29015.nxs.h5'
+H5_REF_L = '/SNS/REF_L/IPTS-36119/nexus/REF_L_220030.nxs.h5'
 
-1. Update `locate_file()` to find `.nxs.h5` files
-2. Add `H5_BASE_SEARCH` to config files
-3. Update `_read_file_MR()` and `_read_file_LR()` channel detection
-4. Fix `time_from_header()` for robustness
+@pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+class TestGetDetectorDimensions:
+    def test_ref_m_dimensions(self):
+        import h5py
+        from quicknxs.qreduce import _get_detector_dimensions
+        with h5py.File(H5_REF_M, 'r') as f:
+            n_x, n_y = _get_detector_dimensions(f['entry'])
+        assert n_x == 304
+        assert n_y == 256
 
-**Tests:**
-- `locate_file(29015)` with REF_M instrument → finds `.nxs.h5`
-- `locate_file(220030)` with REF_L instrument → finds `.nxs.h5`
-- `locate_file(25899)` with REF_M instrument → still finds legacy `_histo.nxs`
+    def test_ref_l_dimensions(self):
+        import h5py
+        from quicknxs.qreduce import _get_detector_dimensions
+        with h5py.File(H5_REF_L, 'r') as f:
+            n_x, n_y = _get_detector_dimensions(f['entry'])
+        assert n_x == 256
+        assert n_y == 304
+```
+Run: `pixi run pytest tests/test_event_h5.py::TestGetDetectorDimensions -x`
+→ Expected: **FAIL** (ImportError — function doesn't exist yet)
 
-### Phase 3: Event splitting support
-**Agent team: 1 agent**
+**GREEN — Implement `_get_detector_dimensions()` in `qreduce.py`:**
+(See Change 5 above for implementation)
+Run test again → **PASS**
 
-Port the `event_split_bins`/`event_split_index` logic from existing `from_event()`
-to `from_event_h5()`. The event splitting data lives at the same paths in both
-formats (`bank1_events/event_time_zero`, `bank1_events/event_index`).
+#### Step 1.2: `_get_daslog_value()` helper
 
-**Tests:**
-- Load with `event_split_bins=4, event_split_index=0` — verify subset
-- Verify total counts across all splits sums to unsplit total
+**RED — Write failing test first:**
+```python
+@pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+class TestGetDaslogValue:
+    def test_ref_m_dangle(self):
+        import h5py
+        from quicknxs.qreduce import _get_daslog_value
+        with h5py.File(H5_REF_M, 'r') as f:
+            dangle = _get_daslog_value(f['entry'], 'DANGLE')
+        assert abs(dangle - 13.364) < 0.01
 
-### Phase 4: Backward compatibility verification
-**Agent team: 1 agent**
+    def test_ref_m_sangle(self):
+        import h5py
+        from quicknxs.qreduce import _get_daslog_value
+        with h5py.File(H5_REF_M, 'r') as f:
+            sangle = _get_daslog_value(f['entry'], 'SANGLE')
+        assert abs(sangle - (-0.467)) < 0.01
 
-Run the full existing test suite to verify no regressions:
-- `make test` passes
-- Legacy `_histo.nxs` files still load correctly
-- Legacy `_event.nxs` files still load correctly
-- GUI can open both old and new files
+    def test_ref_l_ths(self):
+        import h5py
+        from quicknxs.qreduce import _get_daslog_value
+        with h5py.File(H5_REF_L, 'r') as f:
+            ths = _get_daslog_value(f['entry'], 'ths')
+        assert abs(ths - 2.101) < 0.01
 
-### Phase 5: Makefile integration and documentation
-**Agent team: 1 agent**
+    def test_missing_key_with_default(self):
+        import h5py
+        from quicknxs.qreduce import _get_daslog_value
+        with h5py.File(H5_REF_M, 'r') as f:
+            val = _get_daslog_value(f['entry'], 'NONEXISTENT', default=42.0)
+        assert val == 42.0
+
+    def test_missing_key_with_fallback(self):
+        import h5py
+        from quicknxs.qreduce import _get_daslog_value
+        with h5py.File(H5_REF_M, 'r') as f:
+            val = _get_daslog_value(f['entry'], 'NONEXISTENT',
+                                   fallback_key='DANGLE')
+        assert abs(val - 13.364) < 0.01
+
+    def test_missing_key_raises(self):
+        import h5py
+        from quicknxs.qreduce import _get_daslog_value
+        with h5py.File(H5_REF_M, 'r') as f:
+            with pytest.raises(KeyError):
+                _get_daslog_value(f['entry'], 'NONEXISTENT')
+
+    def test_ref_m_missing_lambda_uses_fallback(self):
+        """Early REF_M files lack LambdaRequest; fallback to BL4A:Det:TH:BL:Lambda"""
+        import h5py
+        from quicknxs.qreduce import _get_daslog_value
+        with h5py.File(H5_REF_M, 'r') as f:
+            val = _get_daslog_value(f['entry'], 'LambdaRequest',
+                                   fallback_key='BL4A:Det:TH:BL:Lambda',
+                                   default=3.37)
+        # REF_M_29015 has no LambdaRequest and no BL4A:Det:TH:BL:Lambda
+        # so this should fall back to default 3.37
+        assert val == 3.37
+```
+Run: → **FAIL**
+
+**GREEN — Implement `_get_daslog_value()` and `_decode()` in `qreduce.py`:**
+Run test again → **PASS**
+
+### Phase 2: Metadata extraction (Changes 3-4)
+**Agent team: 1 primary agent (sequential after Phase 1)**
+
+#### Step 2.1: `MRDataset._collect_info_h5()` for REF_M
+
+**RED — Write failing test first:**
+```python
+@pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+class TestMRDatasetCollectInfoH5:
+    def test_metadata_extraction(self):
+        import h5py
+        from quicknxs.qreduce import MRDataset
+        with h5py.File(H5_REF_M, 'r') as f:
+            ds = MRDataset()
+            ds._collect_info_h5(f['entry'])
+        # Verify key metadata was extracted
+        assert abs(ds.dangle - 13.364) < 0.01
+        assert abs(ds.sangle - (-0.467)) < 0.01
+        assert ds.proton_charge > 0
+        assert ds.total_counts == 14863
+        assert ds.number == 29015
+        assert ds.experiment == 'IPTS-16196'
+        assert ds.dist_sam_det > 0
+        assert ds.dist_mod_det > ds.dist_sam_det
+        assert ds.slit1_width > 0
+        assert ds.det_size_x > 0
+        assert ds.det_size_y > 0
+
+    def test_logs_populated(self):
+        import h5py
+        from quicknxs.qreduce import MRDataset
+        with h5py.File(H5_REF_M, 'r') as f:
+            ds = MRDataset()
+            ds._collect_info_h5(f['entry'])
+        assert len(ds.logs) > 0
+        assert 'DANGLE' in ds.logs
+```
+Run: → **FAIL** (AttributeError — method doesn't exist)
+
+**GREEN — Implement `MRDataset._collect_info_h5()` in `qreduce.py`:**
+Run test again → **PASS**
+
+#### Step 2.2: `LRDataset._collect_info_h5()` for REF_L
+
+**RED — Write failing test first:**
+```python
+@pytest.mark.skipif(not os.path.exists(H5_REF_L), reason='No access to SNS data')
+class TestLRDatasetCollectInfoH5:
+    def test_metadata_extraction(self):
+        import h5py
+        from quicknxs.qreduce import LRDataset
+        with h5py.File(H5_REF_L, 'r') as f:
+            ds = LRDataset()
+            ds._collect_info_h5(f['entry'])
+        assert abs(ds.sangle - 2.101) < 0.01  # ths
+        assert abs(ds.dangle - (-0.007)) < 0.01  # thi
+        assert ds.dangle0 == 0.0
+        assert ds.proton_charge > 0
+        assert ds.total_counts == 85387
+        assert ds.number == 220030
+        assert ds.dist_sam_det > 0
+        assert ds.lambda_center > 0
+```
+Run: → **FAIL**
+
+**GREEN — Implement `LRDataset._collect_info_h5()` in `qreduce.py`:**
+Run test again → **PASS**
+
+### Phase 3: Core event-to-histogram conversion (Changes 1-2)
+**Agent team: 1 primary agent (sequential after Phase 2)**
+
+#### Step 3.1: Format detection
+
+**RED — Write failing test first:**
+```python
+@pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+class TestFormatDetection:
+    def test_detects_event_h5_format(self):
+        import h5py
+        from quicknxs.qreduce import NXSData
+        # Construct a minimal NXSData to test _read_file detection
+        nxs_obj = object.__new__(NXSData)
+        nxs_obj._options = NXSData._get_all_options({})
+        nxs_obj._channel_names = []
+        nxs_obj._channel_origin = []
+        nxs_obj._channel_data = []
+        nxs_obj.measurement_type = ''
+        nxs_obj._read_times = []
+        with h5py.File(H5_REF_M, 'r') as f:
+            first_entry = list(f.keys())[0]
+            def_raw = f[first_entry]['definition'][()][0]
+            definition = def_raw.decode('utf-8') if isinstance(def_raw, bytes) else str(def_raw)
+        assert definition == 'NXsnsevent'
+```
+Run: → **PASS** (this is a pure data test — no code needed)
+
+#### Step 3.2: `MRDataset.from_event_h5()` — REF_M loading
+
+**RED — Write failing test first:**
+```python
+@pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+class TestFromEventH5:
+    def test_ref_m_load(self):
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M)
+        assert data is not None
+        assert len(data) >= 1
+        ds = data[0]
+        # Verify 3D histogram was created
+        assert ds.data is not None
+        assert len(ds.data.shape) == 3
+        assert ds.data.shape[0] == 304  # n_x for REF_M
+        assert ds.data.shape[1] == 256  # n_y for REF_M
+        # Verify projections
+        assert ds.xydata is not None
+        assert ds.xydata.shape == (256, 304)  # transposed
+        assert ds.xtofdata is not None
+        assert ds.xtofdata.shape[0] == 304
+        # Total counts in histogram should match event count
+        assert abs(ds.data.sum() - ds.total_counts) < 2  # allow rounding
+        # Verify tof_edges
+        assert ds.tof_edges is not None
+        assert len(ds.tof_edges) > 1
+        # Verify event mode flag
+        assert ds.from_event_mode == True
+        # Verify measurement type
+        assert data.measurement_type == 'Unpolarized'
+```
+Run: → **FAIL** (NXSData doesn't know how to read .nxs.h5 files yet)
+
+**GREEN — Implement full pipeline:**
+1. Add format detection in `_read_file()` (Change 1)
+2. Add `from_event_h5()` on `MRDataset` (Change 2)
+3. Add routing in `_read_file_MR()` (Change 7)
+
+Run test again → **PASS**
+
+#### Step 3.3: REF_L loading
+
+**RED — Write failing test first:**
+```python
+    def test_ref_l_load(self):
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_L)
+        assert data is not None
+        assert len(data) >= 1
+        ds = data[0]
+        assert ds.data.shape[0] == 256  # n_x for REF_L
+        assert ds.data.shape[1] == 304  # n_y for REF_L
+        assert ds.xydata.shape == (304, 256)  # transposed
+        assert abs(ds.data.sum() - ds.total_counts) < 2
+        assert ds.from_event_mode == True
+        assert abs(ds.sangle - 2.101) < 0.01
+        assert abs(ds.lambda_center - 6.2) < 0.1
+```
+Run: → **FAIL**
+
+**GREEN — Implement `LRDataset.from_event_h5()` and routing in `_read_file_LR()`:**
+Run test again → **PASS**
+
+#### Step 3.4: REF_M file with full metadata
+
+**RED — Write failing test first:**
+```python
+H5_REF_M_FULL = '/SNS/REF_M/IPTS-16196/nexus/REF_M_45600.nxs.h5'
+
+    @pytest.mark.skipif(not os.path.exists(H5_REF_M_FULL),
+                        reason='No access to SNS data')
+    def test_ref_m_full_metadata(self):
+        """REF_M run 45600+ has LambdaRequest and chopper data"""
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M_FULL)
+        if data is None:
+            pytest.skip('File has no events')
+        ds = data[0]
+        assert abs(ds.lambda_center - 5.35) < 0.1  # known from DASlogs
+```
+Run: → **FAIL** or **SKIP** (depending on event count)
+
+**GREEN — Verify metadata extraction handles full-metadata files:**
+Run test again → **PASS** (or SKIP for empty files)
+
+### Phase 4: File search (Changes 6, 8)
+**Agent team: 1 agent (can run in parallel with Phase 3)**
+
+#### Step 4.1: `locate_file()` finds `.nxs.h5`
+
+**RED — Write failing test first:**
+```python
+@pytest.mark.skipif(not os.path.exists('/SNS/REF_M/IPTS-16196/nexus/'),
+                    reason='No access to SNS data')
+class TestLocateFile:
+    def test_locate_h5_ref_m(self):
+        from quicknxs.qreduce import locate_file
+        from quicknxs.config import ref_m
+        from quicknxs.config import __init__ as config_init
+        # Temporarily set instrument to ref_m
+        import quicknxs.config as cfg
+        orig = cfg.instrument
+        cfg.instrument = ref_m
+        try:
+            result = locate_file(29015, verbose=False)
+            assert result is not None
+            assert result.endswith('.nxs.h5')
+            assert '29015' in result
+        finally:
+            cfg.instrument = orig
+
+    def test_locate_histo_still_works(self):
+        from quicknxs.qreduce import locate_file
+        from quicknxs.config import ref_m
+        import quicknxs.config as cfg
+        orig = cfg.instrument
+        cfg.instrument = ref_m
+        try:
+            result = locate_file(25899, verbose=False)
+            assert result is not None
+            assert 'histo.nxs' in result
+        finally:
+            cfg.instrument = orig
+
+    @pytest.mark.skipif(not os.path.exists('/SNS/REF_L/IPTS-36119/nexus/'),
+                        reason='No access to REF_L data')
+    def test_locate_h5_ref_l(self):
+        from quicknxs.qreduce import locate_file
+        from quicknxs.config import ref_l
+        import quicknxs.config as cfg
+        orig = cfg.instrument
+        cfg.instrument = ref_l
+        try:
+            result = locate_file(220030, verbose=False)
+            assert result is not None
+            assert result.endswith('.nxs.h5')
+        finally:
+            cfg.instrument = orig
+```
+Run: → **FAIL** (locate_file doesn't search for .nxs.h5)
+
+**GREEN — Implement Changes 6 and 8:**
+Run test again → **PASS**
+
+#### Step 4.2: `time_from_header()` robustness
+
+**RED — Write failing test first:**
+```python
+    def test_time_from_header_h5(self):
+        from quicknxs.qreduce import time_from_header
+        result = time_from_header(H5_REF_M)
+        assert result is not None
+        assert result > 0
+```
+Run: → May **FAIL** if non-Group items in file cause errors
+
+**GREEN — Implement Change 9:**
+Run test again → **PASS**
+
+### Phase 5: Event splitting support (Change in `from_event_h5`)
+**Agent team: 1 agent (sequential after Phase 3)**
+
+#### Step 5.1: Event splitting
+
+**RED — Write failing test first:**
+```python
+@pytest.mark.skipif(not os.path.exists(H5_REF_L), reason='No access to SNS data')
+class TestEventSplitting:
+    def test_split_produces_subset(self):
+        from quicknxs.qreduce import NXSData
+        full = NXSData(H5_REF_L, use_caching=False)
+        split = NXSData(H5_REF_L, event_split_bins=4, event_split_index=0,
+                        use_caching=False)
+        if full is None or split is None:
+            pytest.skip('Could not load data')
+        assert split[0].total_counts < full[0].total_counts
+        assert split[0].total_counts > 0
+
+    def test_splits_sum_to_total(self):
+        from quicknxs.qreduce import NXSData
+        full = NXSData(H5_REF_L, use_caching=False)
+        if full is None:
+            pytest.skip('Could not load data')
+        total = 0
+        for i in range(4):
+            part = NXSData(H5_REF_L, event_split_bins=4, event_split_index=i,
+                           use_caching=False)
+            if part is not None:
+                total += part[0].total_counts
+        # Allow small discrepancy from binning edge effects
+        assert abs(total - full[0].total_counts) < 10
+```
+Run: → **FAIL**
+
+**GREEN — Port event splitting logic to `from_event_h5()`:**
+Run test again → **PASS**
+
+### Phase 6: Backward compatibility verification
+**Agent team: 1 agent (after Phase 3-5)**
+
+**RED — These tests should already pass (regression guard):**
+```python
+class TestBackwardCompatibility:
+    def test_existing_tests_pass(self):
+        """Run: pixi run pytest tests/qreduce_test.py -x"""
+        pass  # This is a manual verification step
+
+    @pytest.mark.skipif(
+        not os.path.exists('/SNS/REF_M/IPTS-16196/0/25899/NeXus/REF_M_25899_histo.nxs'),
+        reason='No access to SNS data')
+    def test_legacy_histo_still_loads(self):
+        from quicknxs.qreduce import NXSData
+        data = NXSData('/SNS/REF_M/IPTS-16196/0/25899/NeXus/REF_M_25899_histo.nxs')
+        assert data is not None
+        assert len(data) >= 1
+        assert data[0].data is not None
+
+    @pytest.mark.skipif(
+        not os.path.exists('/SNS/REF_L/IPTS-7053/0/80836/NeXus/REF_L_80836_histo.nxs'),
+        reason='No access to SNS data')
+    def test_legacy_ref_l_histo_still_loads(self):
+        from quicknxs.qreduce import NXSData
+        data = NXSData('/SNS/REF_L/IPTS-7053/0/80836/NeXus/REF_L_80836_histo.nxs')
+        assert data is not None
+        assert data[0].data.shape == (304, 256, 2001)
+```
+Run: → Should **PASS** (if not, fix regressions before proceeding)
+
+### Phase 7: Makefile integration and documentation
+**Agent team: 1 agent (after Phase 6)**
 
 1. Add Makefile targets for testing with `.nxs.h5` files:
    ```makefile
-   test-h5-load:  ## Load test with modern .nxs.h5 files
-       pixi run python -c "from quicknxs.qreduce import NXSData; ..."
+   test-h5:  ## Run event NeXus .nxs.h5 integration tests
+       pixi run pytest tests/test_event_h5.py -v --timeout=120
    ```
 2. Update CLAUDE.md with new format documentation
 3. Commit all changes
@@ -598,7 +979,7 @@ Run the full existing test suite to verify no regressions:
 
 | Risk | Mitigation |
 |---|---|
-| REF_M .nxs.h5 files have no LambdaRequest in DASlogs | Fall back to `BL4A:Det:TH:BL:Lambda`, then `BL4A:Chop:Gbl:Wavelength:Req`; early 2018 commissioning files (runs 29xxx) have NO wavelength/chopper data at all — use default 3.37 Å and warn |
+| REF_M .nxs.h5 files have no LambdaRequest in DASlogs | Fall back to `BL4A:Det:TH:BL:Lambda`, then `BL4A:Chop:Gbl:Wavelength:Req`; early 2018 commissioning files (runs 29xxx) have NO wavelength/chopper data at all — use default 3.37 Å and warn. Note: the buzhug database at `/SNS/REF_M/shared/quicknxs_database/` covers runs 18081–28832 only (all from `*_histo.nxs`); it does NOT cover the .nxs.h5 era (runs 29001+), so it cannot serve as a fallback. |
 | Polarization states lost in .nxs.h5 format | Document limitation; .nxs.h5 is treated as unpolarized |
 | Dead-time correction not applied | lr_reduction applies it but quicknxsv1 doesn't for _event.nxs either; defer to future work |
 | Slit distances not in new format | Use known instrument constants (stable geometry) |
@@ -634,3 +1015,37 @@ Run the full existing test suite to verify no regressions:
 - REF_L runs 220030+ have full metadata.
 - For production testing, prefer runs with full metadata. The early commissioning files
   are useful for testing graceful degradation only.
+
+---
+
+## Future Work (out of scope for this plan)
+
+### Generate buzhug database for REF_L
+
+`/SNS/REF_L/shared/quicknxs_database/` does not currently exist. After this work
+lands, it would be feasible to populate it from the 2,554 old `*_histo.nxs` files
+(runs 70476–84693 in IPTS-7053). The existing `DatabaseHandler.add_record()` works
+with any `NXSData` object:
+
+```python
+from quicknxs.database import DatabaseHandler
+db = DatabaseHandler()
+for run in range(70476, 84694):
+    db.add_record(run)
+```
+
+This would enable the GUI's "Find Direct Beam" feature to work with REF_L data.
+
+### Extend database to `.nxs.h5` files
+
+Once `.nxs.h5` loading is implemented, the database could be extended to index modern
+files. The format transition is clean (no overlap): REF_M histo ends at run 28832,
+`.nxs.h5` starts at 29001. Both formats could coexist in the same database since
+`add_record()` stores `file_path` which preserves the format distinction.
+
+### Dead-time correction
+
+The lr_reduction `binary_processing.py` applies a dead-time correction using the
+Lambert W function on `bank_error_events`. quicknxsv1 does not apply dead-time
+correction for existing event files either, so this is deferred. However, adding it
+would improve accuracy for high-count-rate measurements.
