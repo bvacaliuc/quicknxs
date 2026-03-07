@@ -526,3 +526,6 @@ I have mounted the complete dataset for REF_M at /SNS/REF_M using sshfs. You sho
 
 Claude updated the above plan with modifictions following a lengthy consideration of the entire dataset. The summary is presented in [ref_m-dataset-review.md](ref_m-dataset-review.md).
 
+### Follow on Prompt 22.3
+
+That is excellent! Now I have mounted the complete dataset for REF_L at /SNS/REF_L using sshfs. You should be able to access the complete and available dataset. Please explore this dataset with respect to the REF_L instrument and review that the proposed plan will also be able to read the entire REF_L record. As before, the dataset is mounted over a 50Mbps network link so selectivity is needed during the inspection. If this analysis changes your development plan, please update it. Be extremely careful to not disturb the findings and plan made so far for REF_M. I have taken care to preserve the runs that your plan calls out so far.
