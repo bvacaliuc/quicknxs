@@ -162,6 +162,48 @@ has completed — or configure the PR for auto-merge at creation time and move o
 - The `GITHUB_TOKEN` anti-loop rule suppresses push events from actions using that token;
   any workflow that creates branches and needs CI to run on them must use a PAT instead
 
+## Dual-Instrument Architecture (REF_M / REF_L)
+
+quicknxs supports two SNS reflectometers: REF_M (Magnetism, beamline 4A) and
+REF_L (Liquids, beamline 4B). Key patterns to follow:
+
+### Config system
+- `quicknxs/config/ref_m.py` and `quicknxs/config/ref_l.py` hold per-instrument constants
+- The active instrument is a config proxy: `from quicknxs.config import instrument`
+- **ConfigHolder raises `KeyError`, not `AttributeError`** for missing keys — `getattr()`
+  with a default does NOT work. Use `_get_instrument_config(name, default)` from `qreduce.py`
+  which catches `KeyError`
+- REF_M-only constants (`ANALYZER_IN`, `NEW_ANALYZER_IN`, `POLARIZER_IN`, `SUPERMIRROR_IN`)
+  must be accessed at **point-of-use** via `instrument.X`, never at module scope
+
+### Dataset class hierarchy
+- `LRDataset` (REF_L) **inherits from** `MRDataset` (REF_M) — same interface
+- Both expose `.dangle`, `.sangle`, `.dangle0`, `.dpix`, `.xdata`, `.xydata`, etc.
+- Always use `isinstance(data, MRDataset)` not `type(data) is MRDataset` when type-checking
+- REF_L has no DANGLE0 concept (always 0.0); uses TwoTheta/Theta motor names internally
+
+### UI label handling
+- `.ui` files use auto-generated widget names: `label_11`=DANGLE, `label_12`=SANGLE,
+  `label_13`=SANGLE-calc, `label_15`=DANGLE0
+- Do NOT edit `.ui` files for instrument-specific text — use `_updateInstrumentLabels()`
+  in `main_gui.py` to set labels at runtime based on `instrument.NAME`
+- Generated Python files (`docked_interface.py`, `default_interface.py`) should never be
+  hand-edited
+
+### SNS data directory quirks
+- `/SNS/REF_L/IPTS-*/data/` contains many **broken symlinks** (especially early run numbers)
+- Always filter with `os.path.isfile()` (follows symlinks, returns False for broken ones)
+  before attempting to open NXS files
+- `glob.glob()` returns broken symlinks — it matches the link name, not the target
+
+### Testing dual-instrument support
+```bash
+make gui INSTRUMENT=ref_l    # launch with REF_L config
+make gui INSTRUMENT=ref_m    # launch with REF_M config (default)
+make load-test FILE=/path/to/file.nxs
+make batch-load-test DIR=/path/to/data/ PATTERN="*_histo.nxs"
+```
+
 ## Diagnosing Memory Faults (OOM / SIGKILL / Exit 137)
 
 When investigating crashes caused by memory exhaustion (exit code 137 = SIGKILL from OOM killer):
