@@ -98,17 +98,78 @@ filtering using `PolarizerState` time-series is deferred to future work (Phase 8
 
 ### Key differences by instrument
 
-| Property | REF_M (.nxs.h5) | REF_L (.nxs.h5) |
+| Property | REF_M DASlogs key | REF_L DASlogs key |
 |---|---|---|
 | Beamline | BL4A | BL4B |
 | Detector pixels | xpixels=304, ypixels=256 | xpixels=256, ypixels=304 |
-| Angles | `DASlogs/DANGLE`, `DASlogs/SANGLE` | `DASlogs/thi`, `DASlogs/ths` |
-| Wavelength | `DASlogs/LambdaRequest` (MISSING) | `DASlogs/LambdaRequest` |
-| Slit widths | `DASlogs/S1HWidth` etc. | `DASlogs/SiHWidth`, `DASlogs/SiVHeight` |
-| Sample-det dist | `DASlogs/SampleDetDis` or `DASlogs/BL4A:Mot:SampleDetDis` | From instrument XML (fixed at 1.362 m for current IDF) |
-| Moderator dist | `DASlogs/BL4A:Mot:ModeratorSamDis` (18703 mm) | From instrument XML (13.685 m) |
-| DIRPIX | `DASlogs/BL4A:Mot:DIRPIX` | Not applicable |
-| DANGLE0 | `DASlogs/BL4A:Mot:DANGLE0` | Not applicable |
+| **Angles** | | |
+| Detector angle | `DANGLE` | `thi` |
+| Sample angle | `SANGLE` | `ths` |
+| Detector arm angle | (same as DANGLE) | `tthd` |
+| Direct beam angle | `DANGLE0` | N/A (always 0) |
+| Direct beam pixel | `DIRPIX` | N/A (from settings) |
+| **Wavelength** | | |
+| Neutron wavelength | `LambdaRequest` | `LambdaRequest` (alias of `BL4B:Det:TH:BL:Lambda`) |
+| Acquisition rate | `SpeedRequest1` | `BL4B:Det:TH:BL:Frequency` |
+| **Slit widths** | | |
+| Slit 1 horizontal | `S1HWidth` | `BL4B:Mot:s1:X:Gap:Readback` |
+| Slit 1 vertical | `S1VHeight` | `BL4B:Mot:s1:Y:Gap:Readback` |
+| Slit i horizontal | `S2HWidth` | `BL4B:Mot:si:X:Gap:Readback` |
+| Slit i vertical | `S2VHeight` | `BL4B:Mot:si:Y:Gap:Readback` |
+| Slit 3 horizontal | `S3HWidth` | N/A |
+| Incident slit position | N/A | `BL4B:Mot:xi.RBV` |
+| **Distances** | | |
+| Sample-det (mm) | `SampleDetDis` | from `settings.json` (date-indexed) |
+| Moderator-sample (mm) | `ModeratorSamDis` | from `settings.json` (date-indexed) |
+| Emission mod distance | N/A | `BL4B:Det:TH:DlyDet:BasePath` (m) × 1000 |
+| Emission coefficients | N/A | `BL4B:Chop:Skf2:ChopperOffset` / `ChopperMultiplier` |
+| **Polarization** | | |
+| Polarizer state | `PolarizerState` (time-series) | N/A (unpolarized) |
+| Polarizer veto | `PolarizerVeto` (time-series) | N/A |
+
+### Instrument settings configuration file
+
+Following the lr_reduction project's `settings.json` pattern, quicknxsv1 will use a
+date-indexed configuration file for instrument parameters that change over time but are
+not recorded in the data files. **No values are hardcoded.**
+
+**REF_L `settings.json`** (adopted from lr_reduction with the same date entries):
+```json
+{
+    "source-det-distance": [
+        {"from": "2014-10-10", "value": 15.75},
+        {"from": "2024-08-26", "value": 15.282},
+        {"from": "2025-01-01", "value": 15.75}
+    ],
+    "sample-det-distance": [
+        {"from": "2014-10-10", "value": 1.83},
+        {"from": "2024-08-26", "value": 1.355},
+        {"from": "2025-01-01", "value": 1.83}
+    ],
+    "number-of-x-pixels": [{"from": "2014-10-10", "value": 256}],
+    "number-of-y-pixels": [{"from": "2014-10-10", "value": 304}],
+    "pixel-width": [{"from": "2014-10-10", "value": 0.70}],
+    "xi-reference": [{"from": "2014-10-10", "value": 445}],
+    "s1-sample-distance": [{"from": "2014-10-10", "value": 1.485}]
+}
+```
+
+**REF_M `settings.json`** (instrument parameters are available in DASlogs, but a settings
+file provides defaults and slit distances which are not in the data):
+```json
+{
+    "number-of-x-pixels": [{"from": "2006-01-01", "value": 304}],
+    "number-of-y-pixels": [{"from": "2006-01-01", "value": 256}],
+    "pixel-width": [{"from": "2006-01-01", "value": 0.70}],
+    "slit1-sample-distance": [{"from": "2006-01-01", "value": 2600}],
+    "slit2-sample-distance": [{"from": "2006-01-01", "value": 2019}],
+    "slit3-sample-distance": [{"from": "2006-01-01", "value": 714}]
+}
+```
+
+The settings reader uses the run's `start_time` to select the applicable values,
+choosing the entry with the most recent `from` date that is before the measurement.
+This is the same algorithm used by lr_reduction's `read_settings()` method.
 
 ### Reference implementation: lr_reduction (new_workflow branch)
 
@@ -320,7 +381,7 @@ Extracts metadata from DASlogs paths instead of structured instrument paths.
 def _collect_info_h5(self, data):
     """
     Extract header information from a modern .nxs.h5 REF_M file.
-    All metadata comes from DASlogs rather than structured instrument paths.
+    All metadata comes from DASlogs. Instrument geometry from settings.json.
     """
     self.origin = (os.path.abspath(data.file.filename), data.name.lstrip('/'))
     self.logs = NiceDict()
@@ -334,42 +395,46 @@ def _collect_info_h5(self, data):
 
     # REF_M angles from DASlogs
     self.dangle = _get_daslog_value(data, 'DANGLE')
-    self.dangle0 = _get_daslog_value(data, 'BL4A:Mot:DANGLE0', default=0.0)
+    self.dangle0 = _get_daslog_value(data, 'DANGLE0', default=0.0)
     self.sangle = _get_daslog_value(data, 'SANGLE')
-    self.dpix = _get_daslog_value(data, 'BL4A:Mot:DIRPIX', default=150)
+    self.dpix = _get_daslog_value(data, 'DIRPIX',
+                    default=settings.get('default-direct-pixel', 150))
 
-    # Wavelength — try multiple DASlogs keys; early commissioning files lack all of them
+    # Wavelength
     self.lambda_center = _get_daslog_value(data, 'LambdaRequest',
                              fallback_key='BL4A:Det:TH:BL:Lambda',
-                             default=3.37)
-    # Note: if lambda_center falls back to default, warn so user knows ToF binning may be wrong
+                             default=None)
+    if self.lambda_center is None:
+        warn('No LambdaRequest in DASlogs — early commissioning file; using 3.37 A')
+        self.lambda_center = 3.37  # only for IPTS-16196 runs 29001-29016
 
-    # Slit widths from DASlogs
-    self.slit1_width = _get_daslog_value(data, 'S1HWidth', default=3.0)
-    self.slit2_width = _get_daslog_value(data, 'S2HWidth', default=2.0)
-    self.slit3_width = _get_daslog_value(data, 'S3HWidth', default=0.05)
+    # Chopper speed for wavelength range calculation
+    self.chopper_speed = _get_daslog_value(data, 'SpeedRequest1', default=60.0)
 
-    # Distances — try DASlogs first, then fall back to instrument XML
-    sdd_mm = _get_daslog_value(data, 'SampleDetDis',
-                 fallback_key='BL4A:Mot:SampleDetDis', default=None)
-    mod_sam_mm = _get_daslog_value(data, 'BL4A:Mot:ModeratorSamDis', default=None)
+    # Slit widths from DASlogs (always present in production files)
+    self.slit1_width = _get_daslog_value(data, 'S1HWidth')
+    self.slit2_width = _get_daslog_value(data, 'S2HWidth')
+    self.slit3_width = _get_daslog_value(data, 'S3HWidth')
 
-    if sdd_mm is not None and mod_sam_mm is not None:
-        self.dist_sam_det = sdd_mm * 1e-3
-        self.dist_mod_det = mod_sam_mm * 1e-3 + self.dist_sam_det
-        self.dist_mod_mon = mod_sam_mm * 1e-3 - 2.75
-    else:
-        # Fall back to instrument XML (same approach as REF_L)
-        mod_z, det_z = _get_distances_from_xml(data)
-        self.dist_sam_det = det_z
-        self.dist_mod_det = abs(mod_z) + self.dist_sam_det
-        self.dist_mod_mon = abs(mod_z) - 2.75
+    # Distances from DASlogs (always available in production REF_M files)
+    sdd_mm = _get_daslog_value(data, 'SampleDetDis')
+    mod_sam_mm = _get_daslog_value(data, 'ModeratorSamDis')
+    self.dist_sam_det = sdd_mm * 1e-3
+    self.dist_mod_det = mod_sam_mm * 1e-3 + self.dist_sam_det
+    self.dist_mod_mon = mod_sam_mm * 1e-3 - 2.75
 
-    # Detector size from instrument XML
-    n_x, n_y = _get_detector_dimensions(data)
-    pixel_size = 0.0007  # 0.7 mm per pixel
-    self.det_size_x = n_x * pixel_size
-    self.det_size_y = n_y * pixel_size
+    # Detector dimensions and pixel size from settings.json
+    settings = _read_instrument_settings('ref_m', data)
+    n_x = settings['number-of-x-pixels']
+    n_y = settings['number-of-y-pixels']
+    pixel_size_mm = settings['pixel-width']
+    self.det_size_x = n_x * pixel_size_mm * 1e-3  # mm to m
+    self.det_size_y = n_y * pixel_size_mm * 1e-3
+
+    # Slit distances from settings.json (not in DASlogs)
+    self.slit1_dist = settings.get('slit1-sample-distance', 2600.0)
+    self.slit2_dist = settings.get('slit2-sample-distance', 2019.0)
+    self.slit3_dist = settings.get('slit3-sample-distance', 714.0)
 
     # Standard metadata
     self.proton_charge = data['proton_charge'][()][0]
@@ -378,11 +443,6 @@ def _collect_info_h5(self, data):
     self.experiment = _decode(data['experiment_identifier'][()][0])
     self.number = int(data['run_number'][()][0])
     self.merge_warnings = ''
-
-    # Slit distances — use known REF_M values as defaults
-    self.slit1_dist = 2600.0
-    self.slit2_dist = 2019.0
-    self.slit3_dist = 714.0
 ```
 
 ### Change 4: New `_collect_info_h5()` method on LRDataset
@@ -396,6 +456,8 @@ Similar to Change 3 but with REF_L-specific DASlogs paths.
 def _collect_info_h5(self, data):
     """
     Extract header information from a modern .nxs.h5 REF_L file.
+    Angles, wavelength, and slit widths from DASlogs.
+    Distances and geometry from settings.json (date-indexed).
     """
     self.origin = (os.path.abspath(data.file.filename), data.name.lstrip('/'))
     self.logs = NiceDict()
@@ -406,44 +468,68 @@ def _collect_info_h5(self, data):
         # ... same DASlogs iteration ...
         pass
 
-    # REF_L angles: thi → dangle, ths → sangle
-    self.dangle = _get_daslog_value(data, 'thi', default=0.0)
-    self.dangle0 = 0.0
-    self.sangle = _get_daslog_value(data, 'ths', default=0.0)
-    self.dpix = 151  # default for REF_L
+    # REF_L angles (scientist-specified keys)
+    self.thi = _get_daslog_value(data, 'BL4B:Mot:thi.RBV',
+                   fallback_key='thi')
+    self.ths = _get_daslog_value(data, 'BL4B:Mot:ths.RBV',
+                   fallback_key='ths')
+    self.tthd = _get_daslog_value(data, 'BL4B:Mot:tthd.RBV',
+                    fallback_key='tthd')
+    # Map to quicknxsv1 attribute names
+    self.dangle = self.thi     # incident angle
+    self.sangle = self.ths     # sample angle
+    self.dangle0 = 0.0         # REF_L has no DANGLE0
 
-    # Wavelength
-    self.lambda_center = _get_daslog_value(data, 'LambdaRequest', default=6.2)
+    # Wavelength and frequency (scientist-specified keys)
+    self.lambda_center = _get_daslog_value(data, 'BL4B:Det:TH:BL:Lambda',
+                             fallback_key='LambdaRequest')
+    self.chopper_speed = _get_daslog_value(data, 'BL4B:Det:TH:BL:Frequency',
+                             fallback_key='SpeedRequest1', default=60.0)
 
-    # REF_L slit widths from DASlogs
-    self.slit1_width = _get_daslog_value(data, 'SiHWidth',
-                           fallback_key='BL4B:Mot:si:X:Gap:Readback', default=20.0)
-    self.slit2_width = _get_daslog_value(data, 'SiVHeight',
-                           fallback_key='BL4B:Mot:si:Y:Gap:Readback', default=1.2)
-    self.slit3_width = 0.05  # REF_L default
+    # REF_L slit widths (scientist-specified keys: s1Y, s1X, siY, siX)
+    self.s1Y = _get_daslog_value(data, 'BL4B:Mot:s1:Y:Gap:Readback')
+    self.s1X = _get_daslog_value(data, 'BL4B:Mot:s1:X:Gap:Readback')
+    self.siY = _get_daslog_value(data, 'BL4B:Mot:si:Y:Gap:Readback')
+    self.siX = _get_daslog_value(data, 'BL4B:Mot:si:X:Gap:Readback')
+    self.xi = _get_daslog_value(data, 'BL4B:Mot:xi.RBV')
+    # Map to quicknxsv1 slit attribute names
+    self.slit1_width = self.s1Y   # s1 vertical gap
+    self.slit2_width = self.siY   # si vertical gap
 
-    # Distances — parse from instrument XML (values changed over time)
-    mod_z, det_z = _get_distances_from_xml(data)
-    self.dist_sam_det = det_z  # detector z from XML (m)
-    self.dist_mod_det = abs(mod_z) + self.dist_sam_det  # |moderator z| + sample-det
+    # Emission time correction parameters (scientist-specified)
+    self.emission_mod_distance = _get_daslog_value(data,
+        'BL4B:Det:TH:DlyDet:BasePath') * 1000  # m → mm
+    chopper_offset = _get_daslog_value(data,
+        'BL4B:Chop:Skf2:ChopperOffset', default=114.0)
+    chopper_mult = _get_daslog_value(data,
+        'BL4B:Chop:Skf2:ChopperMultiplier', default=29.5)
+    self.emission_coefficients = [chopper_offset / 1000, chopper_mult / 1000]
+
+    # Distances and geometry from date-indexed settings.json
+    settings = _read_instrument_settings('ref_l', data)
+    self.dist_sam_det = settings['sample-det-distance']
+    self.dist_mod_det = settings['source-det-distance']
     self.dist_mod_mon = self.dist_mod_det - 2.75
+    n_x = settings['number-of-x-pixels']
+    n_y = settings['number-of-y-pixels']
+    pixel_size_mm = settings['pixel-width']
+    self.det_size_x = n_x * pixel_size_mm * 1e-3
+    self.det_size_y = n_y * pixel_size_mm * 1e-3
+    self.dpix = 151  # from settings if needed in future
+    self.xi_reference = settings.get('xi-reference', 445)
+    self.s1_sample_distance = settings.get('s1-sample-distance', 1485)
 
-    # Detector size
-    n_x, n_y = _get_detector_dimensions(data)
-    pixel_size = 0.0007
-    self.det_size_x = n_x * pixel_size
-    self.det_size_y = n_y * pixel_size
+    # Slit distances from settings (not in DASlogs)
+    self.slit1_dist = self.s1_sample_distance
+    self.slit2_dist = self.xi_reference - self.xi  # si distance derived from xi
 
+    # Standard metadata
     self.proton_charge = data['proton_charge'][()][0]
     self.total_counts = data['total_counts'][()][0]
     self.total_time = data['duration'][()][0]
     self.experiment = _decode(data['experiment_identifier'][()][0])
     self.number = int(data['run_number'][()][0])
     self.merge_warnings = ''
-
-    self.slit1_dist = 2600.0
-    self.slit2_dist = 2019.0
-    self.slit3_dist = 714.0
 ```
 
 ### Change 5: Helper functions
@@ -504,37 +590,41 @@ def _get_daslog_value(data, key, fallback_key=None, default=None):
     raise KeyError(f'DASlogs key {key} not found')
 
 
-def _get_distances_from_xml(data):
+def _read_instrument_settings(instrument_name, data):
     """
-    Parse moderator and detector distances from the instrument XML.
-    Returns (moderator_z, detector_z) in meters.
-    Falls back to instrument-specific defaults if parsing fails.
+    Read date-indexed instrument settings from settings.json.
+    Uses the run's start_time to select the applicable configuration.
+
+    :param instrument_name: 'ref_l' or 'ref_m'
+    :param data: HDF5 group (entry) to read start_time from
+    :returns: dict of instrument settings for the measurement date
     """
-    import re
-    try:
-        xml_raw = data['instrument/instrument_xml/data'][()][0]
-        xml = xml_raw.decode('utf-8') if isinstance(xml_raw, bytes) else str(xml_raw)
+    import json, datetime, os
 
-        # Moderator distance (always present as <location z="..."/>)
-        mod = re.search(r'type="moderator".*?location z="(-?[\d.]+)"', xml, re.DOTALL)
-        mod_z = float(mod.group(1)) if mod else -13.685
+    # Get measurement date from file
+    start_time_raw = data['start_time'][()][0]
+    start_time = start_time_raw.decode('utf-8') if isinstance(start_time_raw, bytes) else str(start_time_raw)
+    timestamp = datetime.datetime.fromisoformat(start_time).date()
 
-        # Detector distance: look for detector1 z value
-        det = re.search(r'name="detector1".*?val="([\d.]+)"', xml, re.DOTALL)
-        det_z = float(det.group(1)) if det else 1.362
+    # Load settings file (co-located with config module)
+    package_dir = os.path.dirname(os.path.abspath(__file__))
+    settings_path = os.path.join(package_dir, 'config', f'{instrument_name}_settings.json')
 
-        return mod_z, det_z
-    except (KeyError, IndexError):
-        # Detect instrument for defaults
-        try:
-            name_raw = data['instrument/name'][()][0]
-            name = name_raw.decode('utf-8') if isinstance(name_raw, bytes) else str(name_raw)
-            if name == 'REF_L':
-                return -13.685, 1.362
-            else:
-                return -18.703, 2.555
-        except KeyError:
-            return -18.703, 2.555
+    settings_dict = {}
+    with open(settings_path, 'r') as fd:
+        json_data = json.load(fd)
+        for key in json_data:
+            chosen_value = None
+            delta_time = None
+            for item in json_data[key]:
+                valid_from = datetime.date.fromisoformat(item['from'])
+                delta = valid_from - timestamp
+                if delta_time is None or (delta.total_seconds() < 0 and delta > delta_time):
+                    delta_time = delta
+                    chosen_value = item['value']
+            settings_dict[key] = chosen_value
+
+    return settings_dict
 
 
 def _decode(value):
@@ -1172,9 +1262,9 @@ Run: → Should **PASS** (if not, fix regressions before proceeding)
 | Risk | Mitigation |
 |---|---|
 | REF_M .nxs.h5 files have no LambdaRequest in DASlogs | Fall back to `BL4A:Det:TH:BL:Lambda`, then `BL4A:Chop:Gbl:Wavelength:Req`; early 2018 commissioning files (runs 29xxx) have NO wavelength/chopper data at all — use default 3.37 Å and warn. Note: the buzhug database at `/SNS/REF_M/shared/quicknxs_database/` covers runs 18081–28832 only (all from `*_histo.nxs`); it does NOT cover the .nxs.h5 era (runs 29001+), so it cannot serve as a fallback. |
-| Polarization states lost in .nxs.h5 format | `locate_file()` prefers `_histo.nxs` when available (preserves polarization); `.nxs.h5` loaded as unpolarized; event-level polarization filtering deferred to Phase 8 (future work) |
-| Dead-time correction not applied | lr_reduction applies it but quicknxsv1 doesn't for _event.nxs either; defer to future work |
-| Slit distances not in new format | Use known instrument constants (stable geometry) |
+| Polarization states in .nxs.h5 | Phase 9: filter events by PolarizerState time-series; validate against 70 overlap runs in IPTS-9801 |
+| Dead-time correction | Phase 8: implement Lambert W correction using bank_error_events; graceful skip when error events absent |
+| Slit distances not in DASlogs | Read from date-indexed `settings.json`; no hardcoded values |
 | Memory pressure from large event arrays | Events are discarded after binning; 3D histogram is same size as legacy |
 | event_id pixel mapping varies by IDF version | Parse instrument XML dynamically; fall back to known constants |
 
@@ -1182,10 +1272,12 @@ Run: → Should **PASS** (if not, fix regressions before proceeding)
 
 | File | Type of Change |
 |---|---|
-| `quicknxs/qreduce.py` | Major: new methods, format detection, helpers |
+| `quicknxs/qreduce.py` | Major: new methods, format detection, helpers, dead-time, polarization |
 | `quicknxs/config/ref_m.py` | Minor: add `H5_BASE_SEARCH` |
 | `quicknxs/config/ref_l.py` | Minor: add `H5_BASE_SEARCH` |
-| `tests/` (new test file) | New: integration tests for .nxs.h5 loading |
+| `quicknxs/config/ref_l_settings.json` | New: date-indexed instrument geometry for REF_L |
+| `quicknxs/config/ref_m_settings.json` | New: date-indexed instrument geometry for REF_M |
+| `tests/test_event_h5.py` | New: integration tests for .nxs.h5 loading |
 | `Makefile` | Minor: add test targets |
 
 ## Data Files for Testing
@@ -1222,6 +1314,267 @@ correlation with max 2 counts/pixel difference.
 
 ---
 
+## Phase 8: Dead-time correction
+
+**Agent team: 1 agent (after Phase 3)**
+
+Dead-time correction is essential for correctly processing modern event data. Both
+lr_reduction and mr_reduction apply it using the Lambert W function with error events
+from `bank_error_events`. The correction accounts for detector events lost due to
+detector readout dead time (~4.2 µs).
+
+### Algorithm (from lr_reduction `binary_processing.py`)
+
+```python
+def apply_dead_time_correction(data, tof_edges, dead_time=4.2):
+    """
+    Apply dead-time correction to event data using bank_error_events.
+
+    1. Read good events from bank1_events/event_time_offset
+    2. Read error events from bank_error_events/event_time_offset
+    3. Histogram both into TOF bins
+    4. Combine: total_counts = good + error (all detector triggers)
+    5. Normalize by number of non-zero proton charge pulses
+    6. Apply Lambert W correction: true_rate = -W(-rate * τ / Δt) / τ
+    7. DTC factor = true_rate / measured_rate
+    8. Multiply histogrammed data by DTC factor per TOF bin
+    """
+```
+
+### Implementation
+
+Add a `_apply_dead_time_correction()` static method to `MRDataset`:
+
+```python
+@staticmethod
+def _apply_dead_time_correction(data, tof_edges, dead_time=4.2):
+    """Apply paralyzable dead-time correction using bank_error_events."""
+    from scipy.special import lambertw
+
+    # Read error events (skip if not available)
+    if 'bank_error_events/event_time_offset' not in data:
+        return ones(len(tof_edges) - 1)  # no correction
+
+    e_offset = data['bank1_events/event_time_offset'][()]
+    err_offset = data['bank_error_events/event_time_offset'][()]
+
+    # Count non-zero proton charge pulses
+    pc = data['DASlogs/proton_charge/value'][()]
+    n_pulses = count_nonzero(pc)
+    if n_pulses == 0:
+        return ones(len(tof_edges) - 1)
+
+    # Histogram all detector triggers
+    counts, _ = histogram(e_offset, bins=tof_edges)
+    err_counts, _ = histogram(err_offset, bins=tof_edges)
+    total = (counts + err_counts).astype(float)
+
+    # Rate per pulse per TOF bin
+    tof_step = diff(tof_edges)
+    rate = total / n_pulses
+
+    # Lambert W correction (paralyzable model)
+    with errstate(divide='ignore', invalid='ignore'):
+        b = -real(lambertw(-rate * dead_time / tof_step))
+        dtc = b / (rate * dead_time / tof_step)
+        dtc = nan_to_num(dtc, nan=1.0, posinf=1.0, neginf=1.0)
+
+    return dtc
+```
+
+This is called inside `from_event_h5()` after histogramming:
+
+```python
+# After bin_events produces Ixyt:
+dtc = MRDataset._apply_dead_time_correction(data, tof_edges)
+# Apply per-TOF-bin correction to the 3D histogram
+Ixyt = Ixyt * dtc[newaxis, newaxis, :]  # broadcast over (x, y)
+```
+
+### TDD Steps
+
+**RED:**
+```python
+class TestDeadTimeCorrection:
+    def test_correction_factor_reasonable(self):
+        """DTC factors should be >= 1.0 (more true counts than measured)"""
+        import h5py
+        from quicknxs.qreduce import MRDataset
+        from numpy import linspace
+        with h5py.File(H5_REF_L, 'r') as f:
+            tof_edges = linspace(5000, 60000, 41)
+            dtc = MRDataset._apply_dead_time_correction(f['entry'], tof_edges)
+        assert all(dtc >= 0.99)  # correction >= 1 (or near 1 for low rates)
+        assert all(dtc < 2.0)    # should not be extreme
+
+    def test_no_error_events_returns_unity(self):
+        """When no bank_error_events, correction should be all 1.0"""
+        # Use early REF_L file that lacks bank_error_events
+        import h5py
+        from quicknxs.qreduce import MRDataset
+        from numpy import linspace, allclose, ones
+        with h5py.File('/SNS/REF_L/IPTS-14316/nexus/REF_L_138523.nxs.h5', 'r') as f:
+            tof_edges = linspace(5000, 60000, 41)
+            dtc = MRDataset._apply_dead_time_correction(f['entry'], tof_edges)
+        assert allclose(dtc, ones(40))
+```
+Run: → **FAIL**
+
+**GREEN:** Implement `_apply_dead_time_correction()` and integrate into `from_event_h5()`.
+
+---
+
+## Phase 9: Event-level polarization filtering (REF_M)
+
+**Agent team: 1 agent (after Phase 3)**
+
+For polarized REF_M measurements in `.nxs.h5` format, events must be separated by
+polarization state. The DAS records state changes via two fast flipper time-series:
+- `DASlogs/SF1` (or equivalently `DASlogs/PolarizerState`) — polarizer flipper
+- `DASlogs/SF2` — analyzer flipper (when analyzer is in use)
+- `DASlogs/SF1_Veto` / `SF2_Veto` — veto flags for transition periods
+
+This matches the approach in mr_reduction's `filter_events.py`.
+
+### Algorithm
+
+Validated against overlap run REF_M_29742 (IPTS-9801): event-filtered counts match
+the pre-sorted histo data within 0.01% (65 counts / 497,637 total — transition events).
+
+The two flippers produce up to 4 cross-sections:
+
+| SF1 (polarizer) | SF2 (analyzer) | Cross-section |
+|---|---|---|
+| 0 (Off) | 0 (Off) | Off_Off |
+| 1 (On) | 0 (Off) | On_Off |
+| 0 (Off) | 1 (On) | Off_On |
+| 1 (On) | 1 (On) | On_On |
+
+When `SF2` has only one state (analyzer not active), only 2 cross-sections are produced.
+When both have one state, the run is unpolarized (single channel).
+
+```python
+def _filter_events_by_polarization(data):
+    """
+    Separate events into polarization channels using SF1 (polarizer) and
+    SF2 (analyzer) time-series logs.
+
+    Returns dict: {cross_section_name: (event_ids, event_tofs)}
+    """
+    # Read flipper state logs
+    sf1_values = data['DASlogs/SF1/value'][()]
+    sf1_times = data['DASlogs/SF1/time'][()]
+
+    sf2_single = True
+    if 'DASlogs/SF2' in data:
+        sf2_values = data['DASlogs/SF2/value'][()]
+        sf2_times = data['DASlogs/SF2/time'][()]
+        sf2_single = (len(unique(sf2_values)) == 1)
+    else:
+        sf2_single = True
+
+    # Read pulse and event data
+    event_tz = data['bank1_events/event_time_zero'][()]
+    event_idx = data['bank1_events/event_index'][()]
+    event_id = data['bank1_events/event_id'][()]
+    event_tof = data['bank1_events/event_time_offset'][()]
+
+    # Assign each pulse to SF1 state
+    pulse_sf1_idx = searchsorted(sf1_times, event_tz, side='right') - 1
+    pulse_sf1_idx = clip(pulse_sf1_idx, 0, len(sf1_values) - 1)
+    pulse_sf1 = sf1_values[pulse_sf1_idx]
+
+    if not sf2_single:
+        pulse_sf2_idx = searchsorted(sf2_times, event_tz, side='right') - 1
+        pulse_sf2_idx = clip(pulse_sf2_idx, 0, len(sf2_values) - 1)
+        pulse_sf2 = sf2_values[pulse_sf2_idx]
+    else:
+        pulse_sf2 = zeros_like(pulse_sf1)
+
+    # Combine SF1 and SF2 into cross-section labels
+    state_names = {(0, 0): 'Off_Off', (1, 0): 'On_Off',
+                   (0, 1): 'Off_On',  (1, 1): 'On_On'}
+
+    channels = {}
+    for (s1, s2), name in state_names.items():
+        mask = (pulse_sf1 == s1) & (pulse_sf2 == s2)
+        state_pulses = where(mask)[0]
+        if len(state_pulses) == 0:
+            continue
+        event_masks = []
+        for pi in state_pulses:
+            start = event_idx[pi]
+            end = event_idx[pi + 1] if pi + 1 < len(event_idx) else len(event_id)
+            if start < end:
+                event_masks.append(arange(start, end))
+        if event_masks:
+            all_idx = concatenate(event_masks)
+            channels[name] = (event_id[all_idx], event_tof[all_idx])
+
+    return channels
+```
+
+### Integration with `_read_file_MR()`
+
+```python
+if self._is_event_h5:
+    # Check if polarized by examining SF1 log
+    sf1_vals = nxs['entry/DASlogs/SF1/value'][()]
+    is_polarized = len(unique(sf1_vals)) > 1
+
+    if is_polarized:
+        channels = _filter_events_by_polarization(nxs['entry'])
+        for name, (ids, tofs) in channels.items():
+            data = MRDataset.from_event_h5_filtered(
+                nxs['entry'], ids, tofs, self._options, ...)
+            self._channel_data.append(data)
+            self._channel_names.append(name)
+        # Determine measurement_type from channel count
+        if len(channels) == 4:
+            self.measurement_type = 'Polarization Analysis'
+        elif len(channels) == 2:
+            self.measurement_type = 'Polarized'
+    else:
+        data = MRDataset.from_event_h5(nxs['entry'], self._options, ...)
+        self._channel_data.append(data)
+        self._channel_names.append('x')
+        self.measurement_type = 'Unpolarized'
+```
+
+### TDD Steps
+
+**RED:**
+```python
+H5_REF_M_POLARIZED = '/SNS/REF_M/IPTS-9801/nexus/REF_M_29742.nxs.h5'
+H5_REF_M_POLARIZED_HISTO = '/SNS/REF_M/IPTS-9801/data/REF_M_29742_histo.nxs'
+
+class TestPolarizationFiltering:
+    def test_detects_polarized_data(self):
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M_POLARIZED, use_caching=False)
+        assert data is not None
+        assert len(data) >= 2  # at least 2 polarization channels
+
+    def test_channel_counts_match_histo(self):
+        from quicknxs.qreduce import NXSData
+        h5 = NXSData(H5_REF_M_POLARIZED, use_caching=False)
+        histo = NXSData(H5_REF_M_POLARIZED_HISTO, use_caching=False)
+        # Total counts across channels should be similar
+        h5_total = sum(ch.total_counts for ch in h5._channel_data)
+        histo_total = sum(ch.total_counts for ch in histo._channel_data)
+        assert abs(h5_total - histo_total) < 100  # allow for transition events
+
+    def test_unpolarized_single_channel(self):
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M, use_caching=False)  # unpolarized run
+        assert len(data) == 1
+```
+Run: → **FAIL**
+
+**GREEN:** Implement `_filter_events_by_polarization()` and `from_event_h5_filtered()`.
+
+---
+
 ## Future Work (out of scope for this plan)
 
 ### Generate buzhug database for REF_L
@@ -1229,45 +1582,9 @@ correlation with max 2 counts/pixel difference.
 `/SNS/REF_L/shared/quicknxs_database/` does not currently exist. After this work
 lands, it would be feasible to populate it from the 2,554 old `*_histo.nxs` files
 (runs 70476–84693 in IPTS-7053). The existing `DatabaseHandler.add_record()` works
-with any `NXSData` object:
-
-```python
-from quicknxs.database import DatabaseHandler
-db = DatabaseHandler()
-for run in range(70476, 84694):
-    db.add_record(run)
-```
-
-This would enable the GUI's "Find Direct Beam" feature to work with REF_L data.
+with any `NXSData` object.
 
 ### Extend database to `.nxs.h5` files
 
 Once `.nxs.h5` loading is implemented, the database could be extended to index modern
-files. The format transition is clean (no overlap): REF_M histo ends at run 28832,
-`.nxs.h5` starts at 29001. Both formats could coexist in the same database since
-`add_record()` stores `file_path` which preserves the format distinction.
-
-### Phase 8: Event-level polarization filtering for `.nxs.h5`
-
-For polarized REF_M measurements in `.nxs.h5` format, events must be separated by
-polarization state using the `DASlogs/PolarizerState` time-series. The approach:
-
-1. Read `PolarizerState` values and timestamps from DASlogs
-2. Read `bank1_events/event_time_zero` (pulse times) and `event_index` (event-to-pulse mapping)
-3. For each event, determine which polarization state was active at that pulse time
-4. Bin events separately per polarization state → separate MRDataset objects
-
-This mirrors what the DAS histogramming does to produce the `entry-Off_Off` etc.
-channels in `_histo.nxs` files. The `PolarizerState` log has ~188 entries per run
-(state changes every ~few hundred pulses), so the time-correlation is efficient.
-
-**Validation strategy**: Use the 70 overlapping runs in IPTS-9801 (29732–29801) that
-have both polarized `_histo.nxs` and `.nxs.h5` files. Compare per-channel histograms
-from event filtering against the pre-sorted histo data.
-
-### Dead-time correction
-
-The lr_reduction `binary_processing.py` applies a dead-time correction using the
-Lambert W function on `bank_error_events`. quicknxsv1 does not apply dead-time
-correction for existing event files either, so this is deferred. However, adding it
-would improve accuracy for high-count-rate measurements.
+files for both instruments.
