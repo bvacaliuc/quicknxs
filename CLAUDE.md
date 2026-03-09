@@ -162,6 +162,41 @@ has completed — or configure the PR for auto-merge at creation time and move o
 - The `GITHUB_TOKEN` anti-loop rule suppresses push events from actions using that token;
   any workflow that creates branches and needs CI to run on them must use a PAT instead
 
+## Modern Event NeXus (.nxs.h5) Support
+
+The comprehensive plan for adding `.nxs.h5` support is at `plan/read-event-nexus-h5.md`.
+
+### File format summary
+
+| Format | Extension | Data | Era |
+|---|---|---|---|
+| Legacy histogram | `*_histo.nxs` | Pre-binned 3D array | All runs through ~2018 |
+| Legacy event | `*_event.nxs` | Events pre-sorted by polarization | Subset of above |
+| Modern event | `*.nxs.h5` | Raw events, single entry | 2016+ (REF_L), 2018+ (REF_M) |
+
+### Key architectural decisions
+
+- Events are binned into the same `(x, y, tof)` 3D histogram that `from_histogram()`
+  produces — all downstream code works unchanged
+- No hardcoded instrument values — geometry from date-indexed `settings.json` files
+- Metadata from `DASlogs/` (not structured instrument paths, which don't exist in `.nxs.h5`)
+- `locate_file()` prefers `_histo.nxs` when both formats exist (preserves polarization)
+- Dead-time correction via Lambert W function using `bank_error_events`
+- Polarization filtering via `SF1`/`SF2` time-series for REF_M
+
+### Related projects
+
+- **lr_reduction** (branch `new_workflow`): Reference implementation for REF_L `.nxs.h5`
+  reading using pure numpy/h5py. Key file: `binary_processing.py`
+- **mr_reduction** (branch `next`): Reference for REF_M event filtering and polarization.
+  Uses Mantid algorithms but the metadata extraction patterns apply.
+
+### Test data for development
+
+Files in `/SNS/REF_M/` and `/SNS/REF_L/` are accessed via sshfs mounts. See the
+parent project's `CLAUDE.md` for network mount handling rules. Key test files are
+cataloged in the plan with expected values for validation.
+
 ## Diagnosing Memory Faults (OOM / SIGKILL / Exit 137)
 
 When investigating crashes caused by memory exhaustion (exit code 137 = SIGKILL from OOM killer):
