@@ -544,5 +544,5 @@ Claude updated the plan in [read-event-nexus-h5.md](read-event-nexus-h5.md).
 
 In the last couple days, several edits and revisions were made to lr_reduction new_workflow branch. Please review those edits in the git log and determine what if any revisions are needed for the plan to process REF_L data following the commissioning and calibration work for the Cd actuators.
 
-I include Claude's response in (prompt-22.5-review.md)[prompt-22.5-review.md]
+I include Claude's response in [prompt-22.5-review.md](prompt-22.5-review.md)
 
