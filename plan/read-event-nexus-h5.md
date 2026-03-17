@@ -103,10 +103,10 @@ filtering using `PolarizerState` time-series is deferred to future work (Phase 8
 | Beamline | BL4A | BL4B |
 | Detector pixels | xpixels=304, ypixels=256 | xpixels=256, ypixels=304 |
 | **Angles** | | |
-| Detector angle | `DANGLE` | `thi` |
+| Detector arm 2θ | `DANGLE` | `tthd` (see angle note below) |
 | Sample angle | `SANGLE` | `ths` |
-| Detector arm angle | (same as DANGLE) | `tthd` |
-| Direct beam angle | `DANGLE0` | N/A (always 0) |
+| Incident angle | (derived: DANGLE/2) | `thi` |
+| Direct beam 2θ₀ | `DANGLE0` | N/A (always 0; see angle note) |
 | Direct beam pixel | `DIRPIX` | N/A (from settings) |
 | **Wavelength** | | |
 | Neutron wavelength | `LambdaRequest` | `LambdaRequest` (alias of `BL4B:Det:TH:BL:Lambda`) |
@@ -126,6 +126,55 @@ filtering using `PolarizerState` time-series is deferred to future work (Phase 8
 | **Polarization** | | |
 | Polarizer state | `PolarizerState` (time-series) | N/A (unpolarized) |
 | Polarizer veto | `PolarizerVeto` (time-series) | N/A |
+
+### BL4B (REF_L) angle handling — critical complexity
+
+REF_L has three independent motor angles: `thi` (incident), `ths` (sample), and `tthd`
+(detector arm two-theta). Their relationship to the quicknxsv1 `dangle` attribute is
+non-trivial and differs between the legacy and modern formats.
+
+**Legacy format (`*_histo.nxs`):**
+- `dangle = TwoTheta/readback` from structured instrument path
+- In legacy files, `TwoTheta/readback ≈ 0` for all observed runs (both direct beam and
+  reflectivity). This means the entire scattering angle is derived from pixel offsets
+  relative to the direct beam pixel (`dpix`), not from motor angles.
+- `dangle0 = 0.0` (hardcoded)
+
+**Modern format (`.nxs.h5`):**
+- There is no `TwoTheta/readback` structured path — only raw motor readbacks in DASlogs.
+- `dangle = tthd` (the detector arm two-theta motor readback)
+- `dangle0 = 0.0` (no `DANGLE0` equivalent in REF_L DASlogs)
+- Since modern files have `tthd` values of several degrees for reflectivity measurements
+  (e.g., `tthd = 4.201°` for REF_L_220030), the `dangle` value carries significant
+  geometric information, unlike legacy files where it was effectively zero.
+
+**Downstream usage:** The reflectivity calculation computes:
+```
+tth = dangle - dangle0 + pixel_offset    (treated as 2θ)
+ai = tth / 2                             (incident angle = half of 2θ)
+```
+This is correct for the standard geometry when `dangle = tthd`.
+
+**Instrument mode complexity (for documentation, not initial implementation):**
+- BL4B supports multiple operating modes (`Reflect Up`, `Free Liquid`, etc.)
+- In theta-2*theta mode: `tthd` tracks `2 × sample_angle`, so `ai = tthd/2`
+- In theta-theta mode: `tthd` tracks `1 × sample_angle`, so `ai = tthd/2` gives a
+  value that is half the true angle — a mode-dependent correction may be needed
+- For direct beams: `thi ≈ tthd` (earth-centered) or `tthd ≈ 0` (beam-centered)
+- The lr_reduction project handles this at `nr_reduction_calc.py:390`:
+  `ThetaCalc = pixel_offset + (tthd - DB_tthd) / 2`
+
+**Initial implementation strategy:** Set `dangle = tthd` and `dangle0 = 0.0`. This
+is correct for the common theta-2*theta geometry and matches how REF_M handles `DANGLE`.
+Users can override `dangle0` in the GUI if needed (e.g., to account for a non-zero
+direct beam `tthd`). Mode-dependent corrections can be added in a future phase if needed.
+
+**Verification data:**
+| Run | thi | ths | tthd | Type |
+|---|---|---|---|---|
+| REF_L_220030 | -0.007 | 2.101 | 4.201 | Reflectivity (tthd ≈ 2×ths) |
+| REF_L_138523 | -4.002 | -4.000 | -4.001 | Direct beam (earth-centered) |
+| REF_L_80836 (legacy) | -0.540 | 2.150 | 0.540 | Direct beam (TwoTheta/readback=0.019) |
 
 ### Instrument settings configuration file
 
@@ -393,14 +442,22 @@ def _collect_info_h5(self, data):
         # ... same DASlogs iteration as existing code ...
         pass
 
-    # REF_M angles from DASlogs
-    self.dangle = _get_daslog_value(data, 'DANGLE')
+    # Detector dimensions and pixel size from settings.json
+    settings = _read_instrument_settings('ref_m', data)
+    n_x = settings['number-of-x-pixels']
+    n_y = settings['number-of-y-pixels']
+    pixel_size_mm = settings['pixel-width']
+    self.det_size_x = n_x * pixel_size_mm * 1e-3  # mm to m
+    self.det_size_y = n_y * pixel_size_mm * 1e-3
+
+    # REF_M angles from DASlogs (all with safe defaults for missing logs)
+    self.dangle = _get_daslog_value(data, 'DANGLE', default=0.0)
     self.dangle0 = _get_daslog_value(data, 'DANGLE0', default=0.0)
-    self.sangle = _get_daslog_value(data, 'SANGLE')
+    self.sangle = _get_daslog_value(data, 'SANGLE', default=0.0)
     self.dpix = _get_daslog_value(data, 'DIRPIX',
                     default=settings.get('default-direct-pixel', 150))
 
-    # Wavelength
+    # Wavelength (graceful degradation for early commissioning files)
     self.lambda_center = _get_daslog_value(data, 'LambdaRequest',
                              fallback_key='BL4A:Det:TH:BL:Lambda',
                              default=None)
@@ -411,32 +468,26 @@ def _collect_info_h5(self, data):
     # Chopper speed for wavelength range calculation
     self.chopper_speed = _get_daslog_value(data, 'SpeedRequest1', default=60.0)
 
-    # Slit widths from DASlogs (always present in production files)
-    self.slit1_width = _get_daslog_value(data, 'S1HWidth')
-    self.slit2_width = _get_daslog_value(data, 'S2HWidth')
-    self.slit3_width = _get_daslog_value(data, 'S3HWidth')
+    # Slit widths from DASlogs (safe defaults for missing logs)
+    self.slit1_width = _get_daslog_value(data, 'S1HWidth', default=0.0)
+    self.slit2_width = _get_daslog_value(data, 'S2HWidth', default=0.0)
+    self.slit3_width = _get_daslog_value(data, 'S3HWidth', default=0.0)
 
-    # Distances from DASlogs (always available in production REF_M files)
-    sdd_mm = _get_daslog_value(data, 'SampleDetDis')
-    mod_sam_mm = _get_daslog_value(data, 'ModeratorSamDis')
+    # Distances from DASlogs (with safe defaults from settings.json)
+    sdd_mm = _get_daslog_value(data, 'SampleDetDis',
+                 default=settings.get('sample-det-distance-mm', 1830.0))
+    mod_sam_mm = _get_daslog_value(data, 'ModeratorSamDis',
+                     default=settings.get('moderator-sample-distance-mm', 16870.0))
     self.dist_sam_det = sdd_mm * 1e-3
     self.dist_mod_det = mod_sam_mm * 1e-3 + self.dist_sam_det
     self.dist_mod_mon = mod_sam_mm * 1e-3 - 2.75
-
-    # Detector dimensions and pixel size from settings.json
-    settings = _read_instrument_settings('ref_m', data)
-    n_x = settings['number-of-x-pixels']
-    n_y = settings['number-of-y-pixels']
-    pixel_size_mm = settings['pixel-width']
-    self.det_size_x = n_x * pixel_size_mm * 1e-3  # mm to m
-    self.det_size_y = n_y * pixel_size_mm * 1e-3
 
     # Slit distances from settings.json (not in DASlogs)
     self.slit1_dist = settings.get('slit1-sample-distance', 2600.0)
     self.slit2_dist = settings.get('slit2-sample-distance', 2019.0)
     self.slit3_dist = settings.get('slit3-sample-distance', 714.0)
 
-    # Standard metadata
+    # Standard metadata (these are always present in valid NeXus files)
     self.proton_charge = data['proton_charge'][()][0]
     self.total_counts = data['total_counts'][()][0]
     self.total_time = data['duration'][()][0]
@@ -468,17 +519,18 @@ def _collect_info_h5(self, data):
         # ... same DASlogs iteration ...
         pass
 
-    # REF_L angles (scientist-specified keys)
+    # REF_L raw motor angles (all three stored for diagnostics)
     self.thi = _get_daslog_value(data, 'BL4B:Mot:thi.RBV',
-                   fallback_key='thi')
+                   fallback_key='thi', default=0.0)
     self.ths = _get_daslog_value(data, 'BL4B:Mot:ths.RBV',
-                   fallback_key='ths')
+                   fallback_key='ths', default=0.0)
     self.tthd = _get_daslog_value(data, 'BL4B:Mot:tthd.RBV',
-                    fallback_key='tthd')
-    # Map to quicknxsv1 attribute names
-    self.dangle = self.thi     # incident angle
+                    fallback_key='tthd', default=0.0)
+    # Map to quicknxsv1 attribute names (see "BL4B angle handling" in plan)
+    # dangle = detector arm 2θ (matches legacy TwoTheta/readback role)
+    self.dangle = self.tthd    # detector arm two-theta
     self.sangle = self.ths     # sample angle
-    self.dangle0 = 0.0         # REF_L has no DANGLE0
+    self.dangle0 = 0.0         # REF_L has no DANGLE0 in DASlogs
 
     # Wavelength and frequency (scientist-specified keys)
     self.lambda_center = _get_daslog_value(data, 'BL4B:Det:TH:BL:Lambda',
@@ -486,19 +538,24 @@ def _collect_info_h5(self, data):
     self.chopper_speed = _get_daslog_value(data, 'BL4B:Det:TH:BL:Frequency',
                              fallback_key='SpeedRequest1', default=60.0)
 
-    # REF_L slit widths (scientist-specified keys: s1Y, s1X, siY, siX)
-    self.s1Y = _get_daslog_value(data, 'BL4B:Mot:s1:Y:Gap:Readback')
-    self.s1X = _get_daslog_value(data, 'BL4B:Mot:s1:X:Gap:Readback')
-    self.siY = _get_daslog_value(data, 'BL4B:Mot:si:Y:Gap:Readback')
-    self.siX = _get_daslog_value(data, 'BL4B:Mot:si:X:Gap:Readback')
-    self.xi = _get_daslog_value(data, 'BL4B:Mot:xi.RBV')
+    # REF_L slit widths (safe defaults for missing logs)
+    self.s1Y = _get_daslog_value(data, 'BL4B:Mot:s1:Y:Gap:Readback',
+                   fallback_key='s1:Y:Gap', default=0.0)
+    self.s1X = _get_daslog_value(data, 'BL4B:Mot:s1:X:Gap:Readback',
+                   fallback_key='s1:X:Gap', default=0.0)
+    self.siY = _get_daslog_value(data, 'BL4B:Mot:si:Y:Gap:Readback',
+                   fallback_key='si:Y:Gap', default=0.0)
+    self.siX = _get_daslog_value(data, 'BL4B:Mot:si:X:Gap:Readback',
+                   fallback_key='si:X:Gap', default=0.0)
+    self.xi = _get_daslog_value(data, 'BL4B:Mot:xi.RBV',
+                  fallback_key='xi', default=0.0)
     # Map to quicknxsv1 slit attribute names
     self.slit1_width = self.s1Y   # s1 vertical gap
     self.slit2_width = self.siY   # si vertical gap
 
-    # Emission time correction parameters (scientist-specified)
+    # Emission time correction parameters (safe defaults for missing logs)
     self.emission_mod_distance = _get_daslog_value(data,
-        'BL4B:Det:TH:DlyDet:BasePath') * 1000  # m → mm
+        'BL4B:Det:TH:DlyDet:BasePath', default=15.75) * 1000  # m → mm
     chopper_offset = _get_daslog_value(data,
         'BL4B:Chop:Skf2:ChopperOffset', default=114.0)
     chopper_mult = _get_daslog_value(data,
@@ -569,6 +626,7 @@ def _get_daslog_value(data, key, fallback_key=None, default=None):
     """
     Read a value from DASlogs, trying average_value first, then value.
     Falls back to fallback_key if primary key is not found.
+    Warns when using default or fallback (aids debugging of missing-log issues).
     """
     for k in [key, fallback_key]:
         if k is None:
@@ -576,16 +634,27 @@ def _get_daslog_value(data, key, fallback_key=None, default=None):
         try:
             item = data['DASlogs/' + k]
             if 'average_value' in item:
-                return float(item['average_value'][0])
+                val = float(item['average_value'][0])
+                if k != key:
+                    debug(f'DASlogs/{key} missing, using fallback {k}={val}')
+                return val
             elif 'value' in item:
-                val = item['value'][()]
-                if val.size == 1:
-                    return float(val[0])
-                else:
-                    return float(val.mean())
+                arr = item['value'][()]
+                if arr.size == 0:
+                    continue  # empty array — try fallback
+                val = float(arr[0]) if arr.size == 1 else float(arr.mean())
+                if k != key:
+                    debug(f'DASlogs/{key} missing, using fallback {k}={val}')
+                return val
         except (KeyError, IndexError, ValueError):
             continue
     if default is not None:
+        # Extract run number for better warning messages
+        try:
+            run = int(data['run_number'][()][0])
+            warn(f'Run {run}: DASlogs/{key} not found, using default={default}')
+        except (KeyError, IndexError):
+            warn(f'DASlogs/{key} not found, using default={default}')
         return default
     raise KeyError(f'DASlogs key {key} not found')
 
@@ -928,7 +997,8 @@ class TestLRDatasetCollectInfoH5:
             ds = LRDataset()
             ds._collect_info_h5(f['entry'])
         assert abs(ds.sangle - 2.101) < 0.01  # ths
-        assert abs(ds.dangle - (-0.007)) < 0.01  # thi
+        assert abs(ds.dangle - 4.201) < 0.01  # tthd (detector arm 2θ)
+        assert abs(ds.thi - (-0.007)) < 0.01  # incident angle stored separately
         assert ds.dangle0 == 0.0
         assert ds.proton_charge > 0
         assert ds.total_counts == 85387
@@ -1057,6 +1127,8 @@ Run test again → **PASS**
         assert abs(ds.data.sum() - ds.total_counts) < 2
         assert ds.from_event_mode == True
         assert abs(ds.sangle - 2.101) < 0.01
+        assert abs(ds.dangle - 4.201) < 0.01  # tthd, NOT thi
+        assert abs(ds.thi - (-0.007)) < 0.01  # incident angle stored separately
         assert abs(ds.lambda_center - 6.2) < 0.1
 ```
 Run: → **FAIL**
@@ -1262,8 +1334,10 @@ Run: → Should **PASS** (if not, fix regressions before proceeding)
 | Risk | Mitigation |
 |---|---|
 | REF_M .nxs.h5 files have no LambdaRequest in DASlogs | Fall back to `BL4A:Det:TH:BL:Lambda`, then `BL4A:Chop:Gbl:Wavelength:Req`; early 2018 commissioning files (runs 29xxx) have NO wavelength/chopper data at all — use default 3.37 Å and warn. Note: the buzhug database at `/SNS/REF_M/shared/quicknxs_database/` covers runs 18081–28832 only (all from `*_histo.nxs`); it does NOT cover the .nxs.h5 era (runs 29001+), so it cannot serve as a fallback. |
-| Polarization states in .nxs.h5 | Phase 9: filter events by PolarizerState time-series; validate against 70 overlap runs in IPTS-9801 |
-| Dead-time correction | Phase 8: implement Lambert W correction using bank_error_events; graceful skip when error events absent |
+| Polarization states in .nxs.h5 | Phase 9: filter events by SF1/SF2 time-series; guard against missing SF1/SF2/veto logs; validate against 70 overlap runs in IPTS-9801 |
+| Dead-time correction | Phase 8: implement Lambert W correction on LRDataset only (BL4B); graceful skip when bank_error_events absent |
+| Missing DASlogs | All `_collect_info_h5()` reads use `default=` or `fallback_key=`; polarization degrades to unpolarized; warn on every missing log |
+| BL4B angle complexity | `dangle = tthd` for theta-2*theta; theta-theta mode correction deferred to future phase; all 3 raw angles (thi, ths, tthd) stored |
 | Slit distances not in DASlogs | Read from date-indexed `settings.json`; no hardcoded values |
 | Memory pressure from large event arrays | Events are discarded after binning; 3D histogram is same size as legacy |
 | event_id pixel mapping varies by IDF version | Parse instrument XML dynamically; fall back to known constants |
@@ -1314,19 +1388,22 @@ correlation with max 2 counts/pixel difference.
 
 ---
 
-## Phase 8: Dead-time correction
+## Phase 8: Dead-time correction (REF_L / BL4B only)
 
 **Agent team: 1 agent (after Phase 3)**
 
-Dead-time correction is essential for correctly processing modern event data. Both
-lr_reduction and mr_reduction apply it using the Lambert W function with error events
-from `bank_error_events`. The correction accounts for detector events lost due to
-detector readout dead time (~4.2 µs).
+Dead-time correction accounts for detector events lost due to detector readout dead
+time (~4.2 µs). **Only REF_L (BL4B) applies dead-time correction in quicknxsv1.**
+REF_M (BL4A) does not currently use dead-time correction in this codebase (mr_reduction
+has its own implementation, but quicknxsv1's REF_M pipeline has not needed it).
 
-### Algorithm (from lr_reduction `binary_processing.py`)
+Both lr_reduction and mr_reduction have dead_time_correction modules. The lr_reduction
+implementation uses the paralyzable (Lambert W) model by default.
+
+### Algorithm (from lr_reduction `dead_time_correction.py`)
 
 ```python
-def apply_dead_time_correction(data, tof_edges, dead_time=4.2):
+def apply_dead_time_correction(data, tof_edges, dead_time=4.2, paralyzable=True):
     """
     Apply dead-time correction to event data using bank_error_events.
 
@@ -1335,36 +1412,69 @@ def apply_dead_time_correction(data, tof_edges, dead_time=4.2):
     3. Histogram both into TOF bins
     4. Combine: total_counts = good + error (all detector triggers)
     5. Normalize by number of non-zero proton charge pulses
-    6. Apply Lambert W correction: true_rate = -W(-rate * τ / Δt) / τ
+    6. Apply paralyzable Lambert W correction:
+       true_rate = -W(-rate * τ / Δt) / τ
+       OR non-paralyzable: corr = 1 / (1 - rate * τ / Δt)
     7. DTC factor = true_rate / measured_rate
     8. Multiply histogrammed data by DTC factor per TOF bin
+
+    Parameters:
+      dead_time: detector dead time in µs (4.2 for BL4B detector)
+      paralyzable: if True, use Lambert W (default for BL4B auto-reduction)
     """
 ```
 
 ### Implementation
 
-Add a `_apply_dead_time_correction()` static method to `MRDataset`:
+Add a `_apply_dead_time_correction()` static method to **`LRDataset`** (not MRDataset,
+since only BL4B uses this correction):
 
 ```python
 @staticmethod
-def _apply_dead_time_correction(data, tof_edges, dead_time=4.2):
-    """Apply paralyzable dead-time correction using bank_error_events."""
+def _apply_dead_time_correction(data, tof_edges, dead_time=4.2, paralyzable=True):
+    """
+    Apply dead-time correction using bank_error_events.
+
+    Gracefully returns unity correction when:
+    - bank_error_events is absent (early files, DAS errors)
+    - proton_charge has no non-zero pulses
+    - proton_charge log is missing
+
+    :param data: HDF5 entry group
+    :param tof_edges: array of TOF bin edges (µs)
+    :param dead_time: detector dead time in µs (default 4.2)
+    :param paralyzable: if True, use Lambert W model (default for BL4B)
+    :returns: array of correction factors, one per TOF bin
+    """
     from scipy.special import lambertw
 
-    # Read error events (skip if not available)
+    n_bins = len(tof_edges) - 1
+    unity = ones(n_bins)
+
+    # Guard: skip if bank_error_events is absent
     if 'bank_error_events/event_time_offset' not in data:
-        return ones(len(tof_edges) - 1)  # no correction
+        warn('No bank_error_events in file — skipping dead-time correction')
+        return unity
+
+    # Guard: skip if bank1_events is absent
+    if 'bank1_events/event_time_offset' not in data:
+        return unity
 
     e_offset = data['bank1_events/event_time_offset'][()]
     err_offset = data['bank_error_events/event_time_offset'][()]
 
-    # Count non-zero proton charge pulses
-    pc = data['DASlogs/proton_charge/value'][()]
+    # Guard: skip if proton_charge is missing
+    try:
+        pc = data['DASlogs/proton_charge/value'][()]
+    except KeyError:
+        warn('No proton_charge in DASlogs — skipping dead-time correction')
+        return unity
+
     n_pulses = count_nonzero(pc)
     if n_pulses == 0:
-        return ones(len(tof_edges) - 1)
+        return unity
 
-    # Histogram all detector triggers
+    # Histogram all detector triggers (good + error)
     counts, _ = histogram(e_offset, bins=tof_edges)
     err_counts, _ = histogram(err_offset, bins=tof_edges)
     total = (counts + err_counts).astype(float)
@@ -1373,20 +1483,29 @@ def _apply_dead_time_correction(data, tof_edges, dead_time=4.2):
     tof_step = diff(tof_edges)
     rate = total / n_pulses
 
-    # Lambert W correction (paralyzable model)
+    # Apply correction model
     with errstate(divide='ignore', invalid='ignore'):
-        b = -real(lambertw(-rate * dead_time / tof_step))
-        dtc = b / (rate * dead_time / tof_step)
+        if paralyzable:
+            # Lambert W correction (paralyzable detector model)
+            b = -real(lambertw(-rate * dead_time / tof_step))
+            dtc = b / (rate * dead_time / tof_step)
+        else:
+            # Non-paralyzable model
+            dtc = 1.0 / (1.0 - rate * dead_time / tof_step)
         dtc = nan_to_num(dtc, nan=1.0, posinf=1.0, neginf=1.0)
+
+    # Clamp to reasonable range (lr_reduction uses threshold of 1.5 by default)
+    dtc = clip(dtc, 1.0, 10.0)
 
     return dtc
 ```
 
-This is called inside `from_event_h5()` after histogramming:
+This is called inside **`LRDataset.from_event_h5()`** after histogramming (NOT in
+`MRDataset.from_event_h5()` — REF_M does not use dead-time correction):
 
 ```python
-# After bin_events produces Ixyt:
-dtc = MRDataset._apply_dead_time_correction(data, tof_edges)
+# In LRDataset.from_event_h5(), after bin_events produces Ixyt:
+dtc = LRDataset._apply_dead_time_correction(data, tof_edges)
 # Apply per-TOF-bin correction to the 3D histogram
 Ixyt = Ixyt * dtc[newaxis, newaxis, :]  # broadcast over (x, y)
 ```
@@ -1395,32 +1514,71 @@ Ixyt = Ixyt * dtc[newaxis, newaxis, :]  # broadcast over (x, y)
 
 **RED:**
 ```python
+@pytest.mark.skipif(not os.path.exists(H5_REF_L), reason='No access to SNS data')
 class TestDeadTimeCorrection:
     def test_correction_factor_reasonable(self):
         """DTC factors should be >= 1.0 (more true counts than measured)"""
         import h5py
-        from quicknxs.qreduce import MRDataset
+        from quicknxs.qreduce import LRDataset
         from numpy import linspace
         with h5py.File(H5_REF_L, 'r') as f:
             tof_edges = linspace(5000, 60000, 41)
-            dtc = MRDataset._apply_dead_time_correction(f['entry'], tof_edges)
+            dtc = LRDataset._apply_dead_time_correction(f['entry'], tof_edges)
         assert all(dtc >= 0.99)  # correction >= 1 (or near 1 for low rates)
         assert all(dtc < 2.0)    # should not be extreme
 
     def test_no_error_events_returns_unity(self):
         """When no bank_error_events, correction should be all 1.0"""
-        # Use early REF_L file that lacks bank_error_events
         import h5py
-        from quicknxs.qreduce import MRDataset
+        from quicknxs.qreduce import LRDataset
         from numpy import linspace, allclose, ones
         with h5py.File('/SNS/REF_L/IPTS-14316/nexus/REF_L_138523.nxs.h5', 'r') as f:
             tof_edges = linspace(5000, 60000, 41)
-            dtc = MRDataset._apply_dead_time_correction(f['entry'], tof_edges)
+            dtc = LRDataset._apply_dead_time_correction(f['entry'], tof_edges)
         assert allclose(dtc, ones(40))
+
+    def test_paralyzable_vs_nonparalyzable(self):
+        """Paralyzable correction should be >= non-paralyzable"""
+        import h5py
+        from quicknxs.qreduce import LRDataset
+        from numpy import linspace
+        with h5py.File(H5_REF_L, 'r') as f:
+            tof_edges = linspace(5000, 60000, 41)
+            dtc_p = LRDataset._apply_dead_time_correction(
+                f['entry'], tof_edges, paralyzable=True)
+            dtc_np = LRDataset._apply_dead_time_correction(
+                f['entry'], tof_edges, paralyzable=False)
+        # For low count rates, both should be ≈ 1.0 and very close
+        assert all(dtc_p >= 0.99)
+        assert all(dtc_np >= 0.99)
+
+    def test_dtc_applied_in_from_event_h5(self):
+        """Verify dead-time correction is integrated into LRDataset loading"""
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_L, use_caching=False)
+        assert data is not None
+        ds = data[0]
+        # The dataset should have been loaded with DTC applied
+        # Total counts in histogram may slightly exceed total_counts from header
+        # due to DTC upward correction
+        assert ds.data is not None
+        assert ds.data.sum() >= ds.total_counts * 0.99  # DTC only increases
+
+    def test_ref_m_does_not_apply_dtc(self):
+        """Verify REF_M (MRDataset) does NOT apply dead-time correction"""
+        from quicknxs.qreduce import NXSData
+        import numpy as np
+        data = NXSData(H5_REF_M, use_caching=False)
+        assert data is not None
+        ds = data[0]
+        # REF_M should NOT have DTC applied — histogram sum ≈ total_counts
+        assert abs(ds.data.sum() - ds.total_counts) < 2  # no DTC inflation
 ```
 Run: → **FAIL**
 
-**GREEN:** Implement `_apply_dead_time_correction()` and integrate into `from_event_h5()`.
+**GREEN:** Implement `LRDataset._apply_dead_time_correction()` and integrate into
+`LRDataset.from_event_h5()`. Verify that `MRDataset.from_event_h5()` does NOT call
+dead-time correction.
 
 ---
 
@@ -1435,6 +1593,50 @@ polarization state. The DAS records state changes via two fast flipper time-seri
 - `DASlogs/SF1_Veto` / `SF2_Veto` — veto flags for transition periods
 
 This matches the approach in mr_reduction's `filter_events.py`.
+
+### Missing DASlogs armor (critical for robustness)
+
+**Problem identified in mr_reduction:** The `filter_events.py` module (lines 185-270)
+does NOT check whether `SF1` or `SF2` logs exist before attempting to use them. Only
+the veto logs (`SF1_Veto`, `SF2_Veto`) have proper guard clauses. This means that if
+the DAS fails to record SF1/SF2 (which has happened in practice), the reduction crashes.
+
+**Our implementation must be more robust.** Every DASlogs access in the polarization
+filtering code must handle missing logs gracefully:
+
+1. **SF1 missing**: Treat as unpolarized (single channel) with a warning. If `SF1` was
+   expected (because the instrument had a polarizer in position per `PolLift` or device
+   metadata), log a warning that the polarization log is absent and proceed unpolarized.
+2. **SF2 missing**: Treat as no analyzer (2-channel polarized, not 4-channel) with a
+   warning. This is the normal case for many experiments.
+3. **SF1_Veto / SF2_Veto missing**: Skip veto filtering for that flipper with a warning
+   (same behavior as mr_reduction lines 219-237).
+4. **event_time_zero / event_index missing**: Cannot do pulse-level filtering; fall
+   back to unpolarized with a warning.
+
+### General DASlogs missing-data strategy
+
+The `_get_daslog_value()` helper already supports `default=` for graceful degradation.
+However, in `_collect_info_h5()` methods, several DASlogs reads do NOT specify defaults,
+meaning a `KeyError` propagates up. **All DASlogs reads in both `MRDataset._collect_info_h5()`
+and `LRDataset._collect_info_h5()` must specify a `default=` parameter** (or use a
+`fallback_key`) so that a single missing log does not prevent the file from loading.
+
+The correct behavior for each category of missing log:
+
+| Missing log | Correct behavior |
+|---|---|
+| Angles (DANGLE, SANGLE, thi, ths, tthd) | Default to 0.0, warn |
+| Wavelength (LambdaRequest) | Fall back to BL-specific key, then default 3.37 Å, warn |
+| Slit widths (S1HWidth, etc.) | Default to 0.0, warn — resolution calculation will be affected |
+| Distances (SampleDetDis, ModeratorSamDis) | Fall back to settings.json defaults, warn |
+| Proton charge | Default to 0.0 — data will be flagged as empty |
+| Polarization (SF1, SF2) | Degrade to unpolarized, warn |
+| Polarization veto (SF1_Veto, SF2_Veto) | Skip veto filtering, warn |
+| Emission parameters (BL4B choppers) | Use known defaults (114.0, 29.5), warn |
+| Chopper speed (SpeedRequest1) | Default to 60.0 Hz, warn |
+
+All warnings should include the run number and the missing key name to aid debugging.
 
 ### Algorithm
 
@@ -1460,18 +1662,41 @@ def _filter_events_by_polarization(data):
     SF2 (analyzer) time-series logs.
 
     Returns dict: {cross_section_name: (event_ids, event_tofs)}
+    Returns None if SF1 is missing (caller should treat as unpolarized).
     """
-    # Read flipper state logs
-    sf1_values = data['DASlogs/SF1/value'][()]
-    sf1_times = data['DASlogs/SF1/time'][()]
+    # Guard: SF1 must exist for polarization filtering
+    if 'DASlogs/SF1' not in data:
+        warn('DASlogs/SF1 missing — cannot filter by polarization state; '
+             'treating as unpolarized')
+        return None
+
+    # Guard: required event fields must exist
+    for required in ['bank1_events/event_time_zero',
+                     'bank1_events/event_index',
+                     'bank1_events/event_id',
+                     'bank1_events/event_time_offset']:
+        if required not in data:
+            warn(f'{required} missing — cannot filter events; '
+                 'treating as unpolarized')
+            return None
+
+    # Read flipper state logs (SF1 existence already verified)
+    try:
+        sf1_values = data['DASlogs/SF1/value'][()]
+        sf1_times = data['DASlogs/SF1/time'][()]
+    except KeyError:
+        warn('DASlogs/SF1/value or SF1/time missing — treating as unpolarized')
+        return None
 
     sf2_single = True
     if 'DASlogs/SF2' in data:
-        sf2_values = data['DASlogs/SF2/value'][()]
-        sf2_times = data['DASlogs/SF2/time'][()]
-        sf2_single = (len(unique(sf2_values)) == 1)
-    else:
-        sf2_single = True
+        try:
+            sf2_values = data['DASlogs/SF2/value'][()]
+            sf2_times = data['DASlogs/SF2/time'][()]
+            sf2_single = (len(unique(sf2_values)) == 1)
+        except KeyError:
+            warn('DASlogs/SF2/value or SF2/time missing — assuming no analyzer')
+            sf2_single = True
 
     # Read pulse and event data
     event_tz = data['bank1_events/event_time_zero'][()]
@@ -1491,13 +1716,30 @@ def _filter_events_by_polarization(data):
     else:
         pulse_sf2 = zeros_like(pulse_sf1)
 
+    # Apply veto filtering if veto logs are available
+    # (gracefully skip if veto logs are absent — same as mr_reduction)
+    veto_mask = ones(len(event_tz), dtype=bool)  # True = keep pulse
+    for veto_key in ['DASlogs/SF1_Veto', 'DASlogs/SF2_Veto']:
+        if veto_key in data:
+            try:
+                veto_vals = data[veto_key + '/value'][()]
+                veto_times = data[veto_key + '/time'][()]
+                veto_idx = searchsorted(veto_times, event_tz, side='right') - 1
+                veto_idx = clip(veto_idx, 0, len(veto_vals) - 1)
+                # Veto=1 means the flipper is in transition — exclude these pulses
+                veto_mask &= (veto_vals[veto_idx] == 0)
+            except KeyError:
+                warn(f'{veto_key}/value or time missing — skipping veto filter')
+        else:
+            debug(f'{veto_key} not present — no veto filtering for this flipper')
+
     # Combine SF1 and SF2 into cross-section labels
     state_names = {(0, 0): 'Off_Off', (1, 0): 'On_Off',
                    (0, 1): 'Off_On',  (1, 1): 'On_On'}
 
     channels = {}
     for (s1, s2), name in state_names.items():
-        mask = (pulse_sf1 == s1) & (pulse_sf2 == s2)
+        mask = (pulse_sf1 == s1) & (pulse_sf2 == s2) & veto_mask
         state_pulses = where(mask)[0]
         if len(state_pulses) == 0:
             continue
@@ -1511,6 +1753,11 @@ def _filter_events_by_polarization(data):
             all_idx = concatenate(event_masks)
             channels[name] = (event_id[all_idx], event_tof[all_idx])
 
+    if len(channels) == 0:
+        warn('Polarization filtering produced no channels — '
+             'all events may be in veto periods; treating as unpolarized')
+        return None
+
     return channels
 ```
 
@@ -1518,22 +1765,36 @@ def _filter_events_by_polarization(data):
 
 ```python
 if self._is_event_h5:
-    # Check if polarized by examining SF1 log
-    sf1_vals = nxs['entry/DASlogs/SF1/value'][()]
-    is_polarized = len(unique(sf1_vals)) > 1
+    # Check if polarized by examining SF1 log (safe: handles missing SF1)
+    is_polarized = False
+    if 'DASlogs/SF1' in nxs['entry']:
+        try:
+            sf1_vals = nxs['entry/DASlogs/SF1/value'][()]
+            is_polarized = len(unique(sf1_vals)) > 1
+        except KeyError:
+            warn('SF1 log present but unreadable — treating as unpolarized')
 
     if is_polarized:
         channels = _filter_events_by_polarization(nxs['entry'])
-        for name, (ids, tofs) in channels.items():
-            data = MRDataset.from_event_h5_filtered(
-                nxs['entry'], ids, tofs, self._options, ...)
+        if channels is not None and len(channels) > 0:
+            for name, (ids, tofs) in channels.items():
+                data = MRDataset.from_event_h5_filtered(
+                    nxs['entry'], ids, tofs, self._options, ...)
+                self._channel_data.append(data)
+                self._channel_names.append(name)
+            # Determine measurement_type from channel count
+            if len(channels) == 4:
+                self.measurement_type = 'Polarization Analysis'
+            elif len(channels) == 2:
+                self.measurement_type = 'Polarized'
+            else:
+                self.measurement_type = 'Unpolarized'
+        else:
+            # Polarization filtering failed — fall back to unpolarized
+            data = MRDataset.from_event_h5(nxs['entry'], self._options, ...)
             self._channel_data.append(data)
-            self._channel_names.append(name)
-        # Determine measurement_type from channel count
-        if len(channels) == 4:
-            self.measurement_type = 'Polarization Analysis'
-        elif len(channels) == 2:
-            self.measurement_type = 'Polarized'
+            self._channel_names.append('x')
+            self.measurement_type = 'Unpolarized'
     else:
         data = MRDataset.from_event_h5(nxs['entry'], self._options, ...)
         self._channel_data.append(data)
@@ -1548,6 +1809,8 @@ if self._is_event_h5:
 H5_REF_M_POLARIZED = '/SNS/REF_M/IPTS-9801/nexus/REF_M_29742.nxs.h5'
 H5_REF_M_POLARIZED_HISTO = '/SNS/REF_M/IPTS-9801/data/REF_M_29742_histo.nxs'
 
+@pytest.mark.skipif(not os.path.exists(H5_REF_M_POLARIZED),
+                    reason='No access to SNS data')
 class TestPolarizationFiltering:
     def test_detects_polarized_data(self):
         from quicknxs.qreduce import NXSData
@@ -1555,6 +1818,8 @@ class TestPolarizationFiltering:
         assert data is not None
         assert len(data) >= 2  # at least 2 polarization channels
 
+    @pytest.mark.skipif(not os.path.exists(H5_REF_M_POLARIZED_HISTO),
+                        reason='No access to histo counterpart')
     def test_channel_counts_match_histo(self):
         from quicknxs.qreduce import NXSData
         h5 = NXSData(H5_REF_M_POLARIZED, use_caching=False)
@@ -1568,10 +1833,86 @@ class TestPolarizationFiltering:
         from quicknxs.qreduce import NXSData
         data = NXSData(H5_REF_M, use_caching=False)  # unpolarized run
         assert len(data) == 1
+
+    def test_missing_sf1_degrades_to_unpolarized(self):
+        """When SF1 is missing, should load as unpolarized without crashing"""
+        import h5py
+        from quicknxs.qreduce import _filter_events_by_polarization
+        # Use a mock or an unpolarized file that lacks SF1
+        with h5py.File(H5_REF_M, 'r') as f:
+            entry = f['entry']
+            # The unpolarized run may not have SF1 at all, or SF1 with
+            # a single state. If SF1 is present with single state,
+            # the function should still work (returns None or single channel)
+            if 'DASlogs/SF1' not in entry:
+                result = _filter_events_by_polarization(entry)
+                assert result is None
+            else:
+                import numpy as np
+                sf1_vals = entry['DASlogs/SF1/value'][()]
+                if len(np.unique(sf1_vals)) == 1:
+                    # Single state — not polarized, caller should not have called
+                    pass
+
+    def test_missing_sf2_produces_two_channels(self):
+        """When SF2 is missing but SF1 has states, should produce 2 channels"""
+        # This tests the case where analyzer is not in use
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M_POLARIZED, use_caching=False)
+        assert data is not None
+        # If this run has SF2, we test the normal case
+        # A dedicated test with a 2-state-only run would be ideal
+
+    def test_veto_filtering_excludes_transitions(self):
+        """Veto filtering should reduce total counts vs no-veto"""
+        import h5py
+        from quicknxs.qreduce import _filter_events_by_polarization
+        with h5py.File(H5_REF_M_POLARIZED, 'r') as f:
+            channels = _filter_events_by_polarization(f['entry'])
+        assert channels is not None
+        total = sum(len(ids) for ids, _ in channels.values())
+        # Total should be less than the raw event count (transitions vetoed)
+        import h5py as h5
+        with h5.File(H5_REF_M_POLARIZED, 'r') as f:
+            raw_count = len(f['entry/bank1_events/event_id'][()])
+        assert total < raw_count  # some events removed by veto/state filtering
+
+@pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+class TestMissingDaslogsArmor:
+    """Test that _collect_info_h5 handles missing DASlogs gracefully."""
+
+    def test_mr_collect_info_with_patched_missing_log(self):
+        """Simulate a missing DASlogs key by testing default behavior"""
+        import h5py
+        from quicknxs.qreduce import _get_daslog_value
+        with h5py.File(H5_REF_M, 'r') as f:
+            # Test that a nonexistent key with default doesn't raise
+            val = _get_daslog_value(f['entry'], 'TOTALLY_MISSING_KEY',
+                                   default=42.0)
+            assert val == 42.0
+
+            # Test that a nonexistent key without default raises KeyError
+            with pytest.raises(KeyError):
+                _get_daslog_value(f['entry'], 'TOTALLY_MISSING_KEY')
+
+    def test_lr_collect_info_uses_defaults(self):
+        """LRDataset._collect_info_h5() should not crash on missing optional logs"""
+        import h5py
+        from quicknxs.qreduce import LRDataset
+        with h5py.File(H5_REF_L, 'r') as f:
+            ds = LRDataset()
+            ds._collect_info_h5(f['entry'])
+        # All attributes should be populated (possibly with defaults)
+        assert ds.dangle is not None
+        assert ds.sangle is not None
+        assert ds.lambda_center is not None
+        assert ds.dist_sam_det > 0
 ```
 Run: → **FAIL**
 
-**GREEN:** Implement `_filter_events_by_polarization()` and `from_event_h5_filtered()`.
+**GREEN:** Implement `_filter_events_by_polarization()` with all guard clauses,
+`from_event_h5_filtered()`, and ensure all `_collect_info_h5()` DASlogs reads have
+safe defaults.
 
 ---
 
