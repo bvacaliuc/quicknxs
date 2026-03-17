@@ -551,3 +551,70 @@ I include Claude's response in [prompt-22.5-review.md](prompt-22.5-review.md)
 You are working in the quicknxsv1 project on the feature/load-event-nexus branch. Please read the plan in plan/read-event-nexus-h5.md that we worked on in a previous session. You have access to the entire dataset at /SNS/REF_L and /SNS/REF_M as before (and with the same caveats). There are several points that I wish you to revise to ensure correctness: 1) Under 'Key differences by instrument', property 'Detector angle' BL4A is 'DANGLE' while BL4B is 'thi'. This is not correct for BL4B. For BL4B it is 'tthd / 2.0' but it depends on whether the data collected is a direct beam or whether it is a reflectivity measurement. If a BL4B direct beam, the *incident* angle matches the detector angle which is 'tthd / 2.0', wherre the BL4B *incident* angle is 'thi'. Furthermore, if it is a reflectivity measurement, the instrument mode affects whether to consider the detector angle as 'tthd' (theta-2*theta) or 'tthd / 2.0' (theta-theta). This is confusing, but a complexity that must be managed. Please review the plan with respect to handling 'Detector angle', 'Incident angle' and 'Sample Angle'. 2) Under 'Phase 8: Dead-time correction', the statement 'Add a _apply_dead_time_correction() static method to MRDataset:' concerns me because BL4A does not currently use dead time correction, only BL4B. This feature must be applied to LRDataset, do you agree? In 'TDD Steps', the test cases load a REF_L dataset then use MRDataset to it. This seems to me to be incorrect, do you agree? Ensure that dead-time correction is applied to BL4B datasets, not BL4A datasets in from_event_h5(). Please review the plan with respect to the dead-time correction effort. Ensure that it will be a complete implementation with verification. 3) Under 'Phase 9: Event-level polarization filtering (REF_M)', what will happen if DASlogs/SF1/* or DASlogs/SF2/* are missing? In practice these have sometimes been ommitted by error in the data acquisition system. Please ensure that the plan includes protection for conditions in which these logs are not present. In fact, please revise the plan to ensure that all code is armored against missing DASlogs/* that are expected. I realize that the logic sometimes uses the presence/absence of a DASlogs/* to select features, but once a log is expected to exist, reading it from a file that is missing should not be mishandled. Determine the correct behavior and implement the needed processing. 
 
 Claude updated the plan in [read-event-nexus-h5.md](read-event-nexus-h5.md).
+
+### Follow on Prompt 23.1
+
+Ok! One last question before we implement this plan: for the implementation, what Claude model do you recommend that we use? I am happy to use the special [1m] models in order to achive the best results from the implementation to ensure that the code executes correctly over the range of datasets and has the best chance of success. 
+
+Claude's response:
+```
+ ● Good question. Here's my recommendation:                                                                                                                                                                                                 
+
+  Use Opus 4.6 for implementation, especially for the critical phases. The reasons:                                                                                                                                                        
+  1. Domain complexity: This task involves neutron scattering physics, HDF5 file format subtleties, and instrument-specific conventions that require careful reasoning about what the code means, not just what it does. Opus handles this kind of multi-layered reasoning best.                                                                                                                                                                                                    
+  2. The angle handling (Phase 2): Getting dangle = tthd correct, with the legacy vs modern format nuance, requires understanding the downstream geometry calculation. A wrong mapping silently produces incorrect reflectivity angles —   Opus is better at holding the full chain in context.                                                                                                                                                                                     
+  3. Dead-time correction (Phase 8): The Lambert W implementation, guard clauses, and correct scoping to LRDataset-only require precision. This is a case where getting it 99% right is still wrong.
+  4. Polarization filtering (Phase 9): The SF1/SF2 time-series logic with veto filtering, missing-log armor, and fallback to unpolarized is the most complex single function in the plan. Opus will handle the nested guard clauses and edge cases more reliably.                                                                                                                                                                                                                
+
+  Where Sonnet 4.6 would be fine: Phases 1 (helper functions), 4 (file search/locate_file), and 7 (Makefile/docs) are more mechanical. But given the 8 GB memory constraint, running fewer sessions with Opus is more efficient than running more sessions with Sonnet and fixing mistakes.
+                                                                                                                                                                                                                                           
+  Practical suggestion: Start a fresh session for implementation (as noted in CLAUDE.md for token management). The plan file is self-contained — the implementing session reads the plan and works from it, keeping context lean. I'd do it in 2-3 sessions:                            
+
+  - Session 1 (Opus): Phases 1-3 (helpers, metadata, core event-to-histogram)                                                                                                                                                              
+  - Session 2 (Opus): Phases 4-7 (file search, event splitting, backward compat, Makefile)
+  - Session 3 (Opus): Phases 8-9 (dead-time correction, polarization filtering)                                                                                                                                                            
+
+  Each session starts fresh, reads the plan, and picks up where the last left off.                                                                                                                                                         
+```
+
+### Follow on Prompt 23.2
+
+how can I prompt you such that you can perform these three sesssions continuously without my input?                                                                                                                                      
+Response:
+● The cleanest approach is a shell script that runs three claude -p invocations sequentially. Each session starts fresh (clean context), reads the plan, and checkpoints progress in MEMORY.md for the next session.                       
+                                                                           
+```
+  #!/bin/bash                                  
+  # run_implementation.sh                                                                                                                                                                                                                  
+  cd /home/bvacaliuc/Projects/Claude.2/quicknxsv1                                                                                                                                                                                          
+                                                                                                                                                                                                                                           
+  claude -p "$(cat prompts/session1.md)" --dangerously-skip-permissions --model claude-opus-4-6                                                                                                                                            
+  claude -p "$(cat prompts/session2.md)" --dangerously-skip-permissions --model claude-opus-4-6
+  claude -p "$(cat prompts/session3.md)" --dangerously-skip-permissions --model claude-opus-4-6                                                                                                                                            
+```
+                                                  
+  Each prompt file would follow this template:                                                                                                                                                                                             
+                                                  
+  1. Role and context: "You are working in quicknxsv1 on branch feature/read-event-nexus..."                                                                                                                                               
+  2. Read the plan: "Read plan/read-event-nexus-h5.md and CLAUDE.md"
+  3. Read prior progress: "Read ~/.claude/projects/.../memory/MEMORY.md for checkpoint from prior sessions"                                                                                                                                
+  4. Specific phases: "Implement Phases 1-3 using red/green TDD..."                                                                                                                                                                        
+  5. Checkpoint instruction: "When done, update MEMORY.md with completed steps, modified files, and test results"                                                                                                                          
+  6. Commit instruction: "Commit your work with a descriptive message"                                                                                                                                                                     
+  
+  The key elements that make this work:                                                                                                                                                                                                    
+                                                  
+  - -p = non-interactive pipe mode (no user prompts)                                                                                                                                                                                       
+  - --dangerously-skip-permissions = no tool approval prompts
+  - MEMORY.md checkpointing = each session writes what it did so the next session can pick up                                                                                                                                              
+  - Fresh context per session = avoids the token accumulation problem                                                                                                                                                                      
+### Epilogue
+
+● Committed as c3229d5. To run the full implementation:                                                                                                                                                                                    
+```                                                                                          
+  cd quicknxsv1                                                                                                                                                                                                                            
+  bash prompts/run_implementation.sh                                                                                                                                                                                                       
+```
+
+  The script runs three sequential claude -p sessions with --dangerously-skip-permissions and --max-turns 100. Each session reads the plan, implements its phases via TDD, commits, and writes a checkpoint to MEMORY.md for the next session. You can also run individual sessions by calling claude -p "$(cat prompts/session1-helpers-metadata-core.md)" --dangerously-skip-permissions --model claude-opus-4-6 directly.
+
