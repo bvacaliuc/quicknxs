@@ -474,7 +474,7 @@ yes and please make sure to leave detailed checkpoint info in memory as you prog
 
 I performed one of the manual GUI launch with 'make gui INSTRUMENT=ref_l' and the gui loaded. I tried to load (non-existent) run 70476 and got no response. Please ensure that there be an ERROR log entry when an action cannot be taken. Then, I tried to load (existing) run 83586. This time I got a CRITICAL python error. The exception handling brought up the dialog asking to email support (that is good!). This time, I chose to let it email the admin, but that process failed with a timeout. After the timeout, the UI showed parts of the loaded run. I notice that there are still items on the UI that refer to ref_m (such as SANGLE, etc.), these should be displayed according to the instrument or hidden if not appropriate. This is a good time to work on these issues. The debug log in ~/.quicknxs/debug.log should have the detail.from my session. I also made a screenshot of the UI after loading showing the partial load where the SANGLE I refer to is show. The screenshot is saved in ~/.quicknxs/debug.png. I would like to review your plan before you execute it.
 
-The plan that claude will do is listed inline:
+The plan that claude will do is given in [fix-refl-gui-issues.md](fix-refl-gui-issues.md) and summarised inline:
 ```
 ● The plan is written at plan/fix-refl-gui-issues.md. Here's the summary:                                                                                    
                                                                  
@@ -507,6 +507,8 @@ The plan that claude will do is listed inline:
 
   Please review and let me know if you'd like any adjustments before I start executing.
 ```
+
+I let claude perform the aboe and commited the results. They exist on the *branch* https://github.com/bvacaliuc/quicknxs/tree/feature/integrate-refl_dev. This will become a pull request to https://github.com/bvacaliuc/quicknxs/tree/next, but really a complete treatment of all the REF_L dataset record is needed for scientists to evaluate, so a new branch is needed to complete that work.
 
 ## Prompt 22 (read event nexus)
 
@@ -542,7 +544,7 @@ Claude updated the plan in [read-event-nexus-h5.md](read-event-nexus-h5.md).
 
 In the last couple days, several edits and revisions were made to lr_reduction new_workflow branch. Please review those edits in the git log and determine what if any revisions are needed for the plan to process REF_L data following the commissioning and calibration work for the Cd actuators.
 
-I include Claude's response in [prompt-22.5-review.md][prompt-22.5-review.md]
+I include Claude's response in [prompt-22.5-review.md](prompt-22.5-review.md)
 
 ## Prompt 23
 
