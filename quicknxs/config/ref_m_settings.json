@@ -1,0 +1,8 @@
+{
+    "number-of-x-pixels": [{"from": "2006-01-01", "value": 304}],
+    "number-of-y-pixels": [{"from": "2006-01-01", "value": 256}],
+    "pixel-width": [{"from": "2006-01-01", "value": 0.70}],
+    "slit1-sample-distance": [{"from": "2006-01-01", "value": 2600}],
+    "slit2-sample-distance": [{"from": "2006-01-01", "value": 2019}],
+    "slit3-sample-distance": [{"from": "2006-01-01", "value": 714}]
+}

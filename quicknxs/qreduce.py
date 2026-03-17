@@ -100,7 +100,9 @@ USE_COMPRESSION=not ('biganalysis' in node() or 'mrac' in node())
 
 # used for * imports
 __all__=['NXSData', 'MRDataset', 'LRDataset', 'Reflectivity', 'OffSpecular', 'GISANS',
-         'time_from_header', 'locate_file']
+         'time_from_header', 'locate_file',
+         '_get_detector_dimensions', '_get_daslog_value',
+         '_read_instrument_settings', '_decode']
 
 _bincount=bincount
 def bincount(x, weights=None, minlength=None):
@@ -116,6 +118,128 @@ def bincount(x, weights=None, minlength=None):
     return bins
   else:
     return _bincount(x, weights, minlength)
+
+def _decode(value):
+  """Decode bytes to string if needed."""
+  if isinstance(value, bytes):
+    return value.decode('utf-8')
+  return str(value)
+
+
+def _get_detector_dimensions(data):
+  """
+  Get detector pixel dimensions (n_x, n_y) from instrument XML in the file.
+  Falls back to known defaults by instrument name.
+
+  :param data: HDF5 group (entry) containing instrument XML
+  :returns: tuple (n_x, n_y)
+  """
+  import re
+  try:
+    xml_raw=data['instrument/instrument_xml/data'][()][0]
+    xml=xml_raw.decode('utf-8') if isinstance(xml_raw, bytes) else str(xml_raw)
+    xp=re.search(r'xpixels="(\d+)"', xml)
+    yp=re.search(r'ypixels="(\d+)"', xml)
+    if xp and yp:
+      return int(xp.group(1)), int(yp.group(1))
+  except (KeyError, IndexError):
+    pass
+
+  # Fallback: detect from instrument name
+  try:
+    name_raw=data['instrument/name'][()][0]
+    name=name_raw.decode('utf-8') if isinstance(name_raw, bytes) else str(name_raw)
+    if name=='REF_L':
+      return (256, 304)
+    else:
+      return (304, 256)
+  except KeyError:
+    return (304, 256)  # default to REF_M
+
+
+_DASLOG_NO_DEFAULT=object()  # sentinel for "no default provided"
+
+def _get_daslog_value(data, key, fallback_key=None, default=_DASLOG_NO_DEFAULT):
+  """
+  Read a value from DASlogs, trying average_value first, then value.
+  Falls back to fallback_key if primary key is not found.
+
+  :param data: HDF5 group (entry)
+  :param key: primary DASlogs key name
+  :param fallback_key: alternative key to try if primary is missing
+  :param default: value to return if all keys fail (sentinel = raise KeyError)
+  :returns: float value
+  """
+  for k in [key, fallback_key]:
+    if k is None:
+      continue
+    try:
+      item=data['DASlogs/'+k]
+      if 'average_value' in item:
+        val=float(item['average_value'][()][0])
+        if k!=key:
+          debug('DASlogs/%s missing, using fallback %s=%s'%(key, k, val))
+        return val
+      elif 'value' in item:
+        arr=item['value'][()]
+        if arr.size==0:
+          continue  # empty array — try fallback
+        val=float(arr[0]) if arr.size==1 else float(arr.mean())
+        if k!=key:
+          debug('DASlogs/%s missing, using fallback %s=%s'%(key, k, val))
+        return val
+    except (KeyError, IndexError, ValueError):
+      continue
+  if default is not _DASLOG_NO_DEFAULT:
+    if default is not None:
+      try:
+        run=int(data['run_number'][()][0])
+        warn('Run %s: DASlogs/%s not found, using default=%s'%(run, key, default))
+      except (KeyError, IndexError):
+        warn('DASlogs/%s not found, using default=%s'%(key, default))
+    return default
+  raise KeyError('DASlogs key %s not found'%key)
+
+
+def _read_instrument_settings(instrument_name, data):
+  """
+  Read date-indexed instrument settings from settings.json.
+  Uses the run's start_time to select the applicable configuration.
+
+  :param instrument_name: 'ref_l' or 'ref_m'
+  :param data: HDF5 group (entry) to read start_time from
+  :returns: dict of instrument settings for the measurement date
+  """
+  import json
+  import datetime as _datetime
+
+  # Get measurement date from file
+  start_time_raw=data['start_time'][()][0]
+  start_time=start_time_raw.decode('utf-8') if isinstance(start_time_raw, bytes) else str(start_time_raw)
+  # Parse date portion only (handle timezone offsets like -04:00)
+  date_str=start_time.split('T')[0]
+  timestamp=_datetime.date.fromisoformat(date_str)
+
+  # Load settings file (co-located with config module)
+  package_dir=os.path.dirname(os.path.abspath(__file__))
+  settings_path=os.path.join(package_dir, 'config', '%s_settings.json'%instrument_name)
+
+  settings_dict={}
+  with open(settings_path, 'r') as fd:
+    json_data=json.load(fd)
+    for key in json_data:
+      chosen_value=None
+      chosen_from=None
+      for item in json_data[key]:
+        valid_from=_datetime.date.fromisoformat(item['from'])
+        if valid_from<=timestamp:
+          if chosen_from is None or valid_from>chosen_from:
+            chosen_from=valid_from
+            chosen_value=item['value']
+      settings_dict[key]=chosen_value
+
+  return settings_dict
+
 
 class OptionsDocMeta(type):
   '''
@@ -267,7 +391,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
     except IOError:
       warn('Could not read nxs file %s'%filename, exc_info=True)
       return False
-    # Detect instrument beamline from file
+    # Detect instrument beamline and file format
     first_entry=list(nxs.keys())[0]
     try:
       beamline_raw=nxs[first_entry]['instrument/beamline'][()][0]
@@ -276,7 +400,17 @@ class NXSData(object, metaclass=OptionsDocMeta):
       beamline='4A' # default to REF_M for files without beamline field
     self._beamline=beamline
 
-    if beamline=='4B':
+    # Detect modern .nxs.h5 event format (NXsnsevent definition)
+    self._is_event_h5=False
+    try:
+      def_raw=nxs[first_entry]['definition'][()][0]
+      definition=def_raw.decode('utf-8') if isinstance(def_raw, bytes) else str(def_raw)
+      if definition=='NXsnsevent':
+        self._is_event_h5=True
+    except KeyError:
+      pass
+
+    if beamline in ('4B', 'BL4B'):
       return self._read_file_LR(filename, nxs, start)
     else:
       return self._read_file_MR(filename, nxs, start)
@@ -290,6 +424,10 @@ class NXSData(object, metaclass=OptionsDocMeta):
     :param h5py.File nxs: Open HDF5 file handle
     :param float start: Start time for performance tracking
     '''
+    # Modern .nxs.h5 format: single entry, always unpolarized
+    if self._is_event_h5:
+      return self._read_file_event_h5(filename, nxs, start, MRDataset)
+
     # analyze channels
     channels=list(nxs.keys())
     debug('Channels in file: '+repr(channels))
@@ -436,6 +574,10 @@ class NXSData(object, metaclass=OptionsDocMeta):
     :param h5py.File nxs: Open HDF5 file handle
     :param float start: Start time for performance tracking
     '''
+    # Modern .nxs.h5 format
+    if self._is_event_h5:
+      return self._read_file_event_h5(filename, nxs, start, LRDataset)
+
     # REF_L files have a single 'entry' channel (unpolarized)
     channels=list(nxs.keys())
     debug('LR Channels in file: '+repr(channels))
@@ -481,6 +623,70 @@ class NXSData(object, metaclass=OptionsDocMeta):
           continue
       else:
         data=LRDataset.from_histogram(raw_data, self._options)
+      self._channel_data.append(data)
+      self._channel_names.append(dest)
+      self._channel_origin.append(channel)
+      progress=0.1+0.9*float(i)/len(channels)
+      if self._options['callback']:
+        self._options['callback'](progress)
+      i+=1
+      self._read_times.append(time()-self._read_times[-1]-start)
+
+    nxs.close()
+    if empty_channels:
+      warn('No counts for state %s'%(','.join(empty_channels)))
+    return True
+
+  def _read_file_event_h5(self, filename, nxs, start, dataset_cls):
+    '''
+    Load data from a modern .nxs.h5 event NeXus file (NXsnsevent format).
+    Single entry, always treated as unpolarized.
+
+    :param str filename: Path to file to read
+    :param h5py.File nxs: Open HDF5 file handle
+    :param float start: Start time for performance tracking
+    :param type dataset_cls: MRDataset or LRDataset
+    '''
+    channels=[ch for ch in nxs.keys() if ch.startswith('entry')]
+    debug('Event H5 channels in file: '+repr(channels))
+    if len(channels)==0:
+      debug('No entry channels in .nxs.h5 file')
+      return False
+    try:
+      max_counts=max([nxs[channel][u'total_counts'][()][0] for channel in channels])
+    except KeyError:
+      warn('total_counts not defined in channels')
+      return False
+    for channel in list(channels):
+      if nxs[channel][u'total_counts'][()][0]<(self.COUNT_THREASHOLD*max_counts):
+        channels.remove(channel)
+    if len(channels)==0:
+      debug('No valid channels in .nxs.h5 file')
+      return False
+
+    self.measurement_type='Unpolarized'
+    mapping=[(u'x', channels[0])]
+
+    # get runtime for event mode splitting
+    total_duration=time_from_header('', nxs=nxs)
+
+    progress=0.1
+    if self._options['callback']:
+      self._options['callback'](progress)
+    self._read_times.append(time()-start)
+    i=1
+    empty_channels=[]
+    for dest, channel in mapping:
+      raw_data=nxs[channel]
+      data=dataset_cls.from_event_h5(raw_data, self._options,
+                                     callback=self._options['callback'],
+                                     callback_offset=progress,
+                                     callback_scaling=0.9/len(channels),
+                                     tof_overwrite=self._options['event_tof_overwrite'],
+                                     total_duration=total_duration)
+      if data is None:
+        empty_channels.append(dest)
+        continue
       self._channel_data.append(data)
       self._channel_names.append(dest)
       self._channel_origin.append(channel)
@@ -992,6 +1198,114 @@ class MRDataset(object):
 
   @classmethod
   @log_call
+  def from_event_h5(cls, data, read_options,
+                    callback=None, callback_offset=0., callback_scaling=1.,
+                    total_duration=None, tof_overwrite=None):
+    '''
+    Load data from a modern .nxs.h5 event NeXus file (NXsnsevent format).
+    Converts events into the same 3D histogram as from_histogram().
+
+    :param h5py._hl.group.Group data: HDF5 entry group
+    :param dict read_options: Options controlling binning
+    '''
+    output=cls()
+    output.read_options=read_options
+    output.from_event_mode=True
+    bin_type=read_options['bin_type']
+    bins=read_options['bins']
+
+    # Collect metadata from DASlogs (not structured paths)
+    try:
+      output._collect_info_h5(data)
+    except KeyError:
+      warn('Error collecting metadata from .nxs.h5:\n\n'+traceback.format_exc())
+
+    # Determine TOF edges
+    if tof_overwrite is None:
+      lcenter=output.lambda_center
+      # ToF region for this specific central wavelength
+      tmin=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter-1.6)*1e-4
+      tmax=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter+1.6)*1e-4
+      if bin_type==0: # constant Δλ
+        tof_edges=linspace(tmin, tmax, bins+1)
+      elif bin_type==1: # constant ΔQ
+        tof_edges=1./linspace(1./tmin, 1./tmax, bins+1)
+      elif bin_type==2: # constant Δλ/λ
+        tof_edges=tmin*(((tmax/tmin)**(1./bins))**arange(bins+1))
+      else:
+        raise ValueError('Unknown bin type %i'%bin_type)
+    else:
+      tof_edges=tof_overwrite
+
+    # Read event data
+    tof_ids=array(data['bank1_events/event_id'][()], dtype=int)
+    tof_time=data['bank1_events/event_time_offset'][()]
+
+    if len(tof_ids)==0:
+      debug('No events in file')
+      return None
+
+    # Read proton charge
+    tof_pc=data['DASlogs/proton_charge/value'][()]
+
+    # Handle event splitting (same logic as from_event)
+    if read_options['event_split_bins']:
+      split_bins=read_options['event_split_bins']
+      split_index=read_options['event_split_index']
+      tof_real_time=data['bank1_events/event_time_zero'][()]
+      tof_idx_to_id=data['bank1_events/event_index'][()]
+      if total_duration is None:
+        split_step=float(tof_real_time[-1]+0.01)/split_bins
+      else:
+        split_step=float(total_duration+0.01)/split_bins
+      try:
+        start_id, stop_id=where(((tof_real_time>=(split_index*split_step))&
+                                 (tof_real_time<((split_index+1)*split_step))))[0][[0,-1]]
+      except IndexError:
+        debug('No pulses in selected range')
+        return None
+
+      if start_id==0:
+        start_idx=0
+      else:
+        start_idx=tof_idx_to_id[start_id-1]
+      stop_idx=tof_idx_to_id[stop_id]
+      debug('Event split with %.1f<=t<%.1f yielding pulse/tof indices: [%i:%i]/[%i:%i]'
+            %((split_index*split_step), ((split_index+1)*split_step),
+              start_id, stop_id+1, start_idx, stop_idx)
+            )
+      tof_pc=tof_pc[start_id:stop_id+1]
+      tof_ids=tof_ids[start_idx:stop_idx]
+      tof_time=tof_time[start_idx:stop_idx]
+      output.total_counts=tof_time.shape[0]
+      if output.total_counts==0:
+        debug('No counts in selected range')
+        return None
+
+    # Calculate total proton charge
+    output.proton_charge=tof_pc.sum()
+
+    # Detector dimensions from instrument XML or known constants
+    n_x, n_y=_get_detector_dimensions(data)
+    dimension=(n_x, n_y)
+
+    # Bin events into 3D histogram using existing infrastructure
+    Ixyt=MRDataset.bin_events(tof_ids, tof_time, tof_edges, dimension,
+                              callback, callback_offset, callback_scaling)
+
+    # Create projections
+    Ixy=Ixyt.sum(axis=2)
+    Ixt=Ixyt.sum(axis=1)
+
+    # Store data
+    output.tof_edges=tof_edges
+    output.data=Ixyt.astype(float)
+    output.xydata=Ixy.transpose().astype(float)
+    output.xtofdata=Ixt.astype(float)
+    return output
+
+  @classmethod
+  @log_call
   def from_xml(cls, xyfile, tofxfile, daslogs,
                read_options, callback=None, callback_offset=0.,
                callback_scaling=1., tof_overwrite=None):
@@ -1208,6 +1522,112 @@ class MRDataset(object):
     if detector_id in instrument.DETECTOR_REGION:
       self.active_area_x=instrument.DETECTOR_REGION[detector_id][0]
       self.active_area_y=instrument.DETECTOR_REGION[detector_id][1]
+
+  def _collect_info_h5(self, data):
+    '''
+    Extract header information from a modern .nxs.h5 REF_M file.
+    All metadata comes from DASlogs. Instrument geometry from settings.json.
+
+    :param h5py._hl.group.Group data:
+    '''
+    self.origin=(os.path.abspath(data.file.filename), data.name.lstrip('/'))
+    self.logs=NiceDict()
+    self.log_minmax=NiceDict()
+    self.log_units=NiceDict()
+
+    # Read DASlogs (same loop as existing _collect_info)
+    if 'DASlogs' in data:
+      if 'proton_charge' in data['DASlogs']:
+        stimes=data['DASlogs/proton_charge/time'][()]
+        stimes=stimes[::10]
+        stimesl, stimesc, stimesr=stimes[:-2], stimes[1:-1], stimes[2:]
+        stimes=stimesc[((stimesr-stimesc)<1.)&((stimesc-stimesl)<1.)]
+      else:
+        stimes=None
+      for motor, item in data['DASlogs'].items():
+        if motor in ['proton_charge', 'frequency', 'Veto_pulse']:
+          continue
+        try:
+          if 'units' in item['value'].attrs:
+            units_attr=item['value'].attrs['units']
+            self.log_units[motor]=units_attr.decode('utf8') if isinstance(units_attr, bytes) else str(units_attr)
+          else:
+            self.log_units[motor]=u''
+          val=item['value'][()]
+          if val.shape[0]==1:
+            self.logs[motor]=val[0]
+            self.log_minmax[motor]=(val[0], val[0])
+          else:
+            if stimes is not None:
+              vtime=item['time'][()]
+              sidx=searchsorted(vtime, stimes, side='right')
+              sidx=maximum(sidx-1, 0)
+              val=val[sidx]
+            if len(val)==0:
+              self.logs[motor]=NaN
+              self.log_minmax[motor]=(NaN, NaN)
+            else:
+              self.logs[motor]=val.mean()
+              self.log_minmax[motor]=(val.min(), val.max())
+        except Exception:
+          continue
+
+    # Detector dimensions and pixel size from settings.json
+    settings=_read_instrument_settings('ref_m', data)
+    n_x=settings['number-of-x-pixels']
+    n_y=settings['number-of-y-pixels']
+    pixel_size_mm=settings['pixel-width']
+    self.det_size_x=n_x*pixel_size_mm*1e-3  # mm to m
+    self.det_size_y=n_y*pixel_size_mm*1e-3
+
+    # REF_M angles from DASlogs (all with safe defaults)
+    self.dangle=_get_daslog_value(data, 'DANGLE', default=0.0)
+    self.dangle0=_get_daslog_value(data, 'DANGLE0', default=0.0)
+    self.sangle=_get_daslog_value(data, 'SANGLE', default=0.0)
+    self.dpix=_get_daslog_value(data, 'DIRPIX',
+                    default=settings.get('default-direct-pixel', 150))
+
+    # Wavelength (graceful degradation for early commissioning files)
+    self.lambda_center=_get_daslog_value(data, 'LambdaRequest',
+                            fallback_key='BL4A:Det:TH:BL:Lambda',
+                            default=None)
+    if self.lambda_center is None:
+      warn('No LambdaRequest in DASlogs — early commissioning file; using 3.37 A')
+      self.lambda_center=3.37
+
+    # Chopper speed for wavelength range calculation
+    self.chopper_speed=_get_daslog_value(data, 'SpeedRequest1', default=60.0)
+
+    # Slit widths from DASlogs (readbacks may be 0; fall back to request values)
+    self.slit1_width=_get_daslog_value(data, 'S1HWidth', default=0.0)
+    if self.slit1_width==0.0:
+      self.slit1_width=_get_daslog_value(data, 'S1HWidthRequest', default=0.0)
+    self.slit2_width=_get_daslog_value(data, 'S2HWidth', default=0.0)
+    if self.slit2_width==0.0:
+      self.slit2_width=_get_daslog_value(data, 'S2HWidthRequest', default=0.0)
+    self.slit3_width=_get_daslog_value(data, 'S3HWidth', default=0.0)
+    if self.slit3_width==0.0:
+      self.slit3_width=_get_daslog_value(data, 'S3HWidthRequest', default=0.0)
+
+    # Distances from DASlogs (with safe defaults from settings.json)
+    sdd_mm=_get_daslog_value(data, 'SampleDetDis', default=1830.0)
+    mod_sam_mm=_get_daslog_value(data, 'ModeratorSamDis', default=16870.0)
+    self.dist_sam_det=sdd_mm*1e-3
+    self.dist_mod_det=mod_sam_mm*1e-3+self.dist_sam_det
+    self.dist_mod_mon=mod_sam_mm*1e-3-2.75
+
+    # Slit distances from settings.json (not in DASlogs)
+    self.slit1_dist=settings.get('slit1-sample-distance', 2600.0)
+    self.slit2_dist=settings.get('slit2-sample-distance', 2019.0)
+    self.slit3_dist=settings.get('slit3-sample-distance', 714.0)
+
+    # Standard metadata
+    self.proton_charge=data['proton_charge'][()][0]
+    self.total_counts=data['total_counts'][()][0]
+    self.total_time=data['duration'][()][0]
+    self.experiment=_decode(data['experiment_identifier'][()][0])
+    self.number=int(data['run_number'][()][0])
+    self.merge_warnings=''
 
   @staticmethod
   def _getxml_data(xml):
@@ -1523,6 +1943,118 @@ class LRDataset(MRDataset):
     except KeyError:
       pass
 
+  def _collect_info_h5(self, data):
+    '''
+    Extract header information from a modern .nxs.h5 REF_L file.
+    Angles, wavelength, and slit widths from DASlogs.
+    Distances and geometry from settings.json (date-indexed).
+
+    :param h5py._hl.group.Group data:
+    '''
+    self.origin=(os.path.abspath(data.file.filename), data.name.lstrip('/'))
+    self.logs=NiceDict()
+    self.log_minmax=NiceDict()
+    self.log_units=NiceDict()
+
+    # Read DASlogs
+    if 'DASlogs' in data:
+      if 'proton_charge' in data['DASlogs']:
+        stimes=data['DASlogs/proton_charge/time'][()]
+        stimes=stimes[::10]
+        stimesl, stimesc, stimesr=stimes[:-2], stimes[1:-1], stimes[2:]
+        stimes=stimesc[((stimesr-stimesc)<1.)&((stimesc-stimesl)<1.)]
+      else:
+        stimes=None
+      for motor, item in data['DASlogs'].items():
+        if motor in ['proton_charge', 'frequency', 'Veto_pulse']:
+          continue
+        try:
+          if 'units' in item['value'].attrs:
+            units_attr=item['value'].attrs['units']
+            self.log_units[motor]=units_attr.decode('utf8') if isinstance(units_attr, bytes) else str(units_attr)
+          else:
+            self.log_units[motor]=u''
+          val=item['value'][()]
+          if val.shape[0]==1:
+            self.logs[motor]=val[0]
+            self.log_minmax[motor]=(val[0], val[0])
+          else:
+            if stimes is not None:
+              vtime=item['time'][()]
+              sidx=searchsorted(vtime, stimes, side='right')
+              sidx=maximum(sidx-1, 0)
+              val=val[sidx]
+            if len(val)==0:
+              self.logs[motor]=NaN
+              self.log_minmax[motor]=(NaN, NaN)
+            else:
+              self.logs[motor]=val.mean()
+              self.log_minmax[motor]=(val.min(), val.max())
+        except Exception:
+          continue
+
+    # REF_L raw motor angles (all three stored for diagnostics)
+    self.thi=_get_daslog_value(data, 'BL4B:Mot:thi.RBV',
+                  fallback_key='thi', default=0.0)
+    self.ths=_get_daslog_value(data, 'BL4B:Mot:ths.RBV',
+                  fallback_key='ths', default=0.0)
+    self.tthd=_get_daslog_value(data, 'BL4B:Mot:tthd.RBV',
+                   fallback_key='tthd', default=0.0)
+    # Map to quicknxsv1 attribute names
+    self.dangle=self.tthd    # detector arm two-theta
+    self.sangle=self.ths     # sample angle
+    self.dangle0=0.0         # REF_L has no DANGLE0 in DASlogs
+
+    # Wavelength and frequency
+    self.lambda_center=_get_daslog_value(data, 'BL4B:Det:TH:BL:Lambda',
+                            fallback_key='LambdaRequest', default=None)
+    if self.lambda_center is None:
+      warn('No wavelength in DASlogs; using 3.37 A')
+      self.lambda_center=3.37
+    self.chopper_speed=_get_daslog_value(data, 'BL4B:Det:TH:BL:Frequency',
+                            fallback_key='SpeedRequest1', default=60.0)
+
+    # REF_L slit widths
+    self.s1Y=_get_daslog_value(data, 'BL4B:Mot:s1:Y:Gap:Readback',
+                  fallback_key='s1:Y:Gap', default=0.0)
+    self.s1X=_get_daslog_value(data, 'BL4B:Mot:s1:X:Gap:Readback',
+                  fallback_key='s1:X:Gap', default=0.0)
+    self.siY=_get_daslog_value(data, 'BL4B:Mot:si:Y:Gap:Readback',
+                  fallback_key='si:Y:Gap', default=0.0)
+    self.siX=_get_daslog_value(data, 'BL4B:Mot:si:X:Gap:Readback',
+                  fallback_key='si:X:Gap', default=0.0)
+    self.xi=_get_daslog_value(data, 'BL4B:Mot:xi.RBV',
+                 fallback_key='xi', default=0.0)
+    # Map to quicknxsv1 slit attribute names
+    self.slit1_width=self.s1Y
+    self.slit2_width=self.siY
+
+    # Distances and geometry from date-indexed settings.json
+    settings=_read_instrument_settings('ref_l', data)
+    self.dist_sam_det=settings['sample-det-distance']
+    self.dist_mod_det=settings['source-det-distance']
+    self.dist_mod_mon=self.dist_mod_det-2.75
+    n_x=settings['number-of-x-pixels']
+    n_y=settings['number-of-y-pixels']
+    pixel_size_mm=settings['pixel-width']
+    self.det_size_x=n_x*pixel_size_mm*1e-3
+    self.det_size_y=n_y*pixel_size_mm*1e-3
+    self.dpix=151
+    self.xi_reference=settings.get('xi-reference', 445)
+    self.s1_sample_distance=settings.get('s1-sample-distance', 1485)
+
+    # Slit distances
+    self.slit1_dist=self.s1_sample_distance
+    self.slit2_dist=self.xi_reference-self.xi  # si distance derived from xi
+
+    # Standard metadata
+    self.proton_charge=data['proton_charge'][()][0]
+    self.total_counts=data['total_counts'][()][0]
+    self.total_time=data['duration'][()][0]
+    self.experiment=_decode(data['experiment_identifier'][()][0])
+    self.number=int(data['run_number'][()][0])
+    self.merge_warnings=''
+
 
 def is_analyzer_in(position, trans_position, start_time_str):
     """
@@ -1565,6 +2097,10 @@ def time_from_header(filename, nxs=None):
   stime=1.e30
   etime=0.
   for item in nxs.values():
+    if not isinstance(item, h5py.Group):
+      continue
+    if 'start_time' not in item or 'end_time' not in item:
+      continue
     sstr=item['start_time'][()][0].decode()
     estr=item['end_time'][()][0].decode()
     if '.' in sstr:
