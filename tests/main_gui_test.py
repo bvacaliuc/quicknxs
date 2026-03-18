@@ -515,7 +515,15 @@ class MainGUIFileOperations(unittest.TestCase):
 
   def test_open_by_number_not_found(self):
     """openByNumber() with non-existent number returns False."""
-    result=self.gui.openByNumber('999999')
+    from quicknxs.config import instrument
+    # Temporarily point data_base to a local directory so the glob
+    # doesn't scan thousands of IPTS directories over the sshfs mount.
+    orig = instrument.data_base
+    try:
+      instrument.data_base = _test_dir
+      result=self.gui.openByNumber('999999')
+    finally:
+      instrument.data_base = orig
     self.assertFalse(result)
 
   def test_file_open_sum(self):
