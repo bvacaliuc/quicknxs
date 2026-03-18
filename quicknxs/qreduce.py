@@ -1254,10 +1254,12 @@ class MRDataset(object):
       split_index=read_options['event_split_index']
       tof_real_time=data['bank1_events/event_time_zero'][()]
       tof_idx_to_id=data['bank1_events/event_index'][()]
-      if total_duration is None:
-        split_step=float(tof_real_time[-1]+0.01)/split_bins
-      else:
-        split_step=float(total_duration+0.01)/split_bins
+      # Use the larger of total_duration and actual pulse time range to ensure
+      # all pulses are covered (time_from_header may underestimate vs event_time_zero)
+      effective_duration=tof_real_time[-1]
+      if total_duration is not None:
+        effective_duration=_builtins.max(effective_duration, total_duration)
+      split_step=float(effective_duration+0.01)/split_bins
       try:
         start_id, stop_id=where(((tof_real_time>=(split_index*split_step))&
                                  (tof_real_time<((split_index+1)*split_step))))[0][[0,-1]]
@@ -1265,11 +1267,13 @@ class MRDataset(object):
         debug('No pulses in selected range')
         return None
 
-      if start_id==0:
-        start_idx=0
+      # NXevent_data convention: event_index[i] = first event for pulse i
+      # (differs from old *_event.nxs where event_index[i] = cumulative count after pulse i)
+      start_idx=tof_idx_to_id[start_id]
+      if stop_id+1<len(tof_idx_to_id):
+        stop_idx=tof_idx_to_id[stop_id+1]
       else:
-        start_idx=tof_idx_to_id[start_id-1]
-      stop_idx=tof_idx_to_id[stop_id]
+        stop_idx=len(tof_ids)
       debug('Event split with %.1f<=t<%.1f yielding pulse/tof indices: [%i:%i]/[%i:%i]'
             %((split_index*split_step), ((split_index+1)*split_step),
               start_id, stop_id+1, start_idx, stop_idx)
@@ -2137,8 +2141,15 @@ def locate_file(number, histogram=True, old_format=False, verbose=True):
       search=glob(os.path.join(instrument.data_base, (instrument.BASE_SEARCH%number)+u'event.nxs'))
     if search:
       return search[0]
-    else:
-      return None
+
+    # Try modern .nxs.h5 format in nexus/ subdirectory (fallback)
+    if hasattr(instrument, 'H5_BASE_SEARCH'):
+      h5_search=glob(os.path.join(instrument.data_base,
+                     instrument.H5_BASE_SEARCH%number))
+      if h5_search:
+        return h5_search[0]
+
+    return None
 
 class Reflectivity(object, metaclass=OptionsDocMeta):
   """

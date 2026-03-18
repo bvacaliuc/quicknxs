@@ -22,14 +22,14 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 
-echo "=== Session 1: Helpers, Metadata, Core (Phases 1-3) ==="
-echo "Starting at $(date)"
-claude -p "$(cat prompts/session1-helpers-metadata-core.md)" \
-    --dangerously-skip-permissions \
-    --model claude-opus-4-6 \
-    --max-turns 100
-echo "Session 1 completed at $(date)"
-echo ""
+##echo "=== Session 1: Helpers, Metadata, Core (Phases 1-3) ==="
+##echo "Starting at $(date)"
+##claude -p "$(cat prompts/session1-helpers-metadata-core.md)" \
+##    --dangerously-skip-permissions \
+##    --model claude-opus-4-6 \
+##    --max-turns 100
+##echo "Session 1 completed at $(date)"
+##echo ""
 
 echo "=== Session 2: File Search, Splitting, Compat (Phases 4-7) ==="
 echo "Starting at $(date)"

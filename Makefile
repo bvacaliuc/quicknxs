@@ -1,4 +1,4 @@
-.PHONY: gui install test test-core test-gui test-db lint clean reduce-headless strace strace-full strace-reduce load-test batch-load-test
+.PHONY: gui install test test-core test-gui test-db test-h5 lint clean reduce-headless strace strace-full strace-reduce load-test batch-load-test
 
 INSTRUMENT ?= ref_m
 
@@ -19,6 +19,9 @@ test-gui: install
 
 test-db: install
 	pixi run test-db
+
+test-h5: install
+	pixi run pytest tests/test_event_h5.py -v --timeout=120
 
 lint: install
 	pixi run ruff check quicknxs/

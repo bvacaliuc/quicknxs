@@ -12,6 +12,7 @@ BEAMLINE='4B'
 data_base=u'/SNS/REF_L'
 BASE_SEARCH=u'*/data/REF_L_%s_'
 OLD_BASE_SEARCH=u'*/*/%s/NeXus/REF_L_%s*'
+H5_BASE_SEARCH=u'*/nexus/REF_L_%s.nxs.h5'
 LIVE_DATA=u'/SNS/REF_L/shared/LiveData/meta_data.xml'
 EXTENSION_SCRIPTS=u'/SNS/REF_L/shared/quicknxs_scripts'
 

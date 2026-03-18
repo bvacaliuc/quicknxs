@@ -252,3 +252,186 @@ class TestFromEventH5:
         assert ds.lambda_center == 3.37  # default fallback
         assert ds.data is not None
         assert ds.total_counts == 14863
+
+
+# ── Phase 4: File search and time_from_header ─────────────────────────
+
+class TestLocateFile:
+    """Test locate_file() H5 support.
+
+    Note: Full integration tests with live glob over sshfs are impractical
+    (each glob of /SNS/REF_M/*/ takes 2+ minutes over the sshfs link).
+    These tests verify the config and logic without live glob searches.
+    """
+
+    def test_ref_m_h5_base_search_configured(self):
+        """Verify H5_BASE_SEARCH is set in ref_m config"""
+        from quicknxs.config import ref_m
+        assert hasattr(ref_m, 'H5_BASE_SEARCH')
+        assert 'REF_M' in ref_m.H5_BASE_SEARCH
+        assert '.nxs.h5' in ref_m.H5_BASE_SEARCH
+
+    def test_ref_l_h5_base_search_configured(self):
+        """Verify H5_BASE_SEARCH is set in ref_l config"""
+        from quicknxs.config import ref_l
+        assert hasattr(ref_l, 'H5_BASE_SEARCH')
+        assert 'REF_L' in ref_l.H5_BASE_SEARCH
+        assert '.nxs.h5' in ref_l.H5_BASE_SEARCH
+
+    def test_h5_search_pattern_resolves(self):
+        """Verify the H5_BASE_SEARCH pattern produces a valid path"""
+        from quicknxs.config import ref_m
+        import os
+        pattern = os.path.join(ref_m.data_base, ref_m.H5_BASE_SEARCH % 29015)
+        # The pattern should reference the nexus/ subdirectory
+        assert 'nexus' in pattern
+        assert pattern.endswith('.nxs.h5')
+
+    @pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+    def test_h5_file_exists_at_expected_path(self):
+        """Verify the .nxs.h5 file exists at the path the search pattern targets"""
+        assert os.path.isfile(H5_REF_M)
+
+    def test_locate_file_falls_through_to_h5(self):
+        """Verify locate_file tries H5_BASE_SEARCH when histo/event not found"""
+        from unittest.mock import patch
+        from quicknxs.config import ref_m
+        import quicknxs.config as cfg
+        orig = cfg.instrument
+        cfg.instrument = ref_m
+        try:
+            # Mock glob to return empty for histo/event, then a match for h5
+            def mock_glob(pattern):
+                if '.nxs.h5' in pattern:
+                    return ['/SNS/REF_M/IPTS-16196/nexus/REF_M_29015.nxs.h5']
+                return []
+
+            with patch('quicknxs.qreduce.glob', side_effect=mock_glob):
+                from quicknxs.qreduce import locate_file
+                result = locate_file(29015, verbose=False)
+                assert result is not None
+                assert result.endswith('.nxs.h5')
+                assert '29015' in result
+        finally:
+            cfg.instrument = orig
+
+    def test_locate_file_prefers_histo_over_h5(self):
+        """Verify histo is preferred when both formats exist"""
+        from unittest.mock import patch
+        from quicknxs.config import ref_m
+        import quicknxs.config as cfg
+        orig = cfg.instrument
+        cfg.instrument = ref_m
+        try:
+            def mock_glob(pattern):
+                if 'histo.nxs' in pattern:
+                    return ['/SNS/REF_M/IPTS-9801/data/REF_M_29750_histo.nxs']
+                if '.nxs.h5' in pattern:
+                    return ['/SNS/REF_M/IPTS-9801/nexus/REF_M_29750.nxs.h5']
+                return []
+
+            with patch('quicknxs.qreduce.glob', side_effect=mock_glob):
+                from quicknxs.qreduce import locate_file
+                result = locate_file(29750, verbose=False)
+                assert result is not None
+                assert 'histo.nxs' in result
+        finally:
+            cfg.instrument = orig
+
+    def test_locate_file_returns_none_when_nothing_found(self):
+        """Verify locate_file returns None when no file matches"""
+        from unittest.mock import patch
+        from quicknxs.config import ref_m
+        import quicknxs.config as cfg
+        orig = cfg.instrument
+        cfg.instrument = ref_m
+        try:
+            with patch('quicknxs.qreduce.glob', return_value=[]):
+                from quicknxs.qreduce import locate_file
+                result = locate_file(99999, verbose=False)
+                assert result is None
+        finally:
+            cfg.instrument = orig
+
+
+@pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+class TestTimeFromHeader:
+    def test_time_from_header_h5(self):
+        from quicknxs.qreduce import time_from_header
+        result = time_from_header(H5_REF_M)
+        assert result is not None
+        assert result > 0
+
+    @pytest.mark.skipif(not os.path.exists(H5_REF_L),
+                        reason='No access to REF_L data')
+    def test_time_from_header_ref_l_h5(self):
+        from quicknxs.qreduce import time_from_header
+        result = time_from_header(H5_REF_L)
+        assert result is not None
+        assert result > 0
+
+
+# ── Phase 5: Event splitting ──────────────────────────────────────────
+
+@pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+class TestEventSplitting:
+    def test_split_produces_subset(self):
+        from quicknxs.qreduce import NXSData
+        full = NXSData(H5_REF_M, use_caching=False)
+        split = NXSData(H5_REF_M, event_split_bins=4, event_split_index=0,
+                        use_caching=False)
+        assert full is not None
+        assert split is not None
+        assert split[0].data.sum() < full[0].data.sum()
+        assert split[0].data.sum() > 0
+
+    def test_splits_sum_to_total(self):
+        import numpy as np
+        from quicknxs.qreduce import NXSData
+        full = NXSData(H5_REF_M, use_caching=False)
+        assert full is not None
+        total = 0
+        for i in range(4):
+            part = NXSData(H5_REF_M, event_split_bins=4, event_split_index=i,
+                           use_caching=False)
+            if part is not None:
+                total += part[0].data.sum()
+        # All events that fall within TOF window should be accounted for
+        assert abs(total - full[0].data.sum()) < 10
+
+    @pytest.mark.skipif(not os.path.exists(H5_REF_L),
+                        reason='No access to REF_L data')
+    def test_split_ref_l(self):
+        from quicknxs.qreduce import NXSData
+        full = NXSData(H5_REF_L, use_caching=False)
+        split = NXSData(H5_REF_L, event_split_bins=4, event_split_index=0,
+                        use_caching=False)
+        assert full is not None
+        assert split is not None
+        assert split[0].data.sum() < full[0].data.sum()
+        assert split[0].data.sum() > 0
+
+
+# ── Phase 6: Backward compatibility ──────────────────────────────────
+
+@pytest.mark.skipif(
+    not os.path.exists('/SNS/REF_M/IPTS-16196/0/25899/NeXus/REF_M_25899_histo.nxs'),
+    reason='No access to SNS data')
+class TestBackwardCompatibility:
+    def test_legacy_histo_still_loads(self):
+        from quicknxs.qreduce import NXSData
+        data = NXSData('/SNS/REF_M/IPTS-16196/0/25899/NeXus/REF_M_25899_histo.nxs',
+                       use_caching=False)
+        assert data is not None
+        assert len(data) >= 1
+        assert data[0].data is not None
+
+    @pytest.mark.skipif(
+        not os.path.exists('/SNS/REF_L/IPTS-7053/0/80836/NeXus/REF_L_80836_histo.nxs'),
+        reason='No access to REF_L data')
+    def test_legacy_ref_l_histo_still_loads(self):
+        from quicknxs.qreduce import NXSData
+        data = NXSData('/SNS/REF_L/IPTS-7053/0/80836/NeXus/REF_L_80836_histo.nxs',
+                       use_caching=False)
+        assert data is not None
+        assert data[0].data.shape == (304, 256, 2001)
