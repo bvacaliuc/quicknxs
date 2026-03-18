@@ -618,3 +618,76 @@ Response:
 
   The script runs three sequential claude -p sessions with --dangerously-skip-permissions and --max-turns 100. Each session reads the plan, implements its phases via TDD, commits, and writes a checkpoint to MEMORY.md for the next session. You can also run individual sessions by calling claude -p "$(cat prompts/session1-helpers-metadata-core.md)" --dangerously-skip-permissions --model claude-opus-4-6 directly.
 
+## Prompt 24 - Batch Session to Implement the feature
+
+The batch job was invoked and left unattended. It was able to complete Session 1 and started on Session 2 until token limits hit:
+```
+=== Session 1: Helpers, Metadata, Core (Phases 1-3) ===
+Starting at Tue Mar 17 07:42:02 EDT 2026
+Session 1 is complete. Here's the summary:
+
+## Session 1 Results: Phases 1-3 Complete
+
+**Commit**: `2c86c6a` on branch `feature/read-event-nexus`
+
+### What was implemented
+
+**Phase 1 — Helper functions** (4 functions):
+- `_get_detector_dimensions()` — parses pixel dims from instrument XML, falls back to instrument name
+- `_get_daslog_value()` — reads DASlogs with fallback keys, defaults, and sentinel pattern
+- `_read_instrument_settings()` — date-indexed config from new `ref_l_settings.json` / `ref_m_settings.json`
+- `_decode()` — bytes/string normalization
+
+**Phase 2 — Metadata extraction** (2 methods):
+- `MRDataset._collect_info_h5()` — REF_M metadata from DASlogs (with slit width request fallback)
+- `LRDataset._collect_info_h5()` — REF_L metadata with BL4B angle handling (`dangle=tthd`, `sangle=ths`, stores all three raw angles)
+
+**Phase 3 — Event-to-histogram** (format detection + routing + conversion):
+- `NXSData._read_file()` — detects `NXsnsevent` definition, also fixed beamline detection for `BL4B`
+- `NXSData._read_file_event_h5()` — shared routing for `.nxs.h5` files (single entry, unpolarized)
+- `MRDataset.from_event_h5()` — classmethod inherited by both MR and LR datasets
+- `time_from_header()` — hardened for non-group HDF5 items
+
+### Test results
+- **20/20** new tests pass (`tests/test_event_h5.py`)
+- **44/47** existing tests pass (3 REF_L mount timeouts are pre-existing)
+- Lint clean
+- Cross-validation: REF_M event-binned XY correlation > 0.999 vs histo reference
+uSession 1 completed at Tue Mar 17 08:18:04 EDT 2026
+
+=== Session 2: File Search, Splitting, Compat (Phases 4-7) ===
+Starting at Tue Mar 17 08:18:04 EDT 2026
+You've hit your limit · resets 11am (America/New_York)
+```
+
+At this point, I modified [prompts/run_implementation.sh](../prompts/run_implementation.sh) to comment out Session 1, and edited [prompts/session-2-search-splitting-compat.md](../prompts/session2-search-splitting-compat.md) to indicate that Session 2 progress had been made. Then, I resumed the job, with this result:
+```
+=== Session 2: File Search, Splitting, Compat (Phases 4-7) ===
+Starting at Tue Mar 17 23:11:23 EDT 2026
+## Session 2 Complete
+
+All Phases 4-7 are implemented and tested. Summary:
+
+| Phase | Description | Tests | Status |
+|-------|-------------|-------|--------|
+| **4** | `locate_file()` H5 fallback + `H5_BASE_SEARCH` config + `time_from_header()` | 9/9 | Pass |
+| **5** | Event splitting in `from_event_h5()` (fixed duration + index mapping) | 3/3 | Pass |
+| **6** | Backward compatibility (legacy histo files) | 2/2 | Pass |
+| **7** | Makefile `test-h5` target | — | Done |
+
+**Totals**: 34/34 event h5 tests, 44/44 existing tests, lint clean. Committed as `dc87801`.
+
+**Bug found & fixed**: `time_from_header()` underestimates duration vs actual `event_time_zero` (28.0s vs 28.2s), causing 129 events to be lost during 4-way splits. Fixed by using `max(event_time_zero[-1], total_duration)`.
+
+**Remaining for Session 3**: Phases 8-9 (polarization filtering, performance optimization).
+uSession 2 completed at Tue Mar 17 23:46:30 EDT 2026
+
+=== Session 3: Dead-Time, Polarization (Phases 8-9) ===
+Starting at Tue Mar 17 23:46:30 EDT 2026
+Already retrieved — 42/43 passed, the 1 failure is a pre-existing sshfs timeout on `test_lr_load_event` (unrelated to our changes). All work is done and committed.
+uSession 3 completed at Wed Mar 18 00:27:33 EDT 2026
+
+=== All sessions complete ===
+Check git log for commits and MEMORY.md for final status.
+```
+
