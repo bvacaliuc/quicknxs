@@ -299,7 +299,7 @@ class ProductionDatabaseTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.db = Base(PRODUCTION_DB)
-        cls.db.open()
+        cls.db.open(read_only=True)
 
     @classmethod
     def tearDownClass(cls):

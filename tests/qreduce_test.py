@@ -456,9 +456,14 @@ class DataLoadVerificationLR(unittest.TestCase):
   def test_lr_load_multiple_histo(self):
     '''Load several REF_L histogram files to verify consistency.'''
     import glob
-    # Filter out broken symlinks (many early runs have dangling links)
-    files = [f for f in sorted(glob.glob(os.path.join(REF_L_DATA_DIR, '*_histo.nxs')))
-             if os.path.isfile(f)][:5]
+    # Use specific known-good run numbers to avoid globbing thousands of
+    # sshfs entries and iterating through broken/empty early runs.
+    run_ids = ['80836', '80837', '80838', '80839', '80840']
+    files = []
+    for rid in run_ids:
+      matches = sorted(glob.glob(os.path.join(REF_L_DATA_DIR, '*%s*histo*' % rid)))
+      if matches:
+        files.append(matches[0])
     self.assertGreater(len(files), 0, 'No REF_L histo files found')
     for f in files:
       self._load_file(f)
@@ -466,8 +471,8 @@ class DataLoadVerificationLR(unittest.TestCase):
   def test_lr_load_event(self):
     '''Load a REF_L event mode file.'''
     import glob
-    files = [f for f in sorted(glob.glob(os.path.join(REF_L_DATA_DIR, '*_event.nxs')))
-             if os.path.isfile(f)][:1]
+    # Use same known-good run number as histo test
+    files = sorted(glob.glob(os.path.join(REF_L_DATA_DIR, '*80836*event*')))[:1]
     self.assertGreater(len(files), 0, 'No REF_L event files found')
     obj = qreduce.NXSData(files[0], use_caching=False, bins=40)
     self.assertIsNotNone(obj, 'NXSData returned None for event file')

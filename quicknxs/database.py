@@ -39,7 +39,8 @@ class DatabaseHandler(object):
   @log_call
   def load_db(self):
     self.db=Base(config.database_file)
-    self.db.open()
+    read_only = not os.access(config.database_file, os.W_OK)
+    self.db.open(read_only=read_only)
 
   @log_call
   def close_db(self):

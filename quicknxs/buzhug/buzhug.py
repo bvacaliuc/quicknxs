@@ -414,8 +414,15 @@ class Base:
         self._full_rec = makeRecordClass(self,self.record_class,self.field_names)
         return self
 
-    def open(self):
-        """Open an existing database and return a reference to it
+    def open(self, read_only=False):
+        """Open an existing database and return a reference to it.
+
+        If *read_only* is True every data file is opened in ``'rb'``
+        mode instead of ``'r+b'``, which allows the database to live
+        on a read-only filesystem (e.g. an sshfs mount with ``-o ro``).
+        Write operations (insert/update/delete) will raise on a
+        read-only handle.
+
         Raise IOError if no base is found for the path entered in __init__
         """
         if not os.path.exists(self.name) or not os.path.isdir(self.name):
@@ -424,6 +431,7 @@ class Base:
             _info = open(self.info_name,'rb')
         except IOError:
             raise IOError("No buzhug base in directory %s" %self.name)
+        self._read_only = read_only
         return self._open(_info)
 
     def _open(self,info):
@@ -436,7 +444,7 @@ class Base:
             if v.startswith('<base>'):
                 # reference to an external base
                 base_path = urllib.parse.unquote(v[6:])
-                ext_db = Base(base_path).open()
+                ext_db = Base(base_path).open(read_only=getattr(self, '_read_only', False))
                 self._register_base(ext_db)
                 self.fields[k] = ext_db
             else:
@@ -452,13 +460,14 @@ class Base:
         return self
 
     def _open_files(self):
+        _ro = getattr(self, '_read_only', False)
         self._file = {}
         for f in self.field_names:
             self._file[f] = self.file_types[self.fields[f]](self.name,f)
-            self._file[f].open()
-        self._id_pos = IntegerFile(self.name,'_id_pos').open()
-        self._pos = PositionFile(self).open()
-        self._del_rows = DeletedRowsFile(self.name,"__del_rows__").open()
+            self._file[f].open(read_only=_ro)
+        self._id_pos = IntegerFile(self.name,'_id_pos').open(read_only=_ro)
+        self._pos = PositionFile(self).open(read_only=_ro)
+        self._del_rows = DeletedRowsFile(self.name,"__del_rows__").open(read_only=_ro)
         self._full_rec = makeRecordClass(self,self.record_class,
             self.field_names)
 

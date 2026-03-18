@@ -49,8 +49,8 @@ class File:
         self.fileobj = open(self.path,'r+b')
         return self
 
-    def open(self):
-        self.fileobj = open(self.path,'r+b')
+    def open(self, read_only=False):
+        self.fileobj = open(self.path, 'rb' if read_only else 'r+b')
         return self
 
     def get_end_pos(self):
@@ -425,8 +425,8 @@ class PositionFile(FixedLengthFile):
         self._count = 0 # number of records in the base
         self.next_id = 0
 
-    def open(self):
-        self.fileobj = open(self.path,'r+b')
+    def open(self, read_only=False):
+        self.fileobj = open(self.path, 'rb' if read_only else 'r+b')
         # get deleted items, identified by a leading '#'
         self.deleted_lines, self._count = [],0
         for line_num,line in enumerate(self):
@@ -549,8 +549,8 @@ class DeletedRowsFile(VariableLengthFile):
         self.deleted_rows = []
         return self
 
-    def open(self):
-        self.fileobj = open(self.path,'r+b')
+    def open(self, read_only=False):
+        self.fileobj = open(self.path, 'rb' if read_only else 'r+b')
         self.deleted_rows = [ int(line[:-1]) for line in self ]
         return self
 
