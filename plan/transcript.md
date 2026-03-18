@@ -691,3 +691,8 @@ uSession 3 completed at Wed Mar 18 00:27:33 EDT 2026
 Check git log for commits and MEMORY.md for final status.
 ```
 
+## Prompt 25
+
+Thank you for your work on the quicknxsv1 project, read-event-nexus banch. Let us continue interactively now. I performed a 'make test' and observe error output of two classes: 1) timeout and 2) error due to a read-only filesystem.  Please review the operation of 'make test' and suggest/repair these issues. Regarding the read-only filesystem, I would like that the buzhug database not be modified during any operation of the program. Is this a design flaw in the original code? If so, can you suggest a fix?
+
+
