@@ -197,6 +197,35 @@ Files in `/SNS/REF_M/` and `/SNS/REF_L/` are accessed via sshfs mounts. See the
 parent project's `CLAUDE.md` for network mount handling rules. Key test files are
 cataloged in the plan with expected values for validation.
 
+## buzhug Database — Read-Only Mode
+
+The embedded buzhug database (`quicknxs/buzhug/`) was originally designed as read-write
+only. We added a `read_only` parameter to `Base.open()` that propagates through all file
+opens, using `'rb'` instead of `'r+b'`. This is required because the production database
+at `/SNS/REF_M/shared/quicknxs_database/` lives on a read-only sshfs mount.
+
+- `Base.open(read_only=True)` — opens all data files in `'rb'` mode
+- `DatabaseHandler.load_db()` — auto-detects read-only via `os.access(path, os.W_OK)`
+- Write operations (`insert`, `update`, `delete`) will raise on a read-only handle
+- External base references (`<base>` in `__info__`) inherit the `read_only` flag
+
+**Do not revert the `read_only` parameter** — the production mount is `-o ro` and tests
+will fail with `OSError: [Errno 30] Read-only file system` without it.
+
+## sshfs Integration Test Patterns
+
+Tests that access `/SNS/REF_L/` or `/SNS/REF_M/` via sshfs must avoid patterns that
+generate many network stat calls:
+
+- **Never** use `os.path.isfile()` in a list comprehension over a broad glob — each call
+  is a stat over the network; thousands of files → timeout
+- **Use specific known-good run IDs** (e.g., `*80836*histo*`) instead of broad `*_histo.nxs`
+  globs followed by filtering
+- **Never** glob with a wildcard that requires listing all IPTS directories
+  (e.g., `/SNS/REF_M/*/data/REF_M_999999_*`) — for "not found" cases, this scans every
+  directory on the mount
+- **Mock `instrument.data_base`** to a local path when testing the "not found" code path
+
 ## Diagnosing Memory Faults (OOM / SIGKILL / Exit 137)
 
 When investigating crashes caused by memory exhaustion (exit code 137 = SIGKILL from OOM killer):
