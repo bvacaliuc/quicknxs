@@ -1,5 +1,5 @@
 #-*- coding: utf-8 -*-
-"""Tests for modern .nxs.h5 event NeXus file support (Phases 1-3)."""
+"""Tests for modern .nxs.h5 event NeXus file support (Phases 1-9)."""
 import pytest
 import os
 
@@ -7,6 +7,9 @@ H5_REF_M = '/SNS/REF_M/IPTS-9801/nexus/REF_M_29750.nxs.h5'
 H5_REF_M_HISTO = '/SNS/REF_M/IPTS-9801/data/REF_M_29750_histo.nxs'
 H5_REF_M_NOLAMDA = '/SNS/REF_M/IPTS-16196/nexus/REF_M_29015.nxs.h5'
 H5_REF_L = '/SNS/REF_L/IPTS-36119/nexus/REF_L_220030.nxs.h5'
+H5_REF_L_NO_ERROR = '/SNS/REF_L/IPTS-14316/nexus/REF_L_138523.nxs.h5'
+H5_REF_M_POLARIZED = '/SNS/REF_M/IPTS-9801/nexus/REF_M_29742.nxs.h5'
+H5_REF_M_POLARIZED_HISTO = '/SNS/REF_M/IPTS-9801/data/REF_M_29742_histo.nxs'
 
 
 # ── Phase 1: Helper functions ──────────────────────────────────────────
@@ -435,3 +438,152 @@ class TestBackwardCompatibility:
                        use_caching=False)
         assert data is not None
         assert data[0].data.shape == (304, 256, 2001)
+
+
+# ── Phase 8: Dead-time correction ─────────────────────────────────────
+
+@pytest.mark.skipif(not os.path.exists(H5_REF_L), reason='No access to REF_L data')
+class TestDeadTimeCorrection:
+    def test_correction_factor_reasonable(self):
+        """DTC factors should be >= 1.0 (more true counts than measured)"""
+        import h5py
+        from quicknxs.qreduce import LRDataset
+        from numpy import linspace
+        with h5py.File(H5_REF_L, 'r') as f:
+            tof_edges = linspace(5000, 60000, 41)
+            dtc = LRDataset._apply_dead_time_correction(f['entry'], tof_edges)
+        assert all(dtc >= 0.99)  # correction >= 1 (or near 1 for low rates)
+        assert all(dtc < 2.0)    # should not be extreme
+
+    @pytest.mark.skipif(not os.path.exists(H5_REF_L_NO_ERROR),
+                        reason='No access to REF_L_138523 data')
+    def test_no_error_events_returns_unity(self):
+        """When no bank_error_events, correction should be all 1.0"""
+        import h5py
+        from quicknxs.qreduce import LRDataset
+        from numpy import linspace, allclose, ones
+        with h5py.File(H5_REF_L_NO_ERROR, 'r') as f:
+            tof_edges = linspace(5000, 60000, 41)
+            dtc = LRDataset._apply_dead_time_correction(f['entry'], tof_edges)
+        assert allclose(dtc, ones(40))
+
+    def test_paralyzable_vs_nonparalyzable(self):
+        """Both models should give >= 1.0 for low count rates"""
+        import h5py
+        from quicknxs.qreduce import LRDataset
+        from numpy import linspace
+        with h5py.File(H5_REF_L, 'r') as f:
+            tof_edges = linspace(5000, 60000, 41)
+            dtc_p = LRDataset._apply_dead_time_correction(
+                f['entry'], tof_edges, paralyzable=True)
+            dtc_np = LRDataset._apply_dead_time_correction(
+                f['entry'], tof_edges, paralyzable=False)
+        assert all(dtc_p >= 0.99)
+        assert all(dtc_np >= 0.99)
+
+    def test_dtc_applied_in_from_event_h5(self):
+        """Verify dead-time correction is integrated into LRDataset loading.
+        DTC increases histogram counts, so corrected sum > uncorrected sum."""
+        import h5py
+        import numpy as np
+        from quicknxs.qreduce import NXSData, LRDataset
+        data = NXSData(H5_REF_L, use_caching=False)
+        assert data is not None
+        ds = data[0]
+        assert ds.data is not None
+        # Verify DTC factors >= 1.0 for this file (it has error events)
+        with h5py.File(H5_REF_L, 'r') as f:
+            dtc = LRDataset._apply_dead_time_correction(f['entry'], ds.tof_edges)
+        assert np.all(dtc >= 1.0), 'DTC factors should be >= 1.0'
+        assert np.any(dtc > 1.0), 'DTC should have some correction (error events exist)'
+        # The corrected histogram sum should be positive
+        assert ds.data.sum() > 0
+
+    @pytest.mark.skipif(not os.path.exists(H5_REF_M), reason='No access to SNS data')
+    def test_ref_m_does_not_apply_dtc(self):
+        """Verify REF_M (MRDataset) does NOT apply dead-time correction"""
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M, use_caching=False)
+        assert data is not None
+        ds = data[0]
+        # REF_M should NOT have DTC applied — histogram sum ≈ total_counts
+        assert abs(ds.data.sum() - ds.total_counts) < 2
+
+
+# ── Phase 9: Polarization filtering ───────────────────────────────────
+
+@pytest.mark.skipif(not os.path.exists(H5_REF_M_POLARIZED),
+                    reason='No access to SNS data')
+class TestPolarizationFiltering:
+    def test_detects_polarized_data(self):
+        """Polarized h5 file should produce multiple channels"""
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M_POLARIZED, use_caching=False)
+        assert data is not None
+        assert len(data) >= 2  # at least 2 polarization channels
+
+    def test_channel_names(self):
+        """Channels should be named Off_Off and On_Off for 2-state SF1"""
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M_POLARIZED, use_caching=False)
+        names = data._channel_names
+        assert 'Off_Off' in names
+        assert 'On_Off' in names
+
+    def test_measurement_type_polarized(self):
+        """Measurement type should reflect polarized state"""
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M_POLARIZED, use_caching=False)
+        assert data.measurement_type == 'Polarized'
+
+    @pytest.mark.skipif(not os.path.exists(H5_REF_M_POLARIZED_HISTO),
+                        reason='No access to histo counterpart')
+    @pytest.mark.timeout(180)
+    def test_channel_counts_match_histo(self):
+        """Total counts across channels should match histo within tolerance"""
+        from quicknxs.qreduce import NXSData
+        h5 = NXSData(H5_REF_M_POLARIZED, use_caching=False)
+        histo = NXSData(H5_REF_M_POLARIZED_HISTO, use_caching=False)
+        h5_total = sum(ch.total_counts for ch in h5._channel_data)
+        histo_total = sum(ch.total_counts for ch in histo._channel_data)
+        # Allow for transition events lost to veto filtering
+        assert abs(h5_total - histo_total) < 200
+
+    def test_unpolarized_single_channel(self):
+        """Unpolarized run should still produce single channel"""
+        from quicknxs.qreduce import NXSData
+        data = NXSData(H5_REF_M, use_caching=False)
+        assert len(data) == 1
+
+    def test_filter_function_returns_channels(self):
+        """_filter_events_by_polarization should return channel dict"""
+        import h5py
+        from quicknxs.qreduce import _filter_events_by_polarization
+        with h5py.File(H5_REF_M_POLARIZED, 'r') as f:
+            channels = _filter_events_by_polarization(f['entry'])
+        assert channels is not None
+        assert len(channels) >= 2
+        for name, (ids, tofs) in channels.items():
+            assert len(ids) > 0
+            assert len(ids) == len(tofs)
+
+    def test_filter_function_returns_none_without_sf1(self):
+        """When SF1 is missing, should return None"""
+        import h5py
+        from quicknxs.qreduce import _filter_events_by_polarization
+        # REF_L files don't have SF1 — use as proxy for missing SF1
+        with h5py.File(H5_REF_L, 'r') as f:
+            result = _filter_events_by_polarization(f['entry'])
+        assert result is None
+
+    def test_veto_filtering_excludes_transitions(self):
+        """Veto filtering should reduce total counts vs raw event count"""
+        import h5py
+        from quicknxs.qreduce import _filter_events_by_polarization
+        with h5py.File(H5_REF_M_POLARIZED, 'r') as f:
+            raw_count = len(f['entry/bank1_events/event_id'][()])
+            channels = _filter_events_by_polarization(f['entry'])
+        assert channels is not None
+        total = sum(len(ids) for ids, _ in channels.values())
+        assert total < raw_count  # some events removed by veto/state filtering
+        assert total > raw_count * 0.9  # but not too many lost

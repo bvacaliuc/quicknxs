@@ -424,9 +424,22 @@ class NXSData(object, metaclass=OptionsDocMeta):
     :param h5py.File nxs: Open HDF5 file handle
     :param float start: Start time for performance tracking
     '''
-    # Modern .nxs.h5 format: single entry, always unpolarized
+    # Modern .nxs.h5 format: single entry, check for polarization
     if self._is_event_h5:
-      return self._read_file_event_h5(filename, nxs, start, MRDataset)
+      # Check if polarized by examining SF1 log
+      is_polarized=False
+      entry_key=[ch for ch in nxs.keys() if ch.startswith('entry')]
+      if entry_key and 'DASlogs/SF1' in nxs[entry_key[0]]:
+        try:
+          sf1_vals=nxs[entry_key[0]+'/DASlogs/SF1/value'][()]
+          is_polarized=(len(unique(sf1_vals))>1)
+        except KeyError:
+          warn('SF1 log present but unreadable — treating as unpolarized')
+
+      if is_polarized:
+        return self._read_file_event_h5_polarized(filename, nxs, start)
+      else:
+        return self._read_file_event_h5(filename, nxs, start, MRDataset)
 
     # analyze channels
     channels=list(nxs.keys())
@@ -700,6 +713,76 @@ class NXSData(object, metaclass=OptionsDocMeta):
     if empty_channels:
       warn('No counts for state %s'%(','.join(empty_channels)))
     return True
+
+  def _read_file_event_h5_polarized(self, filename, nxs, start):
+    '''
+    Load polarized data from a modern .nxs.h5 event NeXus file.
+    Uses SF1/SF2 time-series to separate events into polarization channels.
+
+    :param str filename: Path to file to read
+    :param h5py.File nxs: Open HDF5 file handle
+    :param float start: Start time for performance tracking
+    '''
+    entry_keys=[ch for ch in nxs.keys() if ch.startswith('entry')]
+    if len(entry_keys)==0:
+      debug('No entry channels in .nxs.h5 file')
+      return False
+    entry=nxs[entry_keys[0]]
+
+    try:
+      total_counts=entry['total_counts'][()][0]
+    except KeyError:
+      warn('total_counts not defined')
+      return False
+    if total_counts<1:
+      debug('No counts in .nxs.h5 file')
+      return False
+
+    # Filter events by polarization state
+    channels=_filter_events_by_polarization(entry)
+    if channels is None or len(channels)==0:
+      # Fall back to unpolarized loading
+      debug('Polarization filtering failed — falling back to unpolarized')
+      return self._read_file_event_h5(filename, nxs, start, MRDataset)
+
+    # Determine measurement type from channel count
+    if len(channels)==4:
+      self.measurement_type='Polarization Analysis'
+    elif len(channels)==2:
+      self.measurement_type='Polarized'
+    else:
+      self.measurement_type='Unpolarized'
+
+    progress=0.1
+    if self._options['callback']:
+      self._options['callback'](progress)
+    self._read_times.append(time()-start)
+
+    i=1
+    empty_channels_list=[]
+    for name, (ids, tofs) in sorted(channels.items()):
+      data=MRDataset.from_event_h5_filtered(
+        entry, ids, tofs, self._options,
+        callback=self._options['callback'],
+        callback_offset=progress,
+        callback_scaling=0.9/len(channels),
+        tof_overwrite=self._options['event_tof_overwrite'])
+      if data is None:
+        empty_channels_list.append(name)
+        continue
+      self._channel_data.append(data)
+      self._channel_names.append(name)
+      self._channel_origin.append(entry_keys[0])
+      progress=0.1+0.9*float(i)/len(channels)
+      if self._options['callback']:
+        self._options['callback'](progress)
+      i+=1
+      self._read_times.append(time()-self._read_times[-1]-start)
+
+    nxs.close()
+    if empty_channels_list:
+      warn('No counts for state %s'%(','.join(empty_channels_list)))
+    return len(self._channel_data)>0
 
   def _get_ancient(self, filename):
     '''
@@ -1294,6 +1377,77 @@ class MRDataset(object):
     dimension=(n_x, n_y)
 
     # Bin events into 3D histogram using existing infrastructure
+    Ixyt=MRDataset.bin_events(tof_ids, tof_time, tof_edges, dimension,
+                              callback, callback_offset, callback_scaling)
+
+    # Create projections
+    Ixy=Ixyt.sum(axis=2)
+    Ixt=Ixyt.sum(axis=1)
+
+    # Store data
+    output.tof_edges=tof_edges
+    output.data=Ixyt.astype(float)
+    output.xydata=Ixy.transpose().astype(float)
+    output.xtofdata=Ixt.astype(float)
+    return output
+
+  @classmethod
+  @log_call
+  def from_event_h5_filtered(cls, data, event_ids, event_tofs, read_options,
+                              callback=None, callback_offset=0., callback_scaling=1.,
+                              tof_overwrite=None):
+    '''
+    Load data from pre-filtered events (polarization channel).
+    Same as from_event_h5() but uses provided event arrays instead of
+    reading from the file.
+
+    :param h5py._hl.group.Group data: HDF5 entry group (for metadata)
+    :param array event_ids: Pre-filtered pixel IDs for this channel
+    :param array event_tofs: Pre-filtered TOF values for this channel
+    :param dict read_options: Options controlling binning
+    '''
+    output=cls()
+    output.read_options=read_options
+    output.from_event_mode=True
+    bin_type=read_options['bin_type']
+    bins=read_options['bins']
+
+    # Collect metadata from DASlogs
+    try:
+      output._collect_info_h5(data)
+    except KeyError:
+      warn('Error collecting metadata from .nxs.h5:\n\n'+traceback.format_exc())
+
+    # Determine TOF edges
+    if tof_overwrite is None:
+      lcenter=output.lambda_center
+      tmin=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter-1.6)*1e-4
+      tmax=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter+1.6)*1e-4
+      if bin_type==0:
+        tof_edges=linspace(tmin, tmax, bins+1)
+      elif bin_type==1:
+        tof_edges=1./linspace(1./tmin, 1./tmax, bins+1)
+      elif bin_type==2:
+        tof_edges=tmin*(((tmax/tmin)**(1./bins))**arange(bins+1))
+      else:
+        raise ValueError('Unknown bin type %i'%bin_type)
+    else:
+      tof_edges=tof_overwrite
+
+    tof_ids=array(event_ids, dtype=int)
+    tof_time=event_tofs
+
+    if len(tof_ids)==0:
+      debug('No events in filtered channel')
+      return None
+
+    output.total_counts=len(tof_ids)
+
+    # Detector dimensions
+    n_x, n_y=_get_detector_dimensions(data)
+    dimension=(n_x, n_y)
+
+    # Bin events into 3D histogram
     Ixyt=MRDataset.bin_events(tof_ids, tof_time, tof_edges, dimension,
                               callback, callback_offset, callback_scaling)
 
@@ -2058,6 +2212,207 @@ class LRDataset(MRDataset):
     self.experiment=_decode(data['experiment_identifier'][()][0])
     self.number=int(data['run_number'][()][0])
     self.merge_warnings=''
+
+  @staticmethod
+  def _apply_dead_time_correction(data, tof_edges, dead_time=4.2, paralyzable=True):
+    '''
+    Apply dead-time correction using bank_error_events (BL4B only).
+
+    Gracefully returns unity correction when bank_error_events is absent,
+    proton_charge has no non-zero pulses, or proton_charge log is missing.
+
+    :param h5py._hl.group.Group data: HDF5 entry group
+    :param array tof_edges: TOF bin edges in µs
+    :param float dead_time: detector dead time in µs (default 4.2 for BL4B)
+    :param bool paralyzable: if True, use Lambert W model (default for BL4B)
+    :returns: array of correction factors, one per TOF bin
+    '''
+    from scipy.special import lambertw
+
+    n_bins=len(tof_edges)-1
+    unity=ones(n_bins)
+
+    # Guard: skip if bank_error_events is absent
+    if 'bank_error_events/event_time_offset' not in data:
+      warn('No bank_error_events in file — skipping dead-time correction')
+      return unity
+
+    # Guard: skip if bank1_events is absent
+    if 'bank1_events/event_time_offset' not in data:
+      return unity
+
+    e_offset=data['bank1_events/event_time_offset'][()]
+    err_offset=data['bank_error_events/event_time_offset'][()]
+
+    # Guard: skip if proton_charge is missing
+    try:
+      pc=data['DASlogs/proton_charge/value'][()]
+    except KeyError:
+      warn('No proton_charge in DASlogs — skipping dead-time correction')
+      return unity
+
+    n_pulses=count_nonzero(pc)
+    if n_pulses==0:
+      return unity
+
+    # Histogram all detector triggers (good + error)
+    counts, _=histogram(e_offset, bins=tof_edges)
+    err_counts, _=histogram(err_offset, bins=tof_edges)
+    total=(counts+err_counts).astype(float)
+
+    # Rate per pulse per TOF bin
+    tof_step=diff(tof_edges)
+    rate=total/n_pulses
+
+    # Apply correction model
+    with errstate(divide='ignore', invalid='ignore'):
+      if paralyzable:
+        # Lambert W correction (paralyzable detector model)
+        b=-real(lambertw(-rate*dead_time/tof_step))
+        dtc=b/(rate*dead_time/tof_step)
+      else:
+        # Non-paralyzable model
+        dtc=1.0/(1.0-rate*dead_time/tof_step)
+      dtc=nan_to_num(dtc, nan=1.0, posinf=1.0, neginf=1.0)
+
+    # Clamp to reasonable range
+    dtc=clip(dtc, 1.0, 10.0)
+
+    return dtc
+
+  @classmethod
+  @log_call
+  def from_event_h5(cls, data, read_options,
+                    callback=None, callback_offset=0., callback_scaling=1.,
+                    total_duration=None, tof_overwrite=None):
+    '''
+    Load data from a modern .nxs.h5 event NeXus file for REF_L.
+    Calls the parent MRDataset.from_event_h5() then applies dead-time correction.
+
+    :param h5py._hl.group.Group data: HDF5 entry group
+    :param dict read_options: Options controlling binning
+    '''
+    output=MRDataset.from_event_h5.__func__(cls, data, read_options,
+                                            callback=callback,
+                                            callback_offset=callback_offset,
+                                            callback_scaling=callback_scaling,
+                                            total_duration=total_duration,
+                                            tof_overwrite=tof_overwrite)
+    if output is None:
+      return None
+
+    # Apply dead-time correction (BL4B only)
+    dtc=cls._apply_dead_time_correction(data, output.tof_edges)
+    output.data=output.data*dtc[newaxis, newaxis, :]
+    # Recompute projections
+    output.xydata=output.data.sum(axis=2).transpose().astype(float)
+    output.xtofdata=output.data.sum(axis=1).astype(float)
+    return output
+
+
+def _filter_events_by_polarization(data):
+  '''
+  Separate events into polarization channels using SF1 (polarizer) and
+  SF2 (analyzer) time-series logs from DASlogs.
+
+  :param h5py._hl.group.Group data: HDF5 entry group
+  :returns: dict {cross_section_name: (event_ids, event_tofs)} or None
+  '''
+  # Guard: SF1 must exist for polarization filtering
+  if 'DASlogs/SF1' not in data:
+    warn('DASlogs/SF1 missing — cannot filter by polarization state; '
+         'treating as unpolarized')
+    return None
+
+  # Guard: required event fields must exist
+  for required in ['bank1_events/event_time_zero',
+                   'bank1_events/event_index',
+                   'bank1_events/event_id',
+                   'bank1_events/event_time_offset']:
+    if required not in data:
+      warn('%s missing — cannot filter events; treating as unpolarized'%required)
+      return None
+
+  # Read flipper state logs
+  try:
+    sf1_values=data['DASlogs/SF1/value'][()]
+    sf1_times=data['DASlogs/SF1/time'][()]
+  except KeyError:
+    warn('DASlogs/SF1/value or SF1/time missing — treating as unpolarized')
+    return None
+
+  sf2_single=True
+  sf2_values=None
+  sf2_times=None
+  if 'DASlogs/SF2' in data:
+    try:
+      sf2_values=data['DASlogs/SF2/value'][()]
+      sf2_times=data['DASlogs/SF2/time'][()]
+      sf2_single=(len(unique(sf2_values))==1)
+    except KeyError:
+      warn('DASlogs/SF2/value or SF2/time missing — assuming no analyzer')
+      sf2_single=True
+
+  # Read pulse and event data
+  event_tz=data['bank1_events/event_time_zero'][()]
+  event_idx=array(data['bank1_events/event_index'][()], dtype=int)
+  event_id=data['bank1_events/event_id'][()]
+  event_tof=data['bank1_events/event_time_offset'][()]
+
+  # Assign each pulse to SF1 state
+  pulse_sf1_idx=searchsorted(sf1_times, event_tz, side='right')-1
+  pulse_sf1_idx=clip(pulse_sf1_idx, 0, len(sf1_values)-1)
+  pulse_sf1=sf1_values[pulse_sf1_idx]
+
+  if not sf2_single:
+    pulse_sf2_idx=searchsorted(sf2_times, event_tz, side='right')-1
+    pulse_sf2_idx=clip(pulse_sf2_idx, 0, len(sf2_values)-1)
+    pulse_sf2=sf2_values[pulse_sf2_idx]
+  else:
+    pulse_sf2=zeros_like(pulse_sf1)
+
+  # Apply veto filtering if veto logs are available
+  veto_mask=ones(len(event_tz), dtype=bool)  # True = keep pulse
+  for veto_key in ['DASlogs/SF1_Veto', 'DASlogs/SF2_Veto']:
+    if veto_key in data:
+      try:
+        veto_vals=data[veto_key+'/value'][()]
+        veto_times=data[veto_key+'/time'][()]
+        veto_idx=searchsorted(veto_times, event_tz, side='right')-1
+        veto_idx=clip(veto_idx, 0, len(veto_vals)-1)
+        # Veto=1 means flipper is in transition — exclude these pulses
+        veto_mask&=(veto_vals[veto_idx]==0)
+      except KeyError:
+        warn('%s/value or time missing — skipping veto filter'%veto_key)
+    else:
+      debug('%s not present — no veto filtering for this flipper'%veto_key)
+
+  # Combine SF1 and SF2 into cross-section labels
+  state_names={(0, 0): 'Off_Off', (1, 0): 'On_Off',
+               (0, 1): 'Off_On',  (1, 1): 'On_On'}
+
+  channels={}
+  for (s1, s2), name in state_names.items():
+    mask=(pulse_sf1==s1)&(pulse_sf2==s2)&veto_mask
+    state_pulses=where(mask)[0]
+    if len(state_pulses)==0:
+      continue
+    event_masks=[]
+    for pi in state_pulses:
+      ev_start=event_idx[pi]
+      ev_end=event_idx[pi+1] if pi+1<len(event_idx) else len(event_id)
+      if ev_start<ev_end:
+        event_masks.append(arange(ev_start, ev_end))
+    if event_masks:
+      all_idx=concatenate(event_masks)
+      channels[name]=(event_id[all_idx], event_tof[all_idx])
+
+  if len(channels)==0:
+    warn('Polarization filtering produced no channels — '
+         'all events may be in veto periods; treating as unpolarized')
+    return None
+
+  return channels
 
 
 def is_analyzer_in(position, trans_position, start_time_str):
