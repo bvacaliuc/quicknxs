@@ -703,3 +703,17 @@ commit 3e6ed6e7c172b82b7f2584dddac5f2f8aa502116
 Thank you! Let's return to our work with quicknxsv1 on feature/read-event-nexus branch. In the UI, specifying a run number in the 'Open Number:' field does nothing. It should search for the number in the experiment file system, identify the folder, enumerate all previous and future runs and populate the pick list, then load that file. In addition, the 'File Open' dialog only had '*.nexus' patterns. This is now incomplete with the feature/read-event-nexus branch work. There are more patterns possible, according to the selection of the radio buttons: Histogram, Event or Old. The default should be '*.nxs.h5'. Please research thoroughly (for both ref_l and ref_m instruments) and identify a plan to restore the function. Please review the code and operation of quicknxsv2 in this regard, as it can be considered the 'modern' implementation. You have access to the experiment filesystem at /SNS/REF_L and /SNS/REF_M respectively. Inform your research by reading the git logs and traverse the various branches so as to develop a thorough understanding of the file loading method. Be sure to apply best coding practices and consider all edge conditions. Your plan should include UI enhancements for a good user experience. For example, I observe a very long delay in quicknxsv2 when loading run 43672 before the loading progress bar beings to move. Please make sure that long operations provide some feedback/progress to the user so that they do not think that the program has hung.
 
 The plan developed is given in [fix-file-loading-run-number.md](fix-file-loading-run-number.md)
+
+commit 2061b66a10fb20b03bda6ecf560ecd0e68dec5b1
+
+### Follow on Prompt 26.2
+
+Thank you! When I try to load run 40205 using the openByNumber() it cannot find it, but if I use the fileOpenDialog() I can navigate to the folder and load it. In both quicknxsv1 and quicknxsv2, a run number can be specified in the openByNumber() or entry box and it will be found. Explore how quicknxsv2 does this and apply what you learn to quicknxsv1 for modern data files. You may look at the transcript of my last session in ~/.quicknxs/debug.log if it helps.
+
+commit cef5fad083650dd7bb82bdd3e1a48af60daa73d2
+
+### Follow on Prompt 26.3
+
+Please plan the implementation of the SIGALRM timeout wrapper around locate_file() for sshfs stalls. Are there any engineering tradeoffs that need to be considered?
+
+The full plan with TDD test cases is at [sshfs-timeout-protection.md](sshfs-timeout-protection.md).
