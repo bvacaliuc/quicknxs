@@ -2481,6 +2481,44 @@ def time_from_header(filename, nxs=None):
     nxs.close()
   return etime-stime
 
+def _listdir_with_timeout(path, timeout=10.0):
+    '''
+    Call os.listdir(path) in a daemon thread and return the result within
+    *timeout* seconds.  Returns None if the call does not complete in time or
+    raises OSError (e.g. path does not exist).
+
+    This is the safe replacement for a bare os.listdir() over sshfs.  When a
+    FUSE mount is stale the kernel puts the calling process into D-state
+    (uninterruptible sleep) so SIGALRM cannot interrupt it.  Running the call
+    in a daemon thread lets the main thread proceed after the deadline while the
+    stuck thread waits for FUSE to recover in the background.
+
+    :param str path: Directory to list.
+    :param float timeout: Wall-clock deadline in seconds (default 10.0).
+    :returns: List of entry names, or None on timeout/error.
+    '''
+    import threading
+    result = []
+    error = []
+    done = threading.Event()
+
+    def _work():
+        try:
+            result.extend(os.listdir(path))
+        except OSError as exc:
+            error.append(exc)
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_work, daemon=True)
+    t.start()
+    if done.wait(timeout=timeout):
+        return result if not error else None
+    # Timed out — the daemon thread is stuck (likely D-state FUSE wait).
+    # Return None and let the thread recover on its own.
+    return None
+
+
 def _find_file_in_ipts(data_base, candidates, timeout=30):
     '''
     Search for one or more candidate filenames across all IPTS directories in
@@ -2499,10 +2537,10 @@ def _find_file_in_ipts(data_base, candidates, timeout=30):
     :param int timeout: Wall-clock timeout in seconds (default 30).
     :returns: Absolute path string or None.
     '''
-    try:
-        ipts_dirs = [d for d in os.listdir(data_base) if d.startswith('IPTS')]
-    except OSError:
+    all_entries = _listdir_with_timeout(data_base, timeout=10.0)
+    if not all_entries:
         return None
+    ipts_dirs = [d for d in all_entries if d.startswith('IPTS')]
     if not ipts_dirs:
         return None
 

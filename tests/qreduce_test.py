@@ -608,6 +608,50 @@ class LocateFileTests(unittest.TestCase):
     self.assertIsNone(result)
 
 
+class ListdirTimeoutTests(unittest.TestCase):
+  '''Tests for _listdir_with_timeout() — thread-isolated os.listdir with deadline.'''
+
+  def test_returns_entries_on_success(self):
+    '''_listdir_with_timeout returns directory entries for a real path.'''
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+      os.makedirs(os.path.join(tmpdir, 'IPTS-1'))
+      os.makedirs(os.path.join(tmpdir, 'shared'))
+      result = qreduce._listdir_with_timeout(tmpdir, timeout=5.0)
+    self.assertIsNotNone(result)
+    self.assertIn('IPTS-1', result)
+    self.assertIn('shared', result)
+
+  def test_returns_none_for_missing_path(self):
+    '''_listdir_with_timeout returns None for a non-existent path.'''
+    result = qreduce._listdir_with_timeout('/nonexistent/path/xyz_9999', timeout=5.0)
+    self.assertIsNone(result)
+
+  def test_returns_none_on_timeout(self):
+    '''_listdir_with_timeout returns None when the call does not finish in time.'''
+    import threading
+    from unittest.mock import patch
+    released = threading.Event()
+
+    real_listdir = os.listdir
+    def slow_listdir(path):
+      released.wait()   # block indefinitely until test releases
+      return real_listdir(path)
+
+    with patch('os.listdir', side_effect=slow_listdir):
+      result = qreduce._listdir_with_timeout('/tmp', timeout=0.05)
+
+    released.set()       # unblock the stuck daemon thread
+    self.assertIsNone(result)
+
+  def test_find_file_returns_none_when_listdir_times_out(self):
+    '''_find_file_in_ipts returns None gracefully when _listdir_with_timeout returns None.'''
+    from unittest.mock import patch
+    with patch('quicknxs.qreduce._listdir_with_timeout', return_value=None):
+      result = qreduce._find_file_in_ipts('/SNS/REF_M', [('nexus', 'REF_M_99999.nxs.h5')])
+    self.assertIsNone(result)
+
+
 suite=unittest.TestLoader().loadTestsFromTestCase(GeneralClassTest)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataConsistencyChecks))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataReductionTests))
@@ -615,5 +659,6 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(EventModeTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LRDatasetTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(InstrumentConfigTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LocateFileTests))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ListdirTimeoutTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataLoadVerificationLR))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataLoadVerificationMR))

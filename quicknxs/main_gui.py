@@ -4,6 +4,7 @@ Module including main GUI class with all signal handling and plot creation.
 '''
 
 import os
+import signal
 import sys
 from glob import glob
 from time import time
@@ -1264,6 +1265,11 @@ class MainGUI(QtWidgets.QMainWindow):
   def openByNumber(self, number=None, do_plot=True):
     '''
     Search the data folders for a specific file number and open it.
+
+    Uses _listdir_with_timeout() (thread-isolated) as the primary stall
+    protection for sshfs D-state hangs.  SIGALRM (when available) is a
+    belt-and-suspenders guard for any residual blocking that escapes the
+    thread timeout — e.g. a soft NFS mount returning ETIMEDOUT after a delay.
     '''
     if number is None:
       number=self.ui.numberSearchEntry.text()
@@ -1274,14 +1280,32 @@ class MainGUI(QtWidgets.QMainWindow):
     self.ui.statusbar.showMessage(u'Searching for run %s...'%number)
     QtWidgets.QApplication.instance().setOverrideCursor(QtCore.Qt.WaitCursor)
     QtWidgets.QApplication.instance().processEvents()
+    # SIGALRM guard: secondary safety net (UNIX only; main thread only).
+    # Primary protection is _listdir_with_timeout() inside locate_file().
+    _timeout_msg = None
+    if hasattr(signal, 'SIGALRM'):
+      def _alrm_handler(signum, frame):
+        raise TimeoutError('locate_file timed out — is the SNS mount available?')
+      _old_handler = signal.signal(signal.SIGALRM, _alrm_handler)
+      signal.alarm(40)   # 40 s: longer than _find_file_in_ipts timeout=30
     try:
       found_path=locate_file(int(number),
                               histogram=self.ui.histogramActive.isChecked(),
                               old_format=self.ui.oldFormatActive.isChecked())
     except (ValueError, TypeError):
       found_path=None
+    except TimeoutError:
+      found_path=None
+      _timeout_msg=u'Search timed out — is the SNS mount available?'
     finally:
+      if hasattr(signal, 'SIGALRM'):
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, _old_handler)
       QtWidgets.QApplication.instance().restoreOverrideCursor()
+    if _timeout_msg:
+      info(_timeout_msg)
+      self.ui.statusbar.showMessage(_timeout_msg)
+      return False
     if found_path:
       self.ui.numberSearchEntry.setText(u'')
       self.ui.statusbar.showMessage(u'Loading run %s...'%number)

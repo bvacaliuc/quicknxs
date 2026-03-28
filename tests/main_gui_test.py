@@ -627,6 +627,14 @@ class FileLoadingFixes(unittest.TestCase):
       instrument.data_base = orig
     self.assertIn('888888', self.gui.ui.statusbar.currentMessage())
 
+  @unittest.skipUnless(hasattr(__import__('signal'), 'SIGALRM'), 'SIGALRM not available')
+  def test_open_by_number_sigalrm_timeout(self):
+    """openByNumber() handles TimeoutError from a SIGALRM stall gracefully."""
+    with patch('quicknxs.main_gui.locate_file', side_effect=TimeoutError('sshfs stall')):
+      result = self.gui.openByNumber('40205')
+    self.assertFalse(result)
+    self.assertIn('timed out', self.gui.ui.statusbar.currentMessage().lower())
+
   # ── fileOpenDialog / fileOpenSumDialog ────────────────────
 
   def test_file_open_dialog_event_filter_includes_h5(self):
