@@ -504,11 +504,116 @@ class DataLoadVerificationMR(unittest.TestCase):
       self._load_file(f)
 
 
+class LocateFileTests(unittest.TestCase):
+  '''Tests for _find_file_in_ipts() and locate_file() parallel search.'''
+
+  def setUp(self):
+    import tempfile
+    self.tmpdir = tempfile.mkdtemp()
+    # Build a minimal fake SNS hierarchy:
+    #   IPTS-100/nexus/REF_M_1001.nxs.h5
+    #   IPTS-200/data/REF_M_2001_histo.nxs
+    #   IPTS-200/data/REF_M_2001_event.nxs
+    #   IPTS-300/  (empty IPTS, no relevant files)
+    #   shared/    (non-IPTS dir, should be ignored)
+    for ipts, subdir, fname in [
+        ('IPTS-100', 'nexus', 'REF_M_1001.nxs.h5'),
+        ('IPTS-200', 'data',  'REF_M_2001_histo.nxs'),
+        ('IPTS-200', 'data',  'REF_M_2001_event.nxs'),
+    ]:
+      d = os.path.join(self.tmpdir, ipts, subdir)
+      os.makedirs(d, exist_ok=True)
+      open(os.path.join(d, fname), 'w').close()
+    os.makedirs(os.path.join(self.tmpdir, 'IPTS-300'), exist_ok=True)
+    os.makedirs(os.path.join(self.tmpdir, 'shared'), exist_ok=True)
+
+  def tearDown(self):
+    import shutil
+    shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+  def test_find_h5_file(self):
+    '''_find_file_in_ipts finds a .nxs.h5 file in the nexus subdir.'''
+    result = qreduce._find_file_in_ipts(
+        self.tmpdir, [('nexus', 'REF_M_1001.nxs.h5')])
+    self.assertIsNotNone(result)
+    self.assertTrue(result.endswith('REF_M_1001.nxs.h5'))
+
+  def test_find_histo_file(self):
+    '''_find_file_in_ipts finds a _histo.nxs file in the data subdir.'''
+    result = qreduce._find_file_in_ipts(
+        self.tmpdir, [('data', 'REF_M_2001_histo.nxs')])
+    self.assertIsNotNone(result)
+    self.assertTrue(result.endswith('REF_M_2001_histo.nxs'))
+
+  def test_find_returns_none_when_not_found(self):
+    '''_find_file_in_ipts returns None if no IPTS dir contains the file.'''
+    result = qreduce._find_file_in_ipts(
+        self.tmpdir, [('nexus', 'REF_M_9999.nxs.h5')])
+    self.assertIsNone(result)
+
+  def test_find_ignores_non_ipts_dirs(self):
+    '''_find_file_in_ipts ignores directories not starting with IPTS.'''
+    p = os.path.join(self.tmpdir, 'shared', 'nexus', 'REF_M_5000.nxs.h5')
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    open(p, 'w').close()
+    result = qreduce._find_file_in_ipts(
+        self.tmpdir, [('nexus', 'REF_M_5000.nxs.h5')])
+    self.assertIsNone(result)
+
+  def test_locate_file_histogram_mode(self):
+    '''locate_file() with histogram=True finds _histo.nxs.'''
+    from quicknxs.config import instrument
+    orig = instrument.data_base
+    try:
+      instrument.data_base = self.tmpdir
+      result = qreduce.locate_file(2001, histogram=True)
+    finally:
+      instrument.data_base = orig
+    self.assertIsNotNone(result)
+    self.assertIn('histo', result)
+
+  def test_locate_file_event_mode_finds_h5(self):
+    '''locate_file() with histogram=False prefers .nxs.h5.'''
+    from quicknxs.config import instrument
+    orig = instrument.data_base
+    try:
+      instrument.data_base = self.tmpdir
+      result = qreduce.locate_file(1001, histogram=False)
+    finally:
+      instrument.data_base = orig
+    self.assertIsNotNone(result)
+    self.assertIn('.nxs.h5', result)
+
+  def test_locate_file_event_mode_falls_back_to_event_nxs(self):
+    '''locate_file() in event mode falls back to _event.nxs if no .nxs.h5.'''
+    from quicknxs.config import instrument
+    orig = instrument.data_base
+    try:
+      instrument.data_base = self.tmpdir
+      result = qreduce.locate_file(2001, histogram=False)
+    finally:
+      instrument.data_base = orig
+    self.assertIsNotNone(result)
+    self.assertIn('event', result)
+
+  def test_locate_file_not_found_returns_none(self):
+    '''locate_file() returns None when the run does not exist.'''
+    from quicknxs.config import instrument
+    orig = instrument.data_base
+    try:
+      instrument.data_base = self.tmpdir
+      result = qreduce.locate_file(9999, histogram=False)
+    finally:
+      instrument.data_base = orig
+    self.assertIsNone(result)
+
+
 suite=unittest.TestLoader().loadTestsFromTestCase(GeneralClassTest)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataConsistencyChecks))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataReductionTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(EventModeTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LRDatasetTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(InstrumentConfigTests))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LocateFileTests))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataLoadVerificationLR))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(DataLoadVerificationMR))

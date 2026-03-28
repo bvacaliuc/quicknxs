@@ -20,6 +20,7 @@ import h5py
 import base64
 import traceback
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from glob import glob
 import builtins as _builtins
 from numpy import *
@@ -2480,31 +2481,95 @@ def time_from_header(filename, nxs=None):
     nxs.close()
   return etime-stime
 
+def _find_file_in_ipts(data_base, candidates, timeout=30):
+    '''
+    Search for one or more candidate filenames across all IPTS directories in
+    data_base using parallel os.path.isfile checks.
+
+    On sshfs mounts a glob with a wildcard at the IPTS level must enumerate
+    every directory, which can take over a minute.  Checking os.path.isfile
+    for a specific filename in each IPTS takes ~0.2 s per call but runs in
+    parallel so the whole search completes in 1–5 s regardless of how many
+    IPTS directories exist.
+
+    :param str data_base: Instrument root (e.g. '/SNS/REF_M').
+    :param list candidates: Ordered list of (subdir, filename) tuples to check,
+        e.g. [('nexus', 'REF_M_40205.nxs.h5'), ('data', 'REF_M_40205_histo.nxs')].
+        The first tuple whose file exists in any IPTS dir wins.
+    :param int timeout: Wall-clock timeout in seconds (default 30).
+    :returns: Absolute path string or None.
+    '''
+    try:
+        ipts_dirs = [d for d in os.listdir(data_base) if d.startswith('IPTS')]
+    except OSError:
+        return None
+    if not ipts_dirs:
+        return None
+
+    def check(ipts_dir):
+        for subdir, filename in candidates:
+            path = os.path.join(data_base, ipts_dir, subdir, filename)
+            try:
+                if os.path.isfile(path):
+                    return path
+            except OSError:
+                pass
+        return None
+
+    found = None
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futs = {executor.submit(check, d): d for d in ipts_dirs}
+        try:
+            for fut in as_completed(futs, timeout=timeout):
+                res = fut.result()
+                if res:
+                    found = res
+                    for f in futs:
+                        f.cancel()
+                    break
+        except Exception:
+            pass
+    return found
+
+
 def locate_file(number, histogram=True, old_format=False, verbose=True):
     '''
-    Search the data folders for a specific file number and open it.
+    Search the data folders for a specific file number.
+
+    Uses parallel os.path.isfile checks across IPTS directories instead of a
+    wildcard glob, which is prohibitively slow on sshfs mounts (>80 s for a
+    single glob vs ~1–5 s for the parallel approach).
 
     :param int number: Run number
+    :param bool histogram: If True, prefer *_histo.nxs (default True).
+    :param bool old_format: If True, search the old NeXus directory layout.
+    :param bool verbose: Log the search attempt (default True).
+    :returns: Absolute path string or None.
     '''
     if verbose:
       info('Trying to locate file number %s...'%number)
+    instr = instrument.NAME  # e.g. 'REF_M' or 'REF_L'
+
+    if old_format:
+      # Old layout: /SNS/REF_X/YYYY_N_BL_TYPE/NeXus/REF_X_NNNNN*.nxs
+      # Still use glob for this rare case — the old directory tree is small
+      search = glob(os.path.join(instrument.data_base,
+                    instrument.OLD_BASE_SEARCH % (number, number) + u'.nxs'))
+      return search[0] if search else None
+
     if histogram:
-      search=glob(os.path.join(instrument.data_base, (instrument.BASE_SEARCH%number)+u'histo.nxs'))
-    elif old_format:
-      search=glob(os.path.join(instrument.data_base, (instrument.OLD_BASE_SEARCH%(number, number))+u'.nxs'))
+      candidates = [
+          ('data',  u'%s_%s_histo.nxs' % (instr, number)),
+          ('nexus', u'%s_%s.nxs.h5'    % (instr, number)),
+      ]
     else:
-      search=glob(os.path.join(instrument.data_base, (instrument.BASE_SEARCH%number)+u'event.nxs'))
-    if search:
-      return search[0]
+      # Event mode: prefer modern .nxs.h5, fall back to legacy event.nxs
+      candidates = [
+          ('nexus', u'%s_%s.nxs.h5'    % (instr, number)),
+          ('data',  u'%s_%s_event.nxs'  % (instr, number)),
+      ]
 
-    # Try modern .nxs.h5 format in nexus/ subdirectory (fallback)
-    if hasattr(instrument, 'H5_BASE_SEARCH'):
-      h5_search=glob(os.path.join(instrument.data_base,
-                     instrument.H5_BASE_SEARCH%number))
-      if h5_search:
-        return h5_search[0]
-
-    return None
+    return _find_file_in_ipts(instrument.data_base, candidates)
 
 class Reflectivity(object, metaclass=OptionsDocMeta):
   """

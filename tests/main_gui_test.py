@@ -516,8 +516,8 @@ class MainGUIFileOperations(unittest.TestCase):
   def test_open_by_number_not_found(self):
     """openByNumber() with non-existent number returns False."""
     from quicknxs.config import instrument
-    # Temporarily point data_base to a local directory so the glob
-    # doesn't scan thousands of IPTS directories over the sshfs mount.
+    # Temporarily point data_base to a local directory (no IPTS subdirs)
+    # so _find_file_in_ipts returns immediately without hitting sshfs.
     orig = instrument.data_base
     try:
       instrument.data_base = _test_dir
