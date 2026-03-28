@@ -371,9 +371,50 @@ def fileOpen(self, filename, do_plot=True):
 
 ---
 
-## Out of Scope
+## Out of Scope — Next Steps
 
-- Network timeout protection for `locate_file()` glob (SIGALRM wrapper) — separate task
-- Event splitting support for `.nxs.h5` — separate feature
-- quicknxsv2-style `ProgressReporter` class — not warranted here; the existing
-  `updateEventReadout` callback + status bar message + wait cursor is sufficient
+### 1. Network timeout protection for `locate_file()`
+
+A glob over `/SNS/REF_M/*/nexus/REF_M_XXXXX.nxs.h5` blocks the main thread if the
+sshfs mount stalls. The wait cursor prevents a full freeze but does not prevent the
+app from becoming unresponsive if the kernel hangs in D-state.
+
+**Fix**: wrap `locate_file()` call in `openByNumber()` with a `signal.alarm` timeout:
+
+```python
+import signal
+
+def _timeout_handler(signum, frame):
+    raise TimeoutError('locate_file timed out')
+
+signal.signal(signal.SIGALRM, _timeout_handler)
+signal.alarm(20)   # 20-second hard limit
+try:
+    found_path = locate_file(...)
+except TimeoutError:
+    found_path = None
+    self.ui.statusbar.showMessage(u'Search timed out — is the SNS mount available?')
+finally:
+    signal.alarm(0)
+    QtWidgets.QApplication.instance().restoreOverrideCursor()
+```
+
+Note: `signal.alarm` is UNIX-only; on Windows use `threading.Timer` + `concurrent.futures`.
+
+### 2. Event splitting support for `.nxs.h5`
+
+`fileOpen()` only enables event splitting when `base.endswith('event.nxs')`.
+The `.nxs.h5` event stream could in principle be split by time-of-acquisition
+(e.g. first half vs second half of a measurement). This requires changes to
+`NXSData.from_event_h5()` to filter by `event_time_zero` range.
+
+Plan file: create `plan/feature-event-split-nxs-h5.md` when starting this work.
+
+### 3. quicknxsv2-style threaded file loading
+
+For very large `.nxs.h5` files the load blocks the UI even though `updateEventReadout`
+pumps events. A proper `QThread` worker (like the `_gisansThread` pattern already in
+`main_gui.py`) would keep the UI fully responsive. The quicknxsv2 `ProgressReporter`
+class is the reference implementation.
+
+This is a larger refactor; only warranted if users report visible freeze on large files.

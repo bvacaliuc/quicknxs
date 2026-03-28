@@ -30,7 +30,7 @@ from .polarization_gui import PolarizationDialog
 from .qcalc import get_total_reflection, get_scaling, get_xpos, get_yregion
 from .qio import HeaderParser, HeaderCreator
 from .qreduce import NXSData, NXSMultiData, Reflectivity, OffSpecular, time_from_header, \
-                     GISANS, XMLData
+                     GISANS, XMLData, locate_file
 from .rawcompare_plots import RawCompare
 from .separate_plots import ReductionPreviewDialog
 from .database_dialog import DatabaseDialog
@@ -368,17 +368,19 @@ class MainGUI(QtWidgets.QMainWindow):
     '''
     Open a new datafile and plot the data.
     '''
-    print(filename)
     folder, base=os.path.split(filename)
+    self.ui.statusbar.showMessage(u'Loading %s...'%base)
+    QtWidgets.QApplication.instance().processEvents()
     if folder!=self.active_folder:
       self.onPathChanged(base, folder)
     else:
       self.updateFileList(base, folder)
     self.active_file=base
 
-    if base.endswith('event.nxs'):
+    if base.endswith('event.nxs') or base.endswith('.nxs.h5'):
       tottime=time_from_header(os.path.join(folder, base))
-      self.ui.eventTotalTimeLabel.setText(u"(%i min)"%(tottime/60))
+      if tottime is not None and 0 < tottime < 1e20:
+        self.ui.eventTotalTimeLabel.setText(u"(%i min)"%(tottime/60))
     if base.endswith('event.nxs') and self.ui.eventSplit.isChecked():
       event_split_bins=self.ui.eventSplitItems.value()
       event_split_index=self.ui.eventSplitIndex.value()-1
@@ -1217,7 +1219,7 @@ class MainGUI(QtWidgets.QMainWindow):
     elif self.ui.oldFormatActive.isChecked():
       filter_=u'Old Nexus (*.nxs);;All (*.*)'
     else:
-      filter_=u'Event Nexus (*event.nxs);;All (*.*)'
+      filter_=u'Event Nexus (*.nxs.h5);;Legacy Event (*event.nxs);;All (*.*)'
     filenames=QtWidgets.QFileDialog.getOpenFileNames(self, u'Open NXS file...',
                                                directory=self.active_folder,
                                                filter=filter_)[0]
@@ -1238,7 +1240,7 @@ class MainGUI(QtWidgets.QMainWindow):
     elif self.ui.oldFormatActive.isChecked():
       filter_=u'Old Nexus (*.nxs);;All (*.*)'
     else:
-      filter_=u'Event Nexus (*event.nxs);;All (*.*)'
+      filter_=u'Event Nexus (*.nxs.h5);;Legacy Event (*event.nxs);;All (*.*)'
     filenames=QtWidgets.QFileDialog.getOpenFileNames(self, u'Open NXS file...',
                                                directory=self.active_folder,
                                                filter=filter_)[0]
@@ -1265,20 +1267,29 @@ class MainGUI(QtWidgets.QMainWindow):
     '''
     if number is None:
       number=self.ui.numberSearchEntry.text()
+    number=str(number).strip()
+    if not number:
+      return False
     info('Trying to locate file number %s...'%number)
+    self.ui.statusbar.showMessage(u'Searching for run %s...'%number)
+    QtWidgets.QApplication.instance().setOverrideCursor(QtCore.Qt.WaitCursor)
     QtWidgets.QApplication.instance().processEvents()
-    if self.ui.histogramActive.isChecked():
-      search=glob(os.path.join(instrument.data_base, (instrument.BASE_SEARCH%number)+u'histo.nxs'))
-    elif self.ui.oldFormatActive.isChecked():
-      search=glob(os.path.join(instrument.data_base, (instrument.OLD_BASE_SEARCH%(number, number))+u'.nxs'))
-    else:
-      search=glob(os.path.join(instrument.data_base, (instrument.BASE_SEARCH%number)+u'event.nxs'))
-    if search:
-      self.ui.numberSearchEntry.setText('')
-      self.fileOpen(os.path.abspath(search[0]), do_plot=do_plot)
+    try:
+      found_path=locate_file(int(number),
+                              histogram=self.ui.histogramActive.isChecked(),
+                              old_format=self.ui.oldFormatActive.isChecked())
+    except (ValueError, TypeError):
+      found_path=None
+    finally:
+      QtWidgets.QApplication.instance().restoreOverrideCursor()
+    if found_path:
+      self.ui.numberSearchEntry.setText(u'')
+      self.ui.statusbar.showMessage(u'Loading run %s...'%number)
+      self.fileOpen(os.path.abspath(found_path), do_plot=do_plot)
       return True
     else:
       info('Could not locate %s...'%number)
+      self.ui.statusbar.showMessage(u'Run %s not found'%number)
       return False
 
   @log_call
@@ -1513,12 +1524,12 @@ class MainGUI(QtWidgets.QMainWindow):
       self.ui.eventModeEntries.hide()
     elif self.ui.eventActive.isChecked():
       self.ui.eventModeEntries.show()
-      newlist=glob(os.path.join(folder, '*event.nxs'))
+      newlist=sorted(glob(os.path.join(folder, '*.nxs.h5')) +
+                     glob(os.path.join(folder, '*event.nxs')))
     else:
       self.ui.histogramActive.setChecked(True)
       return self.updateFileList(base, folder)
-    newlist.sort()
-    newlist=map(lambda name: os.path.basename(name), newlist)
+    newlist=[os.path.basename(name) for name in newlist]
     oldlist=[self.ui.file_list.item(i).text() for i in range(self.ui.file_list.count())]
     if newlist!=oldlist:
       # only update the list if it has changed

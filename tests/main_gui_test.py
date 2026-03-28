@@ -542,6 +542,182 @@ class MainGUIFileOperations(unittest.TestCase):
     self.assertEqual(len(NXSData._cache), 0)
 
 
+# ──────────────────────────────────────────────────────────────
+#  File loading fixes: run-number search and dialog filters
+# ──────────────────────────────────────────────────────────────
+
+class FileLoadingFixes(unittest.TestCase):
+  """Tests for openByNumber(), fileOpenDialog filters, and updateFileList()."""
+
+  def setUp(self):
+    self.app = _app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher = patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui = MainGUI([])
+    self.gui.trigger.stay_alive = False
+    self.gui.trigger.wait()
+    self.gui.trigger = lambda action, *args: self.gui.processDelayedTrigger(action, args)
+    self.gui.fileOpen(TEST_DATASET, do_plot=False)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  # ── openByNumber ──────────────────────────────────────────
+
+  def test_open_by_number_empty_string_returns_false(self):
+    """openByNumber() with empty string returns False without crashing."""
+    result = self.gui.openByNumber('')
+    self.assertFalse(result)
+
+  def test_open_by_number_whitespace_returns_false(self):
+    """openByNumber() with whitespace-only string returns False."""
+    result = self.gui.openByNumber('   ')
+    self.assertFalse(result)
+
+  def test_open_by_number_event_h5_found(self):
+    """openByNumber() in Event mode calls locate_file and opens .nxs.h5 path."""
+    import os as _os
+    fake_path = _os.path.join(_test_dir, 'REF_M_99001.nxs.h5')
+    self.gui.ui.eventActive.setChecked(True)
+    with patch('quicknxs.main_gui.locate_file', return_value=fake_path) as mock_lf:
+      with patch.object(self.gui, 'fileOpen') as mock_open:
+        result = self.gui.openByNumber('99001')
+    self.assertTrue(result)
+    mock_lf.assert_called_once_with(99001, histogram=False, old_format=False)
+    mock_open.assert_called_once_with(_os.path.abspath(fake_path), do_plot=True)
+
+  def test_open_by_number_histogram_mode_flag(self):
+    """openByNumber() in Histogram mode passes histogram=True to locate_file."""
+    self.gui.ui.histogramActive.setChecked(True)
+    with patch('quicknxs.main_gui.locate_file', return_value=None) as mock_lf:
+      self.gui.openByNumber('12345')
+    mock_lf.assert_called_once_with(12345, histogram=True, old_format=False)
+
+  def test_open_by_number_old_format_mode_flag(self):
+    """openByNumber() in Old Format mode passes old_format=True to locate_file."""
+    self.gui.ui.oldFormatActive.setChecked(True)
+    with patch('quicknxs.main_gui.locate_file', return_value=None) as mock_lf:
+      self.gui.openByNumber('12345')
+    mock_lf.assert_called_once_with(12345, histogram=False, old_format=True)
+
+  def test_open_by_number_not_found_returns_false(self):
+    """openByNumber() with non-existent number returns False."""
+    from quicknxs.config import instrument
+    orig = instrument.data_base
+    try:
+      instrument.data_base = _test_dir
+      result = self.gui.openByNumber('999999')
+    finally:
+      instrument.data_base = orig
+    self.assertFalse(result)
+
+  def test_open_by_number_not_found_shows_statusbar(self):
+    """openByNumber() shows a status bar message when run is not found."""
+    from quicknxs.config import instrument
+    orig = instrument.data_base
+    try:
+      instrument.data_base = _test_dir
+      self.gui.openByNumber('888888')
+    finally:
+      instrument.data_base = orig
+    self.assertIn('888888', self.gui.ui.statusbar.currentMessage())
+
+  # ── fileOpenDialog / fileOpenSumDialog ────────────────────
+
+  def test_file_open_dialog_event_filter_includes_h5(self):
+    """fileOpenDialog() in Event mode uses *.nxs.h5 as primary filter."""
+    from qtpy import QtWidgets as _qw
+    self.gui.ui.eventActive.setChecked(True)
+    captured = {}
+    def fake_dialog(parent, title, **kwargs):
+      captured['filter'] = kwargs.get('filter', '')
+      return ([], '')
+    with patch.object(_qw.QFileDialog, 'getOpenFileNames', side_effect=fake_dialog):
+      self.gui.fileOpenDialog()
+    self.assertIn('*.nxs.h5', captured.get('filter', ''))
+
+  def test_file_open_dialog_event_filter_legacy_secondary(self):
+    """fileOpenDialog() in Event mode also includes *event.nxs as secondary."""
+    from qtpy import QtWidgets as _qw
+    self.gui.ui.eventActive.setChecked(True)
+    captured = {}
+    def fake_dialog(parent, title, **kwargs):
+      captured['filter'] = kwargs.get('filter', '')
+      return ([], '')
+    with patch.object(_qw.QFileDialog, 'getOpenFileNames', side_effect=fake_dialog):
+      self.gui.fileOpenDialog()
+    self.assertIn('*event.nxs', captured.get('filter', ''))
+
+  def test_file_open_sum_dialog_event_filter_includes_h5(self):
+    """fileOpenSumDialog() in Event mode uses *.nxs.h5 as primary filter."""
+    from qtpy import QtWidgets as _qw
+    self.gui.ui.eventActive.setChecked(True)
+    captured = {}
+    def fake_dialog(parent, title, **kwargs):
+      captured['filter'] = kwargs.get('filter', '')
+      return ([], '')
+    with patch.object(_qw.QFileDialog, 'getOpenFileNames', side_effect=fake_dialog):
+      self.gui.fileOpenSumDialog()
+    self.assertIn('*.nxs.h5', captured.get('filter', ''))
+
+  # ── updateFileList ────────────────────────────────────────
+
+  def test_update_file_list_event_mode_shows_h5(self):
+    """updateFileList() in Event mode lists .nxs.h5 files."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+      for name in ('REF_M_00001.nxs.h5', 'REF_M_00002.nxs.h5'):
+        open(os.path.join(tmpdir, name), 'w').close()
+      self.gui.ui.eventActive.setChecked(True)
+      self.gui.updateFileList('REF_M_00001.nxs.h5', tmpdir)
+    items = [self.gui.ui.file_list.item(i).text()
+             for i in range(self.gui.ui.file_list.count())]
+    self.assertIn('REF_M_00001.nxs.h5', items)
+    self.assertIn('REF_M_00002.nxs.h5', items)
+
+  def test_update_file_list_event_mode_selects_current(self):
+    """updateFileList() in Event mode selects the specified current file."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+      for name in ('REF_M_00001.nxs.h5', 'REF_M_00002.nxs.h5'):
+        open(os.path.join(tmpdir, name), 'w').close()
+      self.gui.ui.eventActive.setChecked(True)
+      self.gui.updateFileList('REF_M_00002.nxs.h5', tmpdir)
+    current = self.gui.ui.file_list.currentItem()
+    self.assertIsNotNone(current)
+    self.assertEqual(current.text(), 'REF_M_00002.nxs.h5')
+
+  def test_update_file_list_event_mode_no_duplicate_on_revisit(self):
+    """updateFileList() in Event mode does not duplicate items when called twice."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+      for name in ('REF_M_00001.nxs.h5', 'REF_M_00002.nxs.h5'):
+        open(os.path.join(tmpdir, name), 'w').close()
+      self.gui.ui.eventActive.setChecked(True)
+      self.gui.updateFileList('REF_M_00001.nxs.h5', tmpdir)
+      self.gui.updateFileList('REF_M_00001.nxs.h5', tmpdir)
+    count = self.gui.ui.file_list.count()
+    self.assertEqual(count, 2)
+
+  def test_update_file_list_event_mode_legacy_event_files(self):
+    """updateFileList() in Event mode still lists *event.nxs files."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+      for name in ('REF_M_00003_event.nxs', 'REF_M_00004_event.nxs'):
+        open(os.path.join(tmpdir, name), 'w').close()
+      self.gui.ui.eventActive.setChecked(True)
+      self.gui.updateFileList('REF_M_00003_event.nxs', tmpdir)
+    items = [self.gui.ui.file_list.item(i).text()
+             for i in range(self.gui.ui.file_list.count())]
+    self.assertIn('REF_M_00003_event.nxs', items)
+    self.assertIn('REF_M_00004_event.nxs', items)
+
+
 class MainGUIExtractionRegion(unittest.TestCase):
   """Extraction region controls."""
 
@@ -1369,6 +1545,7 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIProgressDialogF
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIReduceDialogFix))
 # Comprehensive GUI tests
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIFileOperations))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(FileLoadingFixes))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIExtractionRegion))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIReductionActions))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(MainGUIDisplayControls))
