@@ -219,7 +219,7 @@ will fail with `OSError: [Errno 30] Read-only file system` without it.
 The SNS sshfs mounts **must** include `-o intr` for SIGALRM to work:
 
 ```bash
-sshfs 6ov@analysis.sns.gov:/SNS/REF_M/ ~/SNS/REF_M \
+sshfs ${USER}@analysis.sns.gov:/SNS/REF_M/ ~/SNS/REF_M \
   -o ro,intr,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3
 ```
 
