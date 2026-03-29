@@ -212,7 +212,34 @@ at `/SNS/REF_M/shared/quicknxs_database/` lives on a read-only sshfs mount.
 **Do not revert the `read_only` parameter** — the production mount is `-o ro` and tests
 will fail with `OSError: [Errno 30] Read-only file system` without it.
 
-## sshfs Integration Test Patterns
+## sshfs Stall Protection
+
+### Mount options
+
+The SNS sshfs mounts **must** include `-o intr` for SIGALRM to work:
+
+```bash
+sshfs 6ov@analysis.sns.gov:/SNS/REF_M/ ~/SNS/REF_M \
+  -o ro,intr,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3
+```
+
+Without `-o intr`, any blocking sshfs syscall (including `os.listdir`) puts the
+calling process into **D-state** where signals cannot interrupt it. The current
+production mounts lack this flag — see `mount | grep SNS` to verify.
+
+### Code-level stall protection (implemented in qreduce.py / main_gui.py)
+
+Two-layer approach in `qreduce.py` / `main_gui.py` (committed 2026-03-29):
+
+1. **`_listdir_with_timeout(path, timeout=10.0)`** — runs `os.listdir` in a daemon
+   thread; returns `None` after timeout. Works even in D-state. Used inside
+   `_find_file_in_ipts()` as the primary protection.
+
+2. **SIGALRM guard in `openByNumber()`** — 40-second hard deadline on the full
+   `locate_file()` call. Belt-and-suspenders for soft NFS / interruptible FUSE.
+   Saves/restores the previous handler. Displays a user-visible status bar message.
+
+### sshfs Integration Test Patterns
 
 Tests that access `/SNS/REF_L/` or `/SNS/REF_M/` via sshfs must avoid patterns that
 generate many network stat calls:
