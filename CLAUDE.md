@@ -72,44 +72,15 @@ You are able to direct agent teams who are expert system programmers and softwar
 You will use best practices of python syntax and code development and will design tests to verify all code contributions.
 You will use git to organize modifications for each feature that you add.
 
-## Secure Temporary Files
+## Plotting / UI work in this codebase
 
-When a task requires writing a temporary script or data file (e.g. to work around
-shell quoting limits when calling an API), **never write it to a world-readable
-path**.  `/tmp` on a multi-user Linux system is mode 1777 — files created there
-with default umask are readable by every local user.
-
-**Always create temporary files with mode 600 (owner read/write only):**
-
-```python
-import os, tempfile
-
-# Preferred: tempfile.NamedTemporaryFile — mode 600 by default
-with tempfile.NamedTemporaryFile('w', suffix='.py', delete=False) as fh:
-    fh.write(script_content)
-    tmp_path = fh.name
-try:
-    # use tmp_path ...
-finally:
-    os.unlink(tmp_path)   # always clean up
-```
-
-Or with the Write tool followed by an immediate chmod:
-
-```bash
-# After writing the file, restrict permissions immediately
-chmod 600 /path/to/tempfile
-```
-
-**Additional rules:**
-- Never embed credentials (tokens, passwords, keys) in files under `plan/`,
-  `tests/`, or any other committed path.  Use environment variables or
-  `~/.netrc` / `~/.config` files (also mode 600) instead.
-- Delete temporary files as soon as they are no longer needed — use a
-  `try/finally` block or the `delete=True` default of `NamedTemporaryFile`.
-- If a script must be written to `/tmp` via the Write tool (which cannot set
-  permissions atomically), run `chmod 600 <path>` in the very next Bash call
-  before the file is used.
+This fork inherits the upstream Qt + matplotlib GUI (a `MplWidget`-style
+canvas plus NavigationToolbar subclasses, same general shape as quicknxsv2).
+When writing code that reads live Axes content — "Save Data" buttons, export
+helpers, anything iterating `ax.containers` / `ax.images` / `ax.collections`,
+or touching pcolormesh gouraud-shaded off-specular surfaces — **load the
+parent repo's `setup/patterns/ui-aspects.md`** for the storage conventions
+and round-trip pitfalls.
 
 ## CI/CD
 
@@ -214,18 +185,10 @@ will fail with `OSError: [Errno 30] Read-only file system` without it.
 
 ## sshfs Stall Protection
 
-### Mount options
-
-The SNS sshfs mounts **must** include `-o intr` for SIGALRM to work:
-
-```bash
-sshfs ${USER}@analysis.sns.gov:/SNS/REF_M/ ~/SNS/REF_M \
-  -o ro,intr,reconnect,ServerAliveInterval=15,ServerAliveCountMax=3
-```
-
-Without `-o intr`, any blocking sshfs syscall (including `os.listdir`) puts the
-calling process into **D-state** where signals cannot interrupt it. The current
-production mounts lack this flag — see `mount | grep SNS` to verify.
+For the mount-options side (FUSE2 vs FUSE3, `-o intr` only for rclone on
+FUSE2, ControlMaster recovery, etc.) see the parent repo's
+`setup/patterns/network-mounts.md`. The rules below are the **code-level**
+protections this codebase adds on top of a healthy mount.
 
 ### Code-level stall protection (implemented in qreduce.py / main_gui.py)
 
