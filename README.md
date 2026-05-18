@@ -5,6 +5,15 @@
 
 Magnetism Reflectometer data reduction software (QuickNXS v1 fork).
 
+## Usage
+
+To run the gui, do the following:
+
+```bash
+make gui                    # runs the gui for Magnetism Reflectometer
+make INSTRUMENT=ref_l gui   # runs the gui for Liquids Reflectometer
+```
+
 ## Development
 
 Install dependencies and run the test suite:
