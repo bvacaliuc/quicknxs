@@ -767,3 +767,8 @@ You are working in the quicknxsv1 project, feature/read-event-nexus branch. I ha
   Run make gui and try loading run 44033 — the search should complete in ~2-3 seconds with no password prompts.
 ```
 
+commit e5861c9e30b866dac0646649eeab64026a9e1fc4 contains the fixes.
+
+## Prompt 28
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. I started quicknxsv1 via 'make gui' and attempted to load run 44033 (/SNS/REF_M/IPTS-34473/nexus/REF_M_44033.nxs.h5), 44034, 44035 as direct beam, followed by 44159, 44160 and 44161 as reflectivity. I observed a few errors that I would like you to work on resolving. Please read 'plan/prompt-28-todo.md' and investigate these errors. Be thorough and determine the root causes. I am particularly interested in correct off-specular reduction. Once you have solved the errors, I would very much like you to review the output of off-specular reduced output and compare it to the "correct"/"expected" output that is recorded in '/SNS/users/6ov/shared/REF_M/11486/correctReduction/**' and based on this same data set. Please be resourceful in determining the correct output settings. You may read all the files in '/SNS/users/6ov/shared/REF_M/11486/**' if any help you understand the nature. My interest in using quicknxsv1 is to corroborate the off specular reduction, as the scientists have expressed the sentiment that quicknxsv1 was "perfect" in its data processing and quicknxsv2 has had numerous difficulties during its lifetime.
