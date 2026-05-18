@@ -90,8 +90,8 @@ def smooth(pieces, gridx=563, gridy=1000,
         'sigma': (sigma_x, sigma_y),
         'region': [x_region[0], x_region[1], y_region[0], y_region[1]],
         'sigmas': 3,
+        'xy_column': 0,  # ki_z-kf_z vs Qz
     }
-    xy_column = 0  # ki_z-kf_z vs Qz
     axis_sigma_scaling = 2  # y-axis (Qz) varies the sigma
     xysigma0 = Qzmax / 3.0
     xout, yout, Iout = smooth_data(settings, x, y, I,
@@ -128,7 +128,7 @@ def main():
         return
 
     print('Smoothing...')
-    x, y, I = smooth(pieces)
+    x, y, I = smooth(pieces)  # noqa: E741
     print(f'Smoothed grid: {x.shape}, I range [{np.nanmin(I):.3e}, '
           f'{np.nanmax(I):.3e}], non-zero {(I != 0).sum()}/{I.size} '
           f'({(I != 0).mean()*100:.1f}%)')

@@ -12,10 +12,10 @@ import matplotlib.pyplot as plt
 
 def load(path):
     data = np.loadtxt(path, comments='#')
-    # 1000 rows × 563 cols, columns: [x, y, I]
+    # 1000 rows × 563 cols, columns: [x, y, intensity]
     return (data[:, 0].reshape(1000, 563),
             data[:, 1].reshape(1000, 563),
-            data[:, 2].reshape(1000, 563))
+            data[:, 2].reshape(1000, 563))  # noqa: E741
 
 
 def main():
@@ -36,7 +36,7 @@ def main():
                     ha='center', va='center', transform=ax.transAxes)
             ax.set_title(label)
             continue
-        x, y, I = load(path)
+        x, y, I = load(path)  # noqa: E741
         # Mask NaN as transparent
         I_plot = np.where(np.isnan(I), 0, I)
         im = ax.pcolormesh(x, y, np.maximum(I_plot, 1e-6),
@@ -71,8 +71,6 @@ def main():
             # Print summary
             med = float(np.nanmedian(ratio))
             print(f'Median intensity ratio (mine/correct) where both > 0.01: {med:.4f}')
-            from scipy.stats import pearsonr
-            v = ratio[~np.isnan(ratio)]
             print(f'Ratio spread: 25%={np.nanpercentile(ratio, 25):.3f}, '
                   f'50%={np.nanpercentile(ratio, 50):.3f}, '
                   f'75%={np.nanpercentile(ratio, 75):.3f}')
