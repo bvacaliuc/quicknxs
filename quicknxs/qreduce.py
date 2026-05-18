@@ -39,6 +39,45 @@ from .ipython_tools import AttributePloter, StringRepr, NiceDict
 ### Parameters needed for some calculations.
 H_OVER_M_NEUTRON=3.956034e-7 # h/m_n [m²/s]
 DETECTOR_SENSITIVITY={}
+# Reference SNS source pulse frequency (Hz). The wavelength bandwidth scales
+# inversely with chopper speed: at half the chopper speed the frame period
+# doubles and so does the usable bandwidth.
+TOF_REFERENCE_FREQUENCY=60.0
+# Default half-bandwidth (Å) around the central wavelength at the reference
+# chopper speed.  Matches quicknxsv2's ``wl_bandwidth = 3.2 → half_width = 1.6``.
+TOF_HALF_BANDWIDTH_60HZ=1.6
+
+
+def _compute_tof_range_us(dist_mod_det, lambda_center, chopper_speed=None,
+                          half_bandwidth=TOF_HALF_BANDWIDTH_60HZ):
+  '''Return the (tmin, tmax) time-of-flight window in microseconds.
+
+  The neutron bandwidth at SNS is set by the chopper frequency.  At the
+  reference frequency (60 Hz) the half-bandwidth around ``lambda_center`` is
+  ``half_bandwidth`` Å.  Slower chopper speeds widen the bandwidth in inverse
+  proportion (e.g. at 30 Hz the half-bandwidth doubles).  This mirrors the
+  formula used by quicknxsv2 (``data_info.py:99``).
+  '''
+  if chopper_speed is None or chopper_speed <= 0:
+    chopper_speed = TOF_REFERENCE_FREQUENCY
+  scale = TOF_REFERENCE_FREQUENCY / float(chopper_speed)
+  hb = half_bandwidth * scale
+  tmin = dist_mod_det / H_OVER_M_NEUTRON * (lambda_center - hb) * 1e-4
+  tmax = dist_mod_det / H_OVER_M_NEUTRON * (lambda_center + hb) * 1e-4
+  return tmin, tmax
+
+
+def _log_scalar(val):
+  '''Return a scalar from a possibly multi-dimensional numpy array.
+
+  DAS logs in modern ``.nxs.h5`` files occasionally store single-valued items
+  as ``shape (1, 1)`` arrays (notably sample-environment strings).  Indexing
+  with ``val[0]`` then yields a 1-D one-element array which cannot be used
+  with ``%g`` formatting (it raises ``TypeError: only 0-dimensional arrays
+  can be converted to Python scalars``).  ``.flat[0]`` always returns a true
+  scalar regardless of the original shape.
+  '''
+  return val.flat[0]
 
 # REF_M-specific constants (ANALYZER_IN, NEW_ANALYZER_IN, POLARIZER_IN,
 # SUPERMIRROR_IN, POLY_CORR_PARAMS) live in config/ref_m.py and are
@@ -1209,9 +1248,11 @@ class MRDataset(object):
 
     if tof_overwrite is None:
       lcenter=data['DASlogs/LambdaRequest/value'][()][0]
-      # ToF region for this specific central wavelength
-      tmin=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter-1.6)*1e-4
-      tmax=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter+1.6)*1e-4
+      # Chopper speed governs the wavelength bandwidth (30 Hz doubles it)
+      chopper_speed=getattr(output, 'chopper_speed', None)
+      if chopper_speed is None and 'DASlogs/SpeedRequest1' in data:
+        chopper_speed=float(data['DASlogs/SpeedRequest1/value'][()][0])
+      tmin, tmax=_compute_tof_range_us(output.dist_mod_det, lcenter, chopper_speed)
       if bin_type==0: # constant Δλ
         tof_edges=linspace(tmin, tmax, bins+1)
       elif bin_type==1: # constant ΔQ
@@ -1307,9 +1348,9 @@ class MRDataset(object):
     # Determine TOF edges
     if tof_overwrite is None:
       lcenter=output.lambda_center
-      # ToF region for this specific central wavelength
-      tmin=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter-1.6)*1e-4
-      tmax=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter+1.6)*1e-4
+      # Bandwidth depends on chopper speed (collected in _collect_info_h5)
+      chopper_speed=getattr(output, 'chopper_speed', None)
+      tmin, tmax=_compute_tof_range_us(output.dist_mod_det, lcenter, chopper_speed)
       if bin_type==0: # constant Δλ
         tof_edges=linspace(tmin, tmax, bins+1)
       elif bin_type==1: # constant ΔQ
@@ -1422,8 +1463,8 @@ class MRDataset(object):
     # Determine TOF edges
     if tof_overwrite is None:
       lcenter=output.lambda_center
-      tmin=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter-1.6)*1e-4
-      tmax=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter+1.6)*1e-4
+      chopper_speed=getattr(output, 'chopper_speed', None)
+      tmin, tmax=_compute_tof_range_us(output.dist_mod_det, lcenter, chopper_speed)
       if bin_type==0:
         tof_edges=linspace(tmin, tmax, bins+1)
       elif bin_type==1:
@@ -1514,9 +1555,9 @@ class MRDataset(object):
 
     if tof_overwrite is None:
       lcenter=output.lambda_center
-      # ToF region for this specific central wavelength
-      tmin=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter-1.6)*1e-4
-      tmax=output.dist_mod_det/H_OVER_M_NEUTRON*(lcenter+1.6)*1e-4
+      # Live PyDAS data has SpeedRequest1 in daslogs (may be missing on some setups)
+      chopper_speed=daslogs.get('SpeedRequest1', None) if isinstance(daslogs, dict) else None
+      tmin, tmax=_compute_tof_range_us(output.dist_mod_det, lcenter, chopper_speed)
       if bin_type==0: # constant Δλ
         tof_edges=linspace(tmin, tmax, bins+1)
       elif bin_type==1: # constant ΔQ
@@ -1625,8 +1666,11 @@ class MRDataset(object):
             self.log_units[motor]=u''
           val=item['value'][()]
           if val.shape[0]==1:
-            self.logs[motor]=val[0]
-            self.log_minmax[motor]=(val[0], val[0])
+            # ``val`` may be (1,) or (1, 1) — .flat[0] always yields a true scalar.
+            # Without this, %g formatting downstream raises TypeError for 1-element 1-D slices.
+            scalar=_log_scalar(val)
+            self.logs[motor]=scalar
+            self.log_minmax[motor]=(scalar, scalar)
           else:
             if stimes is not None:
               vtime=item['time'][()]
@@ -1636,12 +1680,22 @@ class MRDataset(object):
             if len(val)==0:
               self.logs[motor]=NaN
               self.log_minmax[motor]=(NaN, NaN)
+            elif not issubdtype(val.dtype, number):
+              # Non-numeric (string/bytes) time series — keep the first value as a scalar
+              self.logs[motor]=_log_scalar(val)
+              self.log_minmax[motor]=(_log_scalar(val), _log_scalar(val))
             else:
               self.logs[motor]=val.mean()
               self.log_minmax[motor]=(val.min(), val.max())
         except Exception:
           continue
       self.lambda_center=data['DASlogs/LambdaRequest/value'][()][0]
+      # Chopper speed governs the wavelength bandwidth (Fault 1: 30 vs 60 Hz)
+      if 'DASlogs/SpeedRequest1' in data:
+        try:
+          self.chopper_speed=float(data['DASlogs/SpeedRequest1/value'][()][0])
+        except Exception:
+          self.chopper_speed=TOF_REFERENCE_FREQUENCY
     self.dangle=data['instrument/bank1/DANGLE/value'][()][0]
     if 'instrument/bank1/DANGLE0' in data: # compatibility for ancient file format
       self.dangle0=data['instrument/bank1/DANGLE0/value'][()][0]
@@ -1714,8 +1768,9 @@ class MRDataset(object):
             self.log_units[motor]=u''
           val=item['value'][()]
           if val.shape[0]==1:
-            self.logs[motor]=val[0]
-            self.log_minmax[motor]=(val[0], val[0])
+            scalar=_log_scalar(val)
+            self.logs[motor]=scalar
+            self.log_minmax[motor]=(scalar, scalar)
           else:
             if stimes is not None:
               vtime=item['time'][()]
@@ -1725,6 +1780,9 @@ class MRDataset(object):
             if len(val)==0:
               self.logs[motor]=NaN
               self.log_minmax[motor]=(NaN, NaN)
+            elif not issubdtype(val.dtype, number):
+              self.logs[motor]=_log_scalar(val)
+              self.log_minmax[motor]=(_log_scalar(val), _log_scalar(val))
             else:
               self.logs[motor]=val.mean()
               self.log_minmax[motor]=(val.min(), val.max())
@@ -2011,8 +2069,9 @@ class LRDataset(MRDataset):
             self.log_units[motor]=u''
           val=item['value'][()]
           if val.shape[0]==1:
-            self.logs[motor]=val[0]
-            self.log_minmax[motor]=(val[0], val[0])
+            scalar=_log_scalar(val)
+            self.logs[motor]=scalar
+            self.log_minmax[motor]=(scalar, scalar)
           else:
             if stimes is not None:
               vtime=item['time'][()]
@@ -2022,6 +2081,9 @@ class LRDataset(MRDataset):
             if len(val)==0:
               self.logs[motor]=NaN
               self.log_minmax[motor]=(NaN, NaN)
+            elif not issubdtype(val.dtype, number):
+              self.logs[motor]=_log_scalar(val)
+              self.log_minmax[motor]=(_log_scalar(val), _log_scalar(val))
             else:
               self.logs[motor]=val.mean()
               self.log_minmax[motor]=(val.min(), val.max())
@@ -2135,8 +2197,9 @@ class LRDataset(MRDataset):
             self.log_units[motor]=u''
           val=item['value'][()]
           if val.shape[0]==1:
-            self.logs[motor]=val[0]
-            self.log_minmax[motor]=(val[0], val[0])
+            scalar=_log_scalar(val)
+            self.logs[motor]=scalar
+            self.log_minmax[motor]=(scalar, scalar)
           else:
             if stimes is not None:
               vtime=item['time'][()]
@@ -2146,6 +2209,9 @@ class LRDataset(MRDataset):
             if len(val)==0:
               self.logs[motor]=NaN
               self.log_minmax[motor]=(NaN, NaN)
+            elif not issubdtype(val.dtype, number):
+              self.logs[motor]=_log_scalar(val)
+              self.log_minmax[motor]=(_log_scalar(val), _log_scalar(val))
             else:
               self.logs[motor]=val.mean()
               self.log_minmax[motor]=(val.min(), val.max())

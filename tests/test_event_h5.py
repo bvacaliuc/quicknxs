@@ -587,3 +587,144 @@ class TestPolarizationFiltering:
         total = sum(len(ids) for ids, _ in channels.values())
         assert total < raw_count  # some events removed by veto/state filtering
         assert total > raw_count * 0.9  # but not too many lost
+
+
+# ── Chopper-speed-aware TOF bandwidth (prompt-28 Fault 1) ─────────────
+
+class TestTofBandwidthChopperScaling:
+    """Verify the TOF window widens proportionally when the chopper runs
+    at 30 Hz (frame period 33.3 ms) instead of the reference 60 Hz."""
+
+    def test_helper_scales_inversely_with_speed(self):
+        from quicknxs.qreduce import _compute_tof_range_us
+        tmin60, tmax60 = _compute_tof_range_us(21.0, 5.35, chopper_speed=60.0)
+        tmin30, tmax30 = _compute_tof_range_us(21.0, 5.35, chopper_speed=30.0)
+        # 30 Hz frame is twice as wide
+        bw60 = tmax60 - tmin60
+        bw30 = tmax30 - tmin30
+        assert abs(bw30 - 2 * bw60) < 1e-6, \
+            f"30 Hz bandwidth ({bw30:.2f}) should be 2× 60 Hz ({bw60:.2f})"
+        # And centred on the same TOF as 60 Hz
+        assert abs((tmin30 + tmax30) / 2 - (tmin60 + tmax60) / 2) < 1e-6
+
+    def test_helper_default_speed_matches_60hz(self):
+        from quicknxs.qreduce import _compute_tof_range_us
+        ref = _compute_tof_range_us(21.0, 5.35, chopper_speed=60.0)
+        defaulted = _compute_tof_range_us(21.0, 5.35)
+        assert ref == defaulted
+
+    def test_helper_handles_zero_speed_gracefully(self):
+        from quicknxs.qreduce import _compute_tof_range_us
+        # Should not divide-by-zero; should fall back to 60 Hz reference
+        a = _compute_tof_range_us(21.0, 5.35, chopper_speed=0.0)
+        b = _compute_tof_range_us(21.0, 5.35, chopper_speed=60.0)
+        assert a == b
+
+    @pytest.mark.skipif(
+        not os.path.exists('/SNS/REF_M/IPTS-34473/nexus/REF_M_44159.nxs.h5'),
+        reason='No access to IPTS-34473 dataset',
+    )
+    def test_ref_m_30hz_run_keeps_all_events(self):
+        """44159 was acquired at 30 Hz / λ=5.35 Å; before the chopper-speed
+        fix, ~half of the events fell outside the ±1.6 Å (60 Hz) window
+        and were dropped."""
+        from quicknxs.qreduce import NXSData
+        data = NXSData('/SNS/REF_M/IPTS-34473/nexus/REF_M_44159.nxs.h5',
+                       use_caching=False)
+        assert data is not None
+        ds = data['Off_Off']
+        assert abs(ds.chopper_speed - 30.0) < 0.5
+        # Histogram should contain ≥99 % of events (no clipping at frame edges)
+        coverage = ds.data.sum() / float(ds.total_counts)
+        assert coverage > 0.99, \
+            f'coverage {coverage:.3f} too low - TOF window may still be narrow'
+
+
+# ── DASlog scalar extraction (prompt-28 Fault 2) ──────────────────────
+
+class TestLogScalarExtraction:
+    def test_log_scalar_from_1d(self):
+        import numpy as np
+        from quicknxs.qreduce import _log_scalar
+        v = _log_scalar(np.array([1.5]))
+        assert float(v) == 1.5
+        # %g must accept the result
+        '%g' % v
+
+    def test_log_scalar_from_2d_singleton(self):
+        """Modern .nxs.h5 stores some single-valued DASlogs as (1,1)."""
+        import numpy as np
+        from quicknxs.qreduce import _log_scalar
+        v = _log_scalar(np.array([[2.5]]))
+        assert float(v) == 2.5
+        '%g' % v
+
+    def test_log_scalar_from_bytes_array(self):
+        """String DASlogs (CanName, SampleName, …) must extract without error."""
+        import numpy as np
+        from quicknxs.qreduce import _log_scalar
+        v = _log_scalar(np.array([[b'hello']]))
+        assert v == b'hello'
+
+    @pytest.mark.skipif(
+        not os.path.exists('/SNS/REF_M/IPTS-34473/nexus/REF_M_44161.nxs.h5'),
+        reason='No access to IPTS-34473 dataset',
+    )
+    def test_string_daslogs_load_and_format(self):
+        """44161 contains (1,1) string DASlogs (CanName etc.).  Loading the
+        file and rendering update_daslog must not raise."""
+        from quicknxs.qreduce import NXSData
+        from quicknxs.main_gui import _format_log_value
+        data = NXSData('/SNS/REF_M/IPTS-34473/nexus/REF_M_44161.nxs.h5',
+                       use_caching=False)
+        ds = data['Off_Off']
+        # Picking a known-problematic string log
+        assert 'SampleName' in ds.logs
+        # Must format without raising
+        formatted = _format_log_value(ds.logs['SampleName'])
+        assert isinstance(formatted, str)
+        # Numeric log still formats with %g
+        assert _format_log_value(ds.logs['SpeedRequest1']) == '30'
+
+
+# ── State-file persistence of unreferenced direct beams (Fault 3) ─────
+
+class TestHeaderCreatorExtraNorms:
+    def test_extra_norms_are_serialised(self):
+        """HeaderCreator(refls, extra_norms=[norm]) writes the norm into
+        the [Direct Beam Runs] section even when no refl references it."""
+        from quicknxs.qio import HeaderCreator
+
+        class _FakeOpts(dict):
+            pass
+
+        class _FakeRefl:
+            def __init__(self, number, origin):
+                self.options = {
+                    'normalization': None,
+                    'P0': 0, 'PN': 0,
+                    'x_pos': 100, 'x_width': 10,
+                    'y_pos': 100, 'y_width': 50,
+                    'bg_pos': 30, 'bg_width': 20,
+                    'dpix': 150, 'tth': 0.0,
+                    'number': number,
+                    'scale': 1.0, 'extract_fan': False,
+                    'sample_length': 10.0,
+                    'bg_tof_constant': False, 'bg_scale_xfit': False,
+                    'bg_poly_regions': None, 'bg_scale_factor': 1.0,
+                }
+                self.origin = (origin, 'x')
+                self.read_options = {
+                    'bin_type': 0, 'bins': 40,
+                    'event_split_bins': None, 'event_split_index': 0,
+                }
+
+        extra = _FakeRefl(44035, '/tmp/REF_M_44035.nxs.h5')
+        hdr = HeaderCreator([], extra_norms=[extra])
+        text = str(hdr)
+        assert '[Direct Beam Runs]' in text
+        assert '44035' in text
+        # No refls: data-runs section is empty (header only)
+        assert '[Data Runs]' in text
+        # Should still write [Global Options] without crashing
+        assert '[Global Options]' in text

@@ -38,6 +38,26 @@ from .database_dialog import DatabaseDialog
 from .version import str_version
 from logging import info, warning, error, debug
 
+
+def _format_log_value(value):
+  '''Render a DASlog value robustly for display.
+
+  ``%g`` raises ``TypeError`` on numpy arrays with ndim > 0 (the (1, 1)
+  string-typed DASlogs in modern ``.nxs.h5`` files trigger this).  Try a
+  numeric format first, then fall back to ``str()`` for bytes / strings /
+  anything else.
+  '''
+  try:
+    return u'%g'%value
+  except (TypeError, ValueError):
+    if isinstance(value, bytes):
+      try:
+        return value.decode('utf-8')
+      except UnicodeDecodeError:
+        return repr(value)
+    return str(value)
+
+
 class gisansCalcThread(QtCore.QThread):
   '''
   Perform GISANS scattering calculations in the background.
@@ -1203,8 +1223,13 @@ class MainGUI(QtWidgets.QMainWindow):
       table.setItem(j, len(self.channels)+1,
                     QtWidgets.QTableWidgetItem(self.active_data[0].log_units[key]))
       for i, _channel, data in self.active_data.numitems():
-        item=QtWidgets.QTableWidgetItem(u'%g'%data.logs[key])
-        item.setToolTip(u'MIN: %g   MAX: %g'%(data.log_minmax[key]))
+        item=QtWidgets.QTableWidgetItem(_format_log_value(data.logs[key]))
+        try:
+          mn, mx=data.log_minmax[key]
+          item.setToolTip(u'MIN: %s   MAX: %s'%(_format_log_value(mn),
+                                                _format_log_value(mx)))
+        except Exception:
+          pass
         table.setItem(j, i+1, item)
     table.resizeColumnsToContents()
 
@@ -1738,6 +1763,12 @@ class MainGUI(QtWidgets.QMainWindow):
       del(self.ref_norm[number])
       self.ui.normalizeTable.removeRow(idx)
       self.ui.normalizationLabel.setText(u",".join(map(str, sorted(self.ref_norm.keys()))))
+    # Persist the new direct-beam list so a subsequent crash doesn't lose
+    # DBs the user has set but not yet attached to a data run (Fault 3).
+    try:
+      self.updateStateFile()
+    except Exception:
+      debug('updateStateFile failed after setNorm', exc_info=True)
     if do_plot:
       self.initiateReflectivityPlot.emit(False)
 
@@ -1795,6 +1826,11 @@ class MainGUI(QtWidgets.QMainWindow):
     self.ui.normalizeTable.setRowCount(0)
     self.ui.normalizationLabel.setText(u"Unset")
     self.ref_norm={}
+    # Persist the cleared state (Fault 3)
+    try:
+      self.updateStateFile()
+    except Exception:
+      debug('updateStateFile failed after clearNormList', exc_info=True)
 
   @log_call
   def normalizeTotalReflection(self):
@@ -2314,11 +2350,16 @@ class MainGUI(QtWidgets.QMainWindow):
 
 ####### Calculations and data treatment
 
-  def updateStateFile(self, ignore):
+  def updateStateFile(self, ignore=None):
+    # Always include direct beams the user has set even if no data run
+    # uses them as normalization yet (Fault 3).  Without this they would
+    # be silently dropped on the next crash-recovery cycle.
+    extra_norms=list(self.ref_norm.values()) if self.ref_norm else []
     with open(paths.STATE_FILE, 'wb') as sfile:
       sfile.write((u'Running PID %i\n'%os.getpid()).encode('utf8'))
-      if len(self.reduction_list)>0:
-        sfile.write(str(HeaderCreator(self.reduction_list)).encode('utf8'))
+      if len(self.reduction_list)>0 or extra_norms:
+        sfile.write(str(HeaderCreator(self.reduction_list,
+                                      extra_norms=extra_norms)).encode('utf8'))
 
   @log_call
   def calcReflParams(self):

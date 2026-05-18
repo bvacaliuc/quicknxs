@@ -50,8 +50,18 @@ class HeaderCreator(object):
   event_options=['bin_type', 'bins', 'event_split_bins', 'event_split_index']
   global_options=['sample_length']
 
-  def __init__(self, refls):
+  def __init__(self, refls, extra_norms=None):
+    '''Construct the header.
+
+    :param list refls: Reflectivity objects forming the data-runs section.
+    :param iterable extra_norms: Optional direct-beam Reflectivity objects to
+        include in the header even if no entry in ``refls`` references them
+        as ``normalization``.  Used by ``MainGUI.updateStateFile`` so that
+        ``run_state.dat`` preserves direct beams the user has set but not yet
+        attached to a data run (Fault 3).
+    '''
     self.refls=refls
+    self.extra_norms=list(extra_norms) if extra_norms else []
     debug('Start collecting data for header creation.')
     self._collect_norms()
     self._collect_background()
@@ -67,6 +77,10 @@ class HeaderCreator(object):
     for refli in self.refls:
       if refli.options['normalization'] not in self.norms:
         self.norms.append(refli.options['normalization'])
+    # Include direct beams that aren't referenced by any reflectivity yet.
+    for norm in self.extra_norms:
+      if norm is not None and norm not in self.norms:
+        self.norms.append(norm)
 
   def _collect_background(self):
     '''
@@ -119,8 +133,18 @@ class HeaderCreator(object):
     Collect export options used for the whole set of data.
     '''
     self.gbl_opts={}
+    # When persisting an intermediate state (Fault 3) only direct beams may
+    # be present; fall back to those for defaults so the header still serialises.
+    source=None
+    if self.refls:
+      source=self.refls[0]
+    elif self.norms:
+      source=self.norms[0]
     for item in self.global_options:
-      self.gbl_opts[item]=self.refls[0].options[item]
+      if source is not None and item in source.options:
+        self.gbl_opts[item]=source.options[item]
+      else:
+        self.gbl_opts[item]=Reflectivity.DEFAULT_OPTIONS.get(item)
 
   def _collect_data(self):
     '''
