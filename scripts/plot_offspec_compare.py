@@ -111,15 +111,44 @@ class OffSpecReduction:
         return ' | '.join(bits) or os.path.basename(self.path)
 
 
-def load_offspec_dat(path):
-    """Load an OffSpecSmooth .dat file and auto-detect its grid shape."""
+# Default column triples (x, y, I) for each known file layout.
+# - 3 columns: OffSpecSmooth_*.dat -> (k_iz-k_fz, Qz, I)
+# - 7 columns: OffSpec_*.dat       -> (Qx, Qz, k_iz, k_fz, k_iz-k_fz, I, dI);
+#                                     use columns (4, 1, 5) so plots stay in
+#                                     (k_iz-k_fz, Qz, I) scientific space.
+_DEFAULT_COLUMNS = {3: (0, 1, 2), 7: (4, 1, 5)}
+
+
+def load_offspec_dat(path, x_col=None, y_col=None, I_col=None):  # noqa: E741
+    """Load a QuickNXS off-spec .dat file and auto-detect its grid shape.
+
+    Column selection: pass explicit ``x_col``/``y_col``/``I_col`` to override the
+    auto-detected layout (3-col smoothed vs 7-col raw). When all three are
+    ``None``, columns are inferred from the data width via ``_DEFAULT_COLUMNS``.
+    """
     meta = _parse_header(path)
     data = np.loadtxt(path, comments='#')
     if data.ndim != 2 or data.shape[1] < 3:
         raise ValueError(f'{path}: expected ≥3-column data, got shape {data.shape}')
-    x = data[:, 0]
-    y = data[:, 1]
-    I = data[:, 2]  # noqa: E741
+
+    ncols = data.shape[1]
+    if x_col is None and y_col is None and I_col is None:
+        if ncols not in _DEFAULT_COLUMNS:
+            raise ValueError(
+                f'{path}: {ncols}-column file has no default x/y/I mapping; '
+                'pass --x-col, --y-col, --I-col explicitly')
+        x_col, y_col, I_col = _DEFAULT_COLUMNS[ncols]
+    if x_col is None or y_col is None or I_col is None:
+        raise ValueError('must specify either all three of x/y/I_col or none')
+    for c in (x_col, y_col, I_col):
+        if c >= ncols or c < 0:
+            raise ValueError(f'{path}: column index {c} out of range [0,{ncols})')
+    meta['ncols'] = ncols
+    meta['columns_used'] = (int(x_col), int(y_col), int(I_col))
+
+    x = data[:, x_col]
+    y = data[:, y_col]
+    I = data[:, I_col]  # noqa: E741
     N = len(x)
 
     nx = len(np.unique(x))
@@ -465,23 +494,35 @@ def main():
                     help='|k_iz - k_fz| < this is the specular stripe (default 2e-3)')
     ap.add_argument('--qz-cut', type=float, action='append', default=None,
                     help='Add a line-cut at this Qz value; repeat for multiple')
+    ap.add_argument('--x-col', type=int, default=None,
+                    help='Column index for x = k_iz - k_fz (auto if omitted: '
+                         '3-col file -> 0, 7-col -> 4)')
+    ap.add_argument('--y-col', type=int, default=None,
+                    help='Column index for y = Q_z (auto if omitted: 3-col -> 1, '
+                         '7-col -> 1)')
+    ap.add_argument('--I-col', type=int, default=None,
+                    help='Column index for intensity (auto if omitted: 3-col -> 2, '
+                         '7-col -> 5)')
     args = ap.parse_args()
 
+    def _describe(name, red):
+        print(f'  meta:    {red.long_label}')
+        print(f'  columns: {red.meta.get("ncols")}-col file, '
+              f'using (x,y,I)={red.meta.get("columns_used")}')
+        print(f'  grid:    nx={len(red.x_axis)}, ny={len(red.y_axis)}, '
+              f'regular={red.is_regular}')
+        print(f'  x range: [{red.x_axis.min():.5f}, {red.x_axis.max():.5f}]')
+        print(f'  y range: [{red.y_axis.min():.5f}, {red.y_axis.max():.5f}]')
+
     print(f'Loading reference:  {args.ref}')
-    ref = load_offspec_dat(args.ref)
-    print(f'  meta:    {ref.long_label}')
-    print(f'  grid:    nx={len(ref.x_axis)}, ny={len(ref.y_axis)}, '
-          f'regular={ref.is_regular}')
-    print(f'  x range: [{ref.x_axis.min():.5f}, {ref.x_axis.max():.5f}]')
-    print(f'  y range: [{ref.y_axis.min():.5f}, {ref.y_axis.max():.5f}]')
+    ref = load_offspec_dat(args.ref,
+                           x_col=args.x_col, y_col=args.y_col, I_col=args.I_col)
+    _describe('ref', ref)
 
     print(f'Loading proposed:   {args.prop}')
-    prop = load_offspec_dat(args.prop)
-    print(f'  meta:    {prop.long_label}')
-    print(f'  grid:    nx={len(prop.x_axis)}, ny={len(prop.y_axis)}, '
-          f'regular={prop.is_regular}')
-    print(f'  x range: [{prop.x_axis.min():.5f}, {prop.x_axis.max():.5f}]')
-    print(f'  y range: [{prop.y_axis.min():.5f}, {prop.y_axis.max():.5f}]')
+    prop = load_offspec_dat(args.prop,
+                            x_col=args.x_col, y_col=args.y_col, I_col=args.I_col)
+    _describe('prop', prop)
 
     print(f'Regridding ({args.regrid}) to common scientific coordinate space...')
     grid = regrid_pair(ref, prop, mode=args.regrid, max_size=args.max_size)
