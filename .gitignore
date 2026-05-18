@@ -1,6 +1,5 @@
 !.github
 *~
-*.png
 *.pyo
 *.pyc
 MANIFEST

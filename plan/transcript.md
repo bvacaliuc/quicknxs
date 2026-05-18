@@ -807,3 +807,14 @@ commit 7c90c88 adds [prompt-28-findings.md](prompt-28-findings.md) to describe w
 commit a9aebb3 is a critically important adjustment that observes a behavioral change in shading due to 400us/40us bin size affecting gaussian smoothing intensity.
 commit 61347bb implements a fix for QA.
 
+( *Prompt 28.1 was me asking Claude why they didn't attribute their commits and they offered to fix that which I accepted.* )
+( *I also adjusted .gitignore to not exclude .png as I think these are important artificats for the investigation.* )
+
+### Prompt 28.2 
+
+I loaded the prior run_state.dat and went to observe reflectivity, but I still see gaps in the Offspec Preview as shown in 'plan/prompt-28.2-offspec.png'. Can you have a look to see if you can determine why?
+
+( *see [prompt-28.2-offspec.png](prompt-28.2-offspec.png)* )
+
+
+
