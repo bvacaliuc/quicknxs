@@ -772,3 +772,38 @@ commit e5861c9e30b866dac0646649eeab64026a9e1fc4 contains the fixes.
 ## Prompt 28
 
 You are working in the quicknxsv1 project, feature/read-event-nexus branch. I started quicknxsv1 via 'make gui' and attempted to load run 44033 (/SNS/REF_M/IPTS-34473/nexus/REF_M_44033.nxs.h5), 44034, 44035 as direct beam, followed by 44159, 44160 and 44161 as reflectivity. I observed a few errors that I would like you to work on resolving. Please read 'plan/prompt-28-todo.md' and investigate these errors. Be thorough and determine the root causes. I am particularly interested in correct off-specular reduction. Once you have solved the errors, I would very much like you to review the output of off-specular reduced output and compare it to the "correct"/"expected" output that is recorded in '/SNS/users/6ov/shared/REF_M/11486/correctReduction/**' and based on this same data set. Please be resourceful in determining the correct output settings. You may read all the files in '/SNS/users/6ov/shared/REF_M/11486/**' if any help you understand the nature. My interest in using quicknxsv1 is to corroborate the off specular reduction, as the scientists have expressed the sentiment that quicknxsv1 was "perfect" in its data processing and quicknxsv2 has had numerous difficulties during its lifetime.
+
+```
+  Summary
+
+  Investigated and resolved the three faults reported in plan/prompt-28-todo.md. All fixes committed to the feature/read-event-nexus branch.
+
+  Fault 1 — TOF gaps in off-specular (root cause: chopper speed)
+  The ±1.6 Å half-bandwidth around lambda_center was hardcoded in four event-mode loaders in quicknxs/qreduce.py. That formula is correct only at 60 Hz; the user's data (IPTS-34473, λ=5.35 Å) was taken at 30 Hz, where the frame period
+  is 33.3 ms and the bandwidth doubles to ±3.2 Å. About half the events fell outside the narrower window and were silently dropped by bin_events, producing the visible Qx-Qz gaps. Replaced the inline math with _compute_tof_range_us(D, 
+  λ, chopper_speed, half_bandwidth) that scales by 60/chopper_speed, matching quicknxsv2's data_info.py:99-100 formula. Verified the IPTS-34473 / 44159 histogram now retains 100% of events (was ~50%) and reproduces the v4.3.0rc1
+  reference off-spec map at correctReduction/. See plan/prompt-28-fix-44161-before-after.png.
+  
+  Fault 2 — DASLog TypeError on .nxs.h5
+  Modern files store several sample-environment string logs (CanName, SampleName, DensityUnits, …) as shape (1, 1) byte arrays. self.logs[motor] = val[0] then stored a 1-element 1-D array and '%g' % data.logs[key] in update_daslog
+  raised TypeError: only 0-dimensional arrays can be converted to Python scalars the first time the user opened the DASLogs tab. Added _log_scalar(val) (returns val.flat[0]) used by all four _collect_info sites; added _format_log_value
+  helper in main_gui.py that falls back to str()/decode for non-numeric values.
+
+  Fault 3 — run_state.dat lost the user's last direct beam / data run
+  HeaderCreator only wrote a DB into the section if at least one refl referenced it as normalization; 44035 was never attached so it was dropped. Additionally, updateStateFile was only triggered by initiateReflectivityPlot, so adding a
+  DB alone never saved state. Added extra_norms kwarg to HeaderCreator, made _collect_global_options resilient to empty refls, wired setNorm/clearNormList to updateStateFile, and fixed HeaderParser._evaluate_section to handle the
+  now-possible empty [Data Runs] section.
+
+  Tests: 11 new tests added to tests/test_event_h5.py; all pass. Existing qio_test (22), qcalc_test (13), and non-network test_event_h5 (46) all pass. Lint clean on all touched files. Full narrative + reproduction steps in
+  plan/prompt-28-findings.md.
+
+✻ Baked for 1h 15m 23s
+```
+
+commit 87eab5a8e4287caf0d0b3970de6c3d561096be2f implements the main fix.
+commit 03d14b4bec93c7c751edb9bd1fb1c7cb0f62861e adds a visual comparison.
+commit 0657b6dab2d0f87488d20b2bb01f17cb175734db handles fault 3.
+commit 6d790e56aeb6638b636bd79fb482aa19223c935c adds [prompt-28-findings.md](prompt-28-findings.md) to describe what was done.
+commit 3c07a81cb3c922118abd8dc7da103ec6243abefd is a critically important adjustment that observes a behavioral change in shading due to 400us/40us bin size affecting gaussian smoothing intensity.
+commit 684e24d76b201d1438edadc7ad4b43e13a198b79 implements a fix for QA.
+
