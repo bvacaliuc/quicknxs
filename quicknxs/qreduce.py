@@ -2544,6 +2544,15 @@ def _find_file_in_ipts(data_base, candidates, timeout=30):
     if not ipts_dirs:
         return None
 
+    # Sort descending by IPTS number so recently-allocated proposals (which hold
+    # the newest run numbers) are checked first — the common case hits in batch 1.
+    def _ipts_num(d):
+        try:
+            return int(d.split('-')[1])
+        except (IndexError, ValueError):
+            return 0
+    ipts_dirs = sorted(ipts_dirs, key=_ipts_num, reverse=True)
+
     def check(ipts_dir):
         for subdir, filename in candidates:
             path = os.path.join(data_base, ipts_dir, subdir, filename)
@@ -2554,8 +2563,13 @@ def _find_file_in_ipts(data_base, candidates, timeout=30):
                 pass
         return None
 
+    # Limit to 4 concurrent workers: each os.path.isfile over rclone VFS opens
+    # a new SFTP session via the SSH ControlMaster.  analysis.sns.gov enforces
+    # MaxSessions (typically 10) per connection; 20 workers burst well past that
+    # limit, causing "server unexpectedly closed connection" errors and password
+    # prompts flooding the terminal.  4 workers stay safely within the limit.
     found = None
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futs = {executor.submit(check, d): d for d in ipts_dirs}
         try:
             for fut in as_completed(futs, timeout=timeout):
