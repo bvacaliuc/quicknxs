@@ -1,5 +1,5 @@
 MANIFEST.in
-README
+README.md
 compile_gui.sh
 pyproject.toml
 setup.cfg
@@ -284,3 +284,5 @@ tests/qio_test.py
 tests/qreduce_test.py
 tests/test1_event.nxs
 tests/test1_histo.nxs
+tests/test_event_h5.py
+tests/test_refl_histo.nxs
