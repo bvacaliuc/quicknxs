@@ -453,6 +453,10 @@ class HeaderParser(object):
     for each line in a section. Default values can be supplied
     to overwrite undefined values or supply integer type conversion.
     '''
+    # Section may be present but empty (HeaderCreator omits column headers
+    # for empty sections; see _get_section).  Treat that as "no rows".
+    if not self.sections.get(section):
+      return []
     sitems=[item.strip() for item in self.sections[section][0].split(u'  ') if item.strip()!=u'']
     sdata=[[item.strip() for item in line.split(u'  ') if item.strip()!=u'']
                                 for line in self.sections[section][1:]]

@@ -728,3 +728,18 @@ class TestHeaderCreatorExtraNorms:
         assert '[Data Runs]' in text
         # Should still write [Global Options] without crashing
         assert '[Global Options]' in text
+
+    def test_state_with_only_dbs_roundtrips(self):
+        """A state file with direct beams and no refls must read back cleanly
+        (regression: empty Data-Runs section used to throw IndexError)."""
+        from quicknxs.qreduce import NXSData, Reflectivity
+        from quicknxs.qio import HeaderCreator, HeaderParser
+        ds = NXSData('tests/test1_histo.nxs', use_caching=False)
+        norm = Reflectivity(ds[0], x_pos=100, x_width=10,
+                            y_pos=100, y_width=50, bg_pos=30, bg_width=20,
+                            dpix=150, tth=0.0)
+        hdr = HeaderCreator([], extra_norms=[norm])
+        parser = HeaderParser(str(hdr), parse_meta=False)
+        parser.parse()
+        assert len(parser.norms) == 1
+        assert len(parser.refls) == 0
