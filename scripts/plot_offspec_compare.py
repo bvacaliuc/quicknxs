@@ -23,14 +23,27 @@ def main():
     ap.add_argument('--ref',
                     default='/SNS/users/6ov/shared/REF_M/11486/correctReduction/'
                             'REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat')
+    ap.add_argument('--rver', default='v2 v4.3.0rc1')
     ap.add_argument('--mine',
-                    default='/tmp/qnxs_compare/quicknxsv1_OffSpecSmooth_Off_Off.dat')
-    ap.add_argument('--out', default='/tmp/qnxs_compare/offspec_compare.png')
+                    default='/SNS/users/6ov/shared/REF_M/11486/correctReduction/'
+                            'REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat')
+    ap.add_argument('--mver', default='v2 v4.3.0rc1')
+    ap.add_argument('--out', default='/tmp/offspec_compare.png')
+    ap.add_argument('--xmin', type=float, default=-0.1)
+    ap.add_argument('--xmax', type=float, default=+0.1)
+    ap.add_argument('--ymin', type=float, default=+0.0)
+    ap.add_argument('--ymax', type=float, default=+0.35)
     args = ap.parse_args()
 
+    # TODO: extract version info from:
+    # Datafile created by QuickNXS 4.3.0rc1
+    # Datafile created using Mantid 6.12.0
+    # Date: 2025-04-08 16:11:14
+    # For now, we specifiy on the command line for --rver, --mver
+
     fig, axs = plt.subplots(1, 3, figsize=(15, 5))
-    for ax, (label, path) in zip(axs[:2], [('Correct (v2 v4.3.0rc1)', args.ref),
-                                           ('quicknxsv1 (this fix)', args.mine)]):
+    for ax, (label, path) in zip(axs[:2], [(f'Reference ({args.rver})', args.ref),
+                                           (f'This ({args.mver})', args.mine)]):
         if not os.path.exists(path):
             ax.text(0.5, 0.5, f'missing\n{path}',
                     ha='center', va='center', transform=ax.transAxes)
@@ -45,8 +58,8 @@ def main():
         ax.set_title(label)
         ax.set_xlabel(r'$k_{i,z} - k_{f,z}$ [Å$^{-1}$]')
         ax.set_ylabel(r'$Q_z$ [Å$^{-1}$]')
-        ax.set_xlim(-0.12, 0.09)
-        ax.set_ylim(-0.1, 0.4)
+        ax.set_xlim(args.xmin, args.xmax)
+        ax.set_ylim(args.ymin, args.ymax)
         plt.colorbar(im, ax=ax, label='I [a.u.]')
 
     # Difference / ratio panel
@@ -65,8 +78,8 @@ def main():
             axs[2].set_title('Ratio: mine / correct')
             axs[2].set_xlabel(r'$k_{i,z} - k_{f,z}$ [Å$^{-1}$]')
             axs[2].set_ylabel(r'$Q_z$ [Å$^{-1}$]')
-            axs[2].set_xlim(-0.12, 0.09)
-            axs[2].set_ylim(-0.1, 0.4)
+            axs[2].set_xlim(args.xmin, args.xmax)
+            axs[2].set_ylim(args.ymin, args.ymax)
             plt.colorbar(im, ax=axs[2], label='ratio')
             # Print summary
             med = float(np.nanmedian(ratio))
