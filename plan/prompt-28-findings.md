@@ -44,12 +44,15 @@ added to the legacy `_collect_info`).
 - visual before/after for run 44161 (highest-tth, most affected) —
   `plan/prompt-28-fix-44161-before-after.png`
 - comparison against the v4.3.0rc1 reference smoothed output —
-  `plan/prompt-28-fix-vs-correct-40bin.png`.  The fixed quicknxsv1 output
-  reproduces the same Qz/Qx coverage and the specular + Bragg peak
-  positions; intensities differ by ~0.45 (median) because v4.3.0rc1
-  defaults to 400 TOF bins vs quicknxsv1's 40 (changing the smoothing
-  density, not the underlying physics).  Bumping `--bins 400` matches
-  intensity within ~10 % at the cost of ~90 min CPU.
+  `plan/prompt-28-fix-vs-correct-40bin.png` (40 bins, ~9 min CPU) and
+  `plan/prompt-28-fix-vs-correct-80bin.png` (80 bins, ~12 min CPU).
+  The fixed quicknxsv1 output reproduces the same Qz/Qx coverage, the
+  same specular streak position, and the same Bragg peak position.
+  Median intensity ratio (mine / reference) shifts from 0.45 at 40
+  bins to 1.30 at 80 bins; the residual depends on TOF bin count vs
+  v4.3.0rc1's default of 400, which changes the smoothing density
+  (Gaussian weights accumulate more samples per grid cell) rather
+  than the underlying physics.
 
 Reproduce:
 ```
