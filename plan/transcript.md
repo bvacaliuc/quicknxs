@@ -800,10 +800,10 @@ You are working in the quicknxsv1 project, feature/read-event-nexus branch. I st
 ✻ Baked for 1h 15m 23s
 ```
 
-commit 87eab5a8e4287caf0d0b3970de6c3d561096be2f implements the main fix.
-commit 03d14b4bec93c7c751edb9bd1fb1c7cb0f62861e adds a visual comparison.
-commit 0657b6dab2d0f87488d20b2bb01f17cb175734db handles fault 3.
-commit 6d790e56aeb6638b636bd79fb482aa19223c935c adds [prompt-28-findings.md](prompt-28-findings.md) to describe what was done.
-commit 3c07a81cb3c922118abd8dc7da103ec6243abefd is a critically important adjustment that observes a behavioral change in shading due to 400us/40us bin size affecting gaussian smoothing intensity.
-commit 684e24d76b201d1438edadc7ad4b43e13a198b79 implements a fix for QA.
+commit db9632c implements the main fix.
+commit 99f91ae adds a visual comparison.
+commit f070aad handles fault 3.
+commit 7c90c88 adds [prompt-28-findings.md](prompt-28-findings.md) to describe what was done.
+commit a9aebb3 is a critically important adjustment that observes a behavioral change in shading due to 400us/40us bin size affecting gaussian smoothing intensity.
+commit 61347bb implements a fix for QA.
 
