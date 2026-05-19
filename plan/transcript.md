@@ -829,5 +829,91 @@ I loaded the prior run_state.dat and went to observe reflectivity, but I still s
 
 ( *see [prompt-28.2-offspec.png](prompt-28.2-offspec.png)* )
 
+/btw I put the run_state.dat I used into the repo at plan/prompt-28.2-run_state.dat in case it is useful for you...
 
+```  
+  Thanks — good thinking. That state file will be very useful for diagnosing the new gap pattern; the main investigation can read it directly to see what event_tof_overwrite / bins / EVT_ID values were captured, replay the exact load
+  through HeaderParser, and verify whether the chopper-speed-aware TOF window is actually being applied when the state is restored (as opposed to when files are loaded fresh from fileOpen).
+
+● Here's what I found. I reproduced the offspec preview headlessly from your saved prompt-28.2-run_state.dat so I could see exactly what the GUI is rendering:
+  
+  attachment
+    
+  The chopper-speed fix is active when loading from state — 44161's data now extends to Qz≈0.37 (left panel, pre-fix simulation: only to ≈0.13). But the AFTER panel still shows a visually dim "band" around Qz=0.13–0.18. Two things 
+  conspire to make that band look like a gap:
+  
+  1. 44160 ends at Qz=0.125 (its 21 kept TOF bins span Qz=−0.001…0.125).
+  2. 44161 does cover Qz=0.043–0.368, but its intensity at Qz=0.13–0.18 is ~5×10⁻⁴, while 44159/44160 in their region are ~5×10⁻². So 44161 is ~100× dimmer there, and on the GUI's log colour scale (offspecImin/offspecImax defaults of
+  10⁻⁹…10⁰), it falls in the lower decades and reads as nearly dark.
+    
+  Per-run printout from the reproduction:
+  44159 Off_Off: Qz=[-0.032, 0.093]   S=[-2.9e-3, 8.6e-1]
+  44160 Off_Off: Qz=[-0.001, 0.125]   S=[-8.6e-3, 4.1e-2]
+  44161 Off_Off: Qz=[ 0.043, 0.368]   S=[-1.5e-4, 3.8e-2]
+  
+  So this is not the same fault as before — it's the intrinsic intensity mismatch between the three angle settings. Two ways to test that interpretation in the GUI:
+  
+  - Drop offspecImax (the upper colour-scale knob) by 1–2 decades. If the band fills in, it's just dynamic-range clipping.
+  - Hide 44159+44160 (uncheck them in the reduction table or remove temporarily) and re-plot. If you then see 44161's full triangle continuously from 0.04 to 0.37 with no break around 0.15, the data is there.
+  
+  A couple of secondary things worth flagging:
+    
+  - 44035's extraction window in your state is narrower than the v4.3.0rc1 reference (x_width=17/y_width=55 vs 24/100). 44161 is normalised by 44035 and the smaller window cuts direct-beam counts → noisier S for 44161 especially in the
+  off-spec tails. Widening 44035 to match the reference (24/100) should brighten 44161's contribution and reduce the visual "gap".
+  - The reproduction .png is at /tmp/qnxs_compare/offspec_preview_before_after.png if you want to look at it.
+  
+  Could you confirm whether the gap you see matches the dim Qz=0.13–0.18 band in the AFTER panel, or whether it's something else (e.g. vertical stripes)? I want to make sure I'm chasing the right artifact before changing more code.
+```
+
+( *NOTE: the 44035 extraction of xw/yw of 17/55 vs 24/100 is a mistake! 44035 is a direct beam but 17/55 is a reflectivity template. This should be looked at again.* )
+
+### Prompt 28.3 (aka Prompt 29)
+
+I should let you know that some work has been done on the headless scripts on another machine while I was away. please have a look. You can try to drop offspecImax, but I'd also like you to look at scripts/reduce_offspec_headless.py and plan/prompt-29-todo.md because something is wrong with the script when it executes against quicknxs v1. Thank you much!
+
+```
+● Clean. Here's what I found and fixed:
+
+  prompt-29: reduce_offspec_headless.py — real fault, not impatience
+
+  Two compounding problems made the script appear hung:
+  
+  1. Numerical (silent NaN + warnings). When axis_sigma_scaling=2 (the OffSpecSmooth case) is used with a grid that extends below 0 in y — exactly the v4.3.0rc1 reference grid (y_min=-0.1) — the per-row ssigmayi = ssigmay/xysigma0 * yij
+   goes negative. rij becomes negative, exp(-0.5·rij) overflows, and Pij/Pij.sum() produces NaN. The existing if xyij==0: continue guard only caught division-by-zero, not the sign-flip. Same hazard whenever xysigma0 has opposite sign to
+   the grid axis (test data where ki_z.max() < 0 triggered it too). Fix: skip the row when ssx_row≤0 or ssy_row≤0 (and analogously per-cell for modes 1/3).
+  
+  2. Performance (O(grid × N) pure-Python loop). With grid=563×1000 and N≈350k off-spec points (bins=400), the original double loop needs ~2×10¹¹ ops in Python. Benchmarks confirmed ~30+ min per channel — so every Ctrl-C was justified.
+  Fix: built a single scipy.spatial.cKDTree on the data points and query nearby neighbours per grid cell. The kernel is then evaluated on the ~50 points within sigmas·σ, not all 350k. Same full-scale case now finishes in ~12 s (~150× 
+  faster), exact to 1e-8 vs the reference algorithm.
+  
+  3. Visibility (no progress). reduce_offspec_headless now passes a callback into smooth_data that prints percent + ETA every 5 % of rows, so even on slow paths the script is visibly alive.
+
+  Tests added in tests/qcalc_test.py:
+  - test_negative_y_region_no_nan — regression for the y<0 NaN.
+  - test_kdtree_matches_legacy_within_tolerance — pins KDTree output to a direct kernel evaluation.
+  
+  All 15 qcalc + 22 qio tests pass. Lint clean. One commit: d81d49b prompt-29: fix smooth_data hang/NaN; reduce_offspec_headless now finishes.
+
+  End-to-end sanity check (synthetic recipe with the reference 563×1000 grid):
+  Reducing channel=Off_Off, bins=400...
+    ... DBs / refls loaded ...
+  Smoothing...
+    smoothing   0%  (elapsed   0.1s, eta   infs)
+    smoothing  25%  (elapsed   0.5s, eta   1.4s)
+    smoothing  50%  (elapsed   4.8s, eta   4.8s)
+    smoothing  75%  (elapsed   8.9s, eta   3.0s)
+    smoothing 100%  (elapsed  10.7s, eta   0.0s)
+    smoothing took 11.6s
+  Wrote /tmp/qnxs_compare/headless_400bin.dat
+
+  ---
+  prompt-28.2: side observation on the residual "gap"
+  
+  I also did the Imax-sweep test I suggested earlier — plan/prompt-28.2-imax-sweep.png. With offspecImax=1 (default) the Qz=0.13-0.18 band looks dark; at Imax=0.01 it fills in; at 0.001 the whole upper triangle lights up. So that
+  remaining "gap" really is colour-scale clipping, not missing data.
+```
+
+### Prompt 28.4
+
+Thanks! A little while ago you said: "- 44035's extraction window in your state is narrower than the v4.3.0rc1 reference (x_width=17/y_width=55 vs 24/100)..." I agree and this was not the intent. Can you determine how 44035's extraction got the 17/55 instead of 24/100? The 17/55 comes from the *reflectivity* parameter of 44161 and I recall *manually* entering this at some point. Usually I prefer to load an existing reduction (or use the ~/.quicknxs/run_state.dat to recover my state). I suspect some kind of cross-talk as reflectivity is loaded after. Would you please investigate?
 
