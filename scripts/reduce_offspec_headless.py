@@ -344,8 +344,13 @@ def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict, verbose
     return pieces
 
 
-def smooth_pieces(pieces, grid: SmoothGrid, sigma_x=0.0005, sigma_y=0.0005):
-    """Apply the OffSpecSmooth gaussian smoothing to a stack of per-run pieces."""
+def smooth_pieces(pieces, grid: SmoothGrid, sigma_x=0.0005, sigma_y=0.0005,
+                  progress=True):
+    """Apply the OffSpecSmooth gaussian smoothing to a stack of per-run pieces.
+
+    Set ``progress=True`` to print a tick every ~5% of grid rows so the
+    operation never looks hung on large grids.
+    """
     from quicknxs.qcalc import smooth_data
 
     data = np.hstack(pieces)
@@ -362,10 +367,24 @@ def smooth_pieces(pieces, grid: SmoothGrid, sigma_x=0.0005, sigma_y=0.0005):
     }
     axis_sigma_scaling = 2
     xysigma0 = Qzmax / 3.0
+
+    cb = None
+    if progress:
+        state = {'last_pct': -5, 't0': time.time()}
+        def cb(frac):
+            pct = int(frac * 100)
+            if pct >= state['last_pct'] + 5:
+                state['last_pct'] = pct
+                elapsed = time.time() - state['t0']
+                eta = elapsed / max(frac, 1e-3) * (1 - frac) if frac > 0 else float('inf')
+                print(f'  smoothing {pct:3d}%  '
+                      f'(elapsed {elapsed:5.1f}s, eta {eta:5.1f}s)',
+                      flush=True)
     xout, yout, Iout = smooth_data(settings, x, y, I,
                                    axis_sigma_scaling=axis_sigma_scaling,
                                    xysigma0=xysigma0,
-                                   sigmas=settings['sigmas'])
+                                   sigmas=settings['sigmas'],
+                                   callback=cb)
     return xout, yout, Iout
 
 
