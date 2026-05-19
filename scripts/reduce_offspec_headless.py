@@ -274,8 +274,18 @@ def _direct_beam_channel(nxs):
         return nxs[keys[0]]
 
 
-def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict, verbose=True):
+def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict,
+                  subtract_bg=True, verbose=True):
     """Run the headless reduction for `channel`, return list of per-run arrays.
+
+    Parameters
+    ----------
+    subtract_bg : bool
+        Whether to subtract the background-vs-TOF from the intensity. v1's
+        ``OffSpecular`` always subtracts (no flag); when ``False``, we
+        post-process to undo the subtraction in scientific-coordinate space
+        by adding back the BG contribution scaled by the same factor:
+        ``S_no_bg = S + BG * scale / norm.Rraw``.
 
     Returns
     -------
@@ -326,6 +336,19 @@ def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict, verbose
                          extract_fan=dr.extract_fan,
                          dpix=dr.dpix, tth=dr.tth,
                          normalization=norm)
+
+        # Optionally undo v1's mandatory background subtraction (no flag in v1).
+        # After OffSpecular computes S = (I - BG) * scale / norm.Rraw, we can
+        # recover the no-BG-subtract output by adding back BG * scale / norm.Rraw
+        # at TOF bins where the normalization is valid.
+        if not subtract_bg:
+            scale = oS.options.get('scale', 1.0)
+            bg_contrib = oS.BG[np.newaxis, :] * scale
+            valid = norm.Rraw > 0
+            bg_normalized = np.zeros_like(bg_contrib, dtype=float)
+            bg_normalized[:, valid] = bg_contrib[:, valid] / norm.Rraw[np.newaxis, valid]
+            oS.S = oS.S + bg_normalized
+
         # Apply the P0/PN truncation as the Exporter does
         n_tof = len(xs.tof)
         keep_lo = dr.PN
@@ -338,7 +361,8 @@ def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict, verbose
         pieces.append(rdata)
         if verbose:
             db_run = recipe.direct_beams[db_idx].run_number
-            print(f'  DR {dr.run_number} via DB[{db_idx}]={db_run}: '
+            bg_state = 'BG-on' if subtract_bg else 'BG-off'
+            print(f'  DR {dr.run_number} via DB[{db_idx}]={db_run} ({bg_state}): '
                   f'Qz=[{oS.Qz.min():.4f},{oS.Qz.max():.4f}], '
                   f'I=[{oS.S.min():.3e},{oS.S.max():.3e}]')
     return pieces
@@ -460,6 +484,10 @@ def main():
                     help='Override ny of smoothing grid (default: from recipe).')
     ap.add_argument('--no-smooth', action='store_true',
                     help='Skip smoothing; write raw OffSpec instead')
+    ap.add_argument('--no-subtract-bg', action='store_true',
+                    help='Skip the background-vs-TOF subtraction. v1 always '
+                         'subtracts (no flag); this post-processes to undo it. '
+                         'Matches v4.3.0rc1 "BG X off" / subtract_background=False.')
     args = ap.parse_args()
 
     print(f'Parsing recipe: {args.recipe}')
@@ -482,8 +510,10 @@ def main():
         header_db = dr.db_id_header
         print(f'  data {dr.run_number} -> DB[{db_idx}]={db_run}  (header DB_ID was {header_db})')
 
-    print(f'\nReducing channel={args.channel}, bins={args.bins}...')
-    pieces = reduce_recipe(recipe, args.channel, args.bins, db_map)
+    print(f'\nReducing channel={args.channel}, bins={args.bins}, '
+          f'subtract_bg={not args.no_subtract_bg}...')
+    pieces = reduce_recipe(recipe, args.channel, args.bins, db_map,
+                           subtract_bg=not args.no_subtract_bg)
 
     if args.no_smooth or recipe.smooth_grid is None:
         if recipe.smooth_grid is None and not args.no_smooth:
