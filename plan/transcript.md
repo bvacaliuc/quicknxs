@@ -917,3 +917,51 @@ I should let you know that some work has been done on the headless scripts on an
 
 Thanks! A little while ago you said: "- 44035's extraction window in your state is narrower than the v4.3.0rc1 reference (x_width=17/y_width=55 vs 24/100)..." I agree and this was not the intent. Can you determine how 44035's extraction got the 17/55 instead of 24/100? The 17/55 comes from the *reflectivity* parameter of 44161 and I recall *manually* entering this at some point. Usually I prefer to load an existing reduction (or use the ~/.quicknxs/run_state.dat to recover my state). I suspect some kind of cross-talk as reflectivity is loaded after. Would you please investigate?
 
+```
+● Found it — confirmed with a headless replay. Here's the full path:
+
+  Diagnosis
+
+  The widths in 44035's saved DB record (x_width=17, y_width=55) come directly from 44160's reflectivity — they leaked across through stale UI spinbox values.
+  
+  Step by step (matching your debug.log timeline):
+  
+  1. State restore (loadExtraction, main_gui.py:1427-1430) explicitly writes the last refl's options into the UI spinboxes. After your prior session's state file was loaded, the spinboxes were showing 44160's refl values:
+  refXPos=172, refXWidth=17, refYPos=137, refYWidth=55
+  2. Sticky AutoYLimits=off. The prior session called addRefList(44159), which at main_gui.py:1868 flips actionAutoYLimits to False (so all subsequent refls share the same y region). That toggle is preserved across save/restore — it's
+  still off when you reload state.
+  3. Loading 44035 fresh (fileLoaded → calcReflParams, main_gui.py:2376):
+    - actionAutomaticXPeak (on) → refXPos ← 44035's auto-detected x peak (~230) ✓
+    - actionAutoYLimits (off) → refYPos and refYWidth are not touched ✗
+    - refXWidth has no auto path at all — never touched in calcReflParams ✗
+  4. calc_refl (main_gui.py:863-915) reads the spinboxes verbatim into a new Reflectivity(44035-data, x_pos=230.5, x_width=17, y_pos=137, y_width=55, …).
+  5. setNorm captures that reference into ref_norm['44035'] — widths still 44160's.
+  
+  My headless replay confirms it bit-for-bit:
+  setNorm(44035) would capture:    x_pos=229.5, x_width=17, y_pos=137, y_width=55
+  plan/prompt-28.2-run_state.dat:  x_pos=230.5, x_width=17, y_pos=134, y_width=55
+  
+  (The x_pos=230.5 vs my auto 229.5 and your y_pos=134 vs the stale 137 reflect manual clicks you made on the projection plots between loading the file and hitting Set Direct Beam — but the widths never had any path to a
+  44035-appropriate value.)
+  
+  Where to fix it
+
+  I see three options, in increasing invasiveness:
+  
+  (A) Cheap, minimal surface. In calcReflParams, when the active file's run number is not in ref_norm and not in the reduction list, always run get_yregion regardless of actionAutoYLimits. This re-seeds refYPos/refYWidth whenever a
+  previously-unknown file is loaded — exactly the case where stale values are inappropriate. Refl-stitching workflow (loading another file that is already a refl) is unchanged.
+
+  (B) Belt-and-suspenders. Same as (A) plus in setNorm, before capturing, force get_yregion on the active data and overwrite the captured object's y_pos/y_width. Guarantees a DB never inherits a refl's y region even if the user toggles
+  flags weirdly. The cost is that any manual y-adjustment for a DB before Set Direct Beam gets lost.
+
+  (C) Architectural. Decouple DB-mode from refl-mode in the GUI: each Set-Direct-Beam click is treated as "I want auto-detection for this file's beam unless I explicitly overrode". Larger change to UI flow; out of scope for a targeted
+  fix.
+
+  I'd recommend (A) as the right minimal fix — it matches your stated workflow ("loading existing reduction, adding more files later") and doesn't touch any path you've already exercised. Want me to implement (A) and write a regression
+  test? I have the reproduction script ready; the test can drive calcReflParams headlessly with the stale-UI scenario and assert the y values get re-seeded.
+```
+
+### Prompt 28.5
+
+Ok, proceed with (A), but make a plan to do (C) based on the knowledge you have gained. That plan would be executed in a new session (this session has about run its course, and its been great!).
+
