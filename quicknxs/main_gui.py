@@ -2361,13 +2361,51 @@ class MainGUI(QtWidgets.QMainWindow):
         sfile.write(str(HeaderCreator(self.reduction_list,
                                       extra_norms=extra_norms)).encode('utf8'))
 
+  def _active_file_is_known(self):
+    """Return True if the active file's run number is already saved as a
+    direct beam (in ``ref_norm``) or as a reflectivity (in
+    ``reduction_list``).
+
+    Used by ``calcReflParams`` to decide whether the active file is a
+    "fresh" file (in which case stale UI widths must NOT be reused) or
+    one the user has already classified (in which case the user's stored
+    extraction region should be left alone).
+    """
+    if self.active_data is None:
+      return False
+    if type(self.active_data.number) is list:
+      number='['+",".join(map(str, self.active_data.number))+']'
+    else:
+      number=str(self.active_data.number)
+    if number in self.ref_norm:
+      return True
+    for refl in self.reduction_list:
+      r_num=refl.options.get('number')
+      if r_num is None:
+        continue
+      if isinstance(r_num, list):
+        r_num='['+",".join(map(str, r_num))+']'
+      if str(r_num)==number:
+        return True
+    return False
+
   @log_call
   def calcReflParams(self):
     '''
     Calculate x and y regions for reflectivity extraction and put them in the
     entry fields.
+
+    When the active file is "fresh" (not yet stored as a direct beam or
+    refl) the auto-Y region is **always** reseeded from the data, even if
+    ``actionAutoYLimits`` is off.  This prevents widths from a
+    previously-active refl bleeding into a newly-loaded direct beam
+    (Fault A from ``plan/prompt-28.2-todo.md`` — 44035 inheriting
+    44160's ``x_width=17 / y_width=55``).  Files the user has already
+    classified keep their stored region (refl-stitching workflow
+    unchanged).
     '''
     data=self.active_data[self.active_channel]
+    fresh_file=not self._active_file_is_known()
     self.auto_change_active=True
     if self.ui.actionAutomaticXPeak.isChecked():
       # locate peaks using CWT peak finder algorithm
@@ -2384,8 +2422,11 @@ class MainGUI(QtWidgets.QMainWindow):
                                return_pf=True)
       self.ui.refXPos.setValue(x_peak)
 
-    if self.ui.actionAutoYLimits.isChecked():
-      # find the central peak reagion with intensities larger than 10% of maximum
+    if self.ui.actionAutoYLimits.isChecked() or fresh_file:
+      # find the central peak region with intensities larger than 10% of maximum.
+      # ``fresh_file`` overrides the AutoYLimits toggle so a never-classified
+      # file always gets file-appropriate widths rather than whatever the UI
+      # was last showing (a refl's narrow region, say).
       y_center, y_width, self.y_bg=get_yregion(data)
       self.ui.refYPos.setValue(y_center)
       self.ui.refYWidth.setValue(y_width)

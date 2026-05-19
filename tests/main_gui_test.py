@@ -1535,6 +1535,122 @@ class LoadExtractionRoundTrip(unittest.TestCase):
                        'reduction_list should be populated from pending header')
 
 
+class CalcReflParamsFreshFileReseed(unittest.TestCase):
+  """Regression for prompt-28.2: 44035 captured 44160's widths.
+
+  When a user loads a new (never-classified) file after addRefList has
+  flipped actionAutoYLimits to False, the spinboxes for y_pos/y_width
+  used to retain whatever was last on screen — typically the previous
+  refl's narrow extraction region.  setNorm would then capture a
+  Reflectivity built from those stale widths.
+
+  Fix: in calcReflParams, treat "fresh" files (not yet in ref_norm and
+  not yet in reduction_list) as if AutoYLimits were on, regardless of
+  the toggle, so they always get file-appropriate y_pos/y_width.
+  """
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning',
+                                    return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def _set_stale_ui(self, *, x_pos, x_width, y_pos, y_width):
+    """Force the spinboxes to specific values (simulating loadExtraction
+    having written a refl's options to the UI).  ``auto_change_active``
+    is set so signal handlers don't recompute or move things around."""
+    self.gui.auto_change_active=True
+    self.gui.ui.refXPos.setValue(x_pos)
+    self.gui.ui.refXWidth.setValue(x_width)
+    self.gui.ui.refYPos.setValue(y_pos)
+    self.gui.ui.refYWidth.setValue(y_width)
+    self.gui.auto_change_active=False
+
+  def test_fresh_file_reseeds_y_even_with_AutoYLimits_off(self):
+    # Mirror the moment after addRefList in the real GUI: AutoYLimits
+    # has been flipped off because the user added a refl, and the UI
+    # spinboxes are showing that refl's (narrow) extraction region.
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.setNorm()
+    self.gui.addRefList(do_plot=False)
+    self.assertFalse(self.gui.ui.actionAutoYLimits.isChecked(),
+                     'addRefList should disable AutoYLimits')
+
+    # Simulate state-restore having written a refl's narrow widths
+    # into the spinboxes (this is what loadExtraction does at lines
+    # 1427-1430 of main_gui.py).
+    stale_y_pos=137.0
+    stale_y_width=55.0
+    self._set_stale_ui(x_pos=172.0, x_width=17.0,
+                       y_pos=stale_y_pos, y_width=stale_y_width)
+
+    # Now load a fresh file.  The test fixtures share a run number so
+    # we make the GUI think it's a different file by directly emptying
+    # the classification stores, then driving calcReflParams.
+    self.gui.reduction_list=[]
+    self.gui.ref_norm={}
+    self.gui.fileOpen(TEST_EVENT, do_plot=True)
+    self.assertFalse(self.gui._active_file_is_known(),
+                     'cleared classification → fresh file')
+
+    # Y should have been reseeded from the actual data via get_yregion,
+    # not left at the stale 137/55 from the previous refl.
+    self.assertNotEqual(self.gui.ui.refYPos.value(), stale_y_pos,
+                        'refYPos must be reseeded from the fresh file, '
+                        'not left at the stale refl value')
+    self.assertNotEqual(self.gui.ui.refYWidth.value(), stale_y_width,
+                        'refYWidth must be reseeded from the fresh file, '
+                        'not left at the stale refl value')
+
+    # And the captured self.refl must have those fresh values, so a
+    # subsequent setNorm() would record the file's own extraction
+    # region — not a stale one.
+    self.assertEqual(self.gui.refl.options['y_pos'],
+                     self.gui.ui.refYPos.value())
+    self.assertEqual(self.gui.refl.options['y_width'],
+                     self.gui.ui.refYWidth.value())
+
+  def test_known_file_preserves_user_y_values(self):
+    """When the active file is a refl already in reduction_list, its
+    y_pos/y_width must NOT be silently re-seeded — that would clobber a
+    user-tuned region for refl stitching."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.setNorm()
+    self.gui.addRefList(do_plot=False)
+    self.assertFalse(self.gui.ui.actionAutoYLimits.isChecked())
+    self.assertTrue(self.gui._active_file_is_known(),
+                    'TEST_DATASET is now in reduction_list')
+
+    # Manually adjust y to a non-auto value the user might pick for
+    # refl-stitching uniformity.
+    custom_y_pos=145.0
+    custom_y_width=70.0
+    self._set_stale_ui(x_pos=self.gui.ui.refXPos.value(),
+                       x_width=self.gui.ui.refXWidth.value(),
+                       y_pos=custom_y_pos, y_width=custom_y_width)
+
+    # Drive calcReflParams directly (the same code path fileOpen would
+    # trigger via fileLoaded → calcReflParams).  Since the file is
+    # known, Y must not be re-seeded.
+    self.gui.calcReflParams()
+    self.assertEqual(self.gui.ui.refYPos.value(), custom_y_pos,
+                     'known files must keep the user-set y_pos')
+    self.assertEqual(self.gui.ui.refYWidth.value(), custom_y_width,
+                     'known files must keep the user-set y_width')
+
+
 # ──────────────────────────────────────────────────────────────
 #  Test suite registration
 # ──────────────────────────────────────────────────────────────
@@ -1574,3 +1690,4 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(QFileDialogTupleFix))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(NavigationToolbarLabelAction))
 # Load Extraction round-trip tests
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LoadExtractionRoundTrip))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(CalcReflParamsFreshFileReseed))
