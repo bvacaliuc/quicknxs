@@ -373,7 +373,6 @@ class HeaderParser(object):
   event_defaults=dict(EVT_ID=0, bin_type=0, bins=40, event_split_bins=10, event_split_index=0)
   poly_defaults=dict(poly_region=0, l1=0., l2=0., l3=0., l4=0.,
                                     x1=0., x2=0., x3=0., x4=0.)
-  global_defaults=dict(name='unknown', value=10.)
   callback=None
   quicknxs_version=None
   export_type=None
@@ -483,6 +482,38 @@ class HeaderParser(object):
       output.append(idata)
     return output
 
+  @staticmethod
+  def _convert_scalar(value):
+    '''
+    Convert a single header token to bool/None/float, falling back to str.
+    Avoids eval() so a hand-edited header cannot execute code.
+    '''
+    literals={'True': True, 'False': False, 'None': None}
+    if value in literals:
+      return literals[value]
+    try:
+      return float(value)
+    except ValueError:
+      return value
+
+  def _evaluate_global_options(self):
+    '''
+    Parse [Global Options] as name/value pairs.
+
+    QuickNXS v2 (4.3.0rc1) right-aligns the value column, so a long key
+    such as ``lock_direct_beam_y`` leaves only a single space before its
+    value.  The generic 2-space column split would then drop the value,
+    so split on the first run of whitespace instead.
+    '''
+    lines=self.sections.get('Global Options') or []
+    result={}
+    for line in lines[1:]:  # row 0 is the "name value" column header
+      parts=line.split(None, 1)
+      if len(parts)<2:
+        continue
+      result[parts[0].strip()]=self._convert_scalar(parts[1].strip())
+    return result
+
   def _evaluate(self):
     '''
     Evaluate given sections with their default values.
@@ -508,10 +539,7 @@ class HeaderParser(object):
       self.section_data['Background Polygon Regions']=self._evaluate_section(
                         'Background Polygon Regions', self.poly_defaults)
     if 'Global Options' in self.sections:
-      gbl_options=self._evaluate_section(
-                        'Global Options', self.global_defaults)
-      self.section_data['Global Options']=dict([(item['name'], item['value'])
-                                                for item in gbl_options])
+      self.section_data['Global Options']=self._evaluate_global_options()
     self._collect_background_options()
 
   def _get_dataset(self, options):

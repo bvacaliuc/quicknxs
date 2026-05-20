@@ -370,6 +370,36 @@ class ExportAndReloadTest(FakeData, unittest.TestCase):
       shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class V2GlobalOptionsParseTest(unittest.TestCase):
+  """QuickNXS v2 (4.3.0rc1) writes [Global Options] with a long key name
+  (lock_direct_beam_y) that leaves only a single space before its value.
+  The 2-space column split must not choke on that (regression: IndexError).
+  """
+
+  V2_HEADER='\n'.join([
+    '# Datafile created by QuickNXS 4.3.0rc1',
+    '# Datafile created using Mantid 6.12.0',
+    '# Date: 2025-04-08 16:09:48',
+    '# Type: Specular',
+    '# Input file indices: 44159,44160,44161',
+    '# Extracted states: +',
+    '#',
+    '# [Global Options]',
+    '# name               value',
+    '# sample_length      10.0',
+    '# lock_direct_beam_y False',
+    '#',
+  ])
+
+  def test_v2_global_options_single_space(self):
+    parser=HeaderParser(self.V2_HEADER, parse_meta=True)
+    gopts=parser.section_data['Global Options']
+    self.assertEqual(gopts['sample_length'], 10.0)
+    # long key / single-space value must still parse as a real bool
+    self.assertIn('lock_direct_beam_y', gopts)
+    self.assertIs(gopts['lock_direct_beam_y'], False)
+
+
 suite=unittest.TestLoader().loadTestsFromTestCase(HeaderTest)
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(ExportTest))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(HeaderParserMemoryTest))
