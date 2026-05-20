@@ -6,6 +6,7 @@ Module including main GUI class with all signal handling and plot creation.
 import os
 import signal
 import sys
+from dataclasses import dataclass
 from glob import glob
 from time import time
 from numpy import where, pi, newaxis, log10, savetxt, array
@@ -56,6 +57,44 @@ def _format_log_value(value):
       except UnicodeDecodeError:
         return repr(value)
     return str(value)
+
+
+@dataclass
+class ExtractionRegion:
+  '''Spatial extraction region for one GUI *role* (direct-beam or
+  reflectivity).
+
+  The GUI shares a single set of region spinboxes between two distinct
+  roles: capturing a direct beam (wide beam profile) and extracting a
+  reflectivity (narrow sample stripe).  Keeping the region for each role
+  in its own ``ExtractionRegion`` lets the spinboxes mirror whichever
+  role the active file belongs to, so one role can no longer scrape the
+  other's stale widths (see ``plan/prompt-30-decouple-db-refl-ui.md``).
+
+  Fields use the same units/keys as ``Reflectivity.options`` (``scale``
+  is linear; the ``refScale`` spinbox shows ``log10(scale)``).
+  '''
+  x_pos: float = 206.0
+  x_width: float = 9.0
+  y_pos: float = 120.0
+  y_width: float = 120.0
+  bg_pos: float = 80.0
+  bg_width: float = 40.0
+  scale: float = 1.0
+
+  @classmethod
+  def from_options(cls, opts):
+    '''Build a region from a ``Reflectivity.options`` dict.'''
+    base=cls()
+    return cls(
+      x_pos=opts.get('x_pos', base.x_pos),
+      x_width=opts.get('x_width', base.x_width),
+      y_pos=opts.get('y_pos', base.y_pos),
+      y_width=opts.get('y_width', base.y_width),
+      bg_pos=opts.get('bg_pos', base.bg_pos),
+      bg_width=opts.get('bg_width', base.bg_width),
+      scale=opts.get('scale', base.scale),
+      )
 
 
 class gisansCalcThread(QtCore.QThread):
@@ -216,8 +255,17 @@ class MainGUI(QtWidgets.QMainWindow):
     # watch folder for changes
     self.auto_change_active=False
 
+    # Per-role extraction regions (prompt-30).  The spinboxes mirror
+    # whichever region matches the active file's role; capturing a direct
+    # beam vs. extracting a reflectivity can no longer scrape each other's
+    # stale widths.
+    self.region_db=self._read_region_from_ui()
+    self.region_refl=self._read_region_from_ui()
+    self.active_role='refl'
+
     self.fileLoaded.connect(self.updateLabels)
     self.fileLoaded.connect(self.calcReflParams)
+    self.fileLoaded.connect(self._applyRoleRegion)
     self.fileLoaded.connect(self.plotActiveTab)
     self.initiateProjectionPlot.connect(self.plot_projections)
     self.initiateReflectivityPlot.connect(self.plot_refl)
@@ -1422,16 +1470,14 @@ class MainGUI(QtWidgets.QMainWindow):
       # update global export options
       if 'Global Options' in parser.section_data:
         export.sampleSize=parser.section_data['Global Options']['sample_length']
-      # set settings for the dataset added last
-      self.auto_change_active=True
-      self.ui.refXPos.setValue(refl.options['x_pos'])
-      self.ui.refXWidth.setValue(refl.options['x_width'])
-      self.ui.refYPos.setValue(refl.options['y_pos'])
-      self.ui.refYWidth.setValue(refl.options['y_width'])
-      self.ui.bgCenter.setValue(refl.options['bg_pos'])
-      self.ui.bgWidth.setValue(refl.options['bg_width'])
-      self.ui.refScale.setValue(log10(refl.options['scale']))
-      self.auto_change_active=False
+      # Seed the spinboxes from the reflectivity-role region (prompt-30).
+      # region_db and region_refl were already captured by the setNorm /
+      # addRefList calls above, so state restore leaves *both* roles ready:
+      # opening a DB next mirrors region_db, opening a refl mirrors
+      # region_refl — neither drags the other's stale widths into the wrong
+      # role (replaces the old "write the last refl to the UI" seeding).
+      self.active_role='refl'
+      self._apply_region_to_ui(self.region_refl)
       # load the last file in the list to be in the right directory and trigger plotting
       if type(refl.origin) is list:
         self.fileOpenSum([item[0] for item in refl.origin])
@@ -1754,6 +1800,13 @@ class MainGUI(QtWidgets.QMainWindow):
       self.ui.normalizeTable.setItem(idx, 7, QtWidgets.QTableWidgetItem(str(opts['bg_width'])))
       self.ui.normalizationLabel.setText(u",".join(map(str, sorted(self.ref_norm.keys()))))
       self.ui.normalizeTable.resizeColumnsToContents()
+      # Remember the direct-beam role's region so a later DB load mirrors
+      # it instead of a stale refl region (prompt-30).  Captured from the
+      # stored object's options, not the spinboxes, so it is correct even
+      # when setNorm is driven by loadExtraction (self.refl is a parsed
+      # norm whose options do not match the current UI).
+      self.region_db=ExtractionRegion.from_options(self.refl.options)
+      self.active_role='db'
     elif do_remove:
       if type(self.active_data.number) is list:
         number='['+",".join(map(str, self.active_data.number))+']'
@@ -1903,6 +1956,11 @@ class MainGUI(QtWidgets.QMainWindow):
       # use the same y region for all following datasets (can be changed by user if desired)
       self.ui.actionAutoYLimits.setChecked(False)
     self.reduction_list.append(self.refl)
+    # Remember the reflectivity role's region (prompt-30) from the stored
+    # object's options, so a later refl load mirrors it and a DB load does
+    # not inherit it.
+    self.region_refl=ExtractionRegion.from_options(self.refl.options)
+    self.active_role='refl'
     self.ui.reductionTable.setRowCount(len(self.reduction_list))
     idx=len(self.reduction_list)-1
     self.auto_change_active=True
@@ -2361,6 +2419,61 @@ class MainGUI(QtWidgets.QMainWindow):
         sfile.write(str(HeaderCreator(self.reduction_list,
                                       extra_norms=extra_norms)).encode('utf8'))
 
+  def _read_region_from_ui(self):
+    '''Snapshot the current extraction-region spinboxes into an
+    ``ExtractionRegion`` (``scale`` linear, as in ``Reflectivity.options``).'''
+    return ExtractionRegion(
+      x_pos=self.ui.refXPos.value(),
+      x_width=self.ui.refXWidth.value(),
+      y_pos=self.ui.refYPos.value(),
+      y_width=self.ui.refYWidth.value(),
+      bg_pos=self.ui.bgCenter.value(),
+      bg_width=self.ui.bgWidth.value(),
+      scale=10**self.ui.refScale.value(),
+      )
+
+  def _apply_region_to_ui(self, region):
+    '''Mirror an ``ExtractionRegion`` into the spinboxes without firing the
+    change handlers (guarded by ``auto_change_active``).'''
+    old=self.auto_change_active
+    self.auto_change_active=True
+    self.ui.refXPos.setValue(region.x_pos)
+    self.ui.refXWidth.setValue(region.x_width)
+    self.ui.refYPos.setValue(region.y_pos)
+    self.ui.refYWidth.setValue(region.y_width)
+    self.ui.bgCenter.setValue(region.bg_pos)
+    self.ui.bgWidth.setValue(region.bg_width)
+    if region.scale>0:
+      self.ui.refScale.setValue(log10(region.scale))
+    self.auto_change_active=old
+
+  def _active_file_number(self):
+    '''Return the active file's run-number key (matching the format stored
+    in ``ref_norm`` / ``reduction_list``), or None if no file is loaded.'''
+    if self.active_data is None:
+      return None
+    if type(self.active_data.number) is list:
+      return '['+",".join(map(str, self.active_data.number))+']'
+    return str(self.active_data.number)
+
+  def _active_file_role(self):
+    '''Return ``'db'`` if the active file is a saved direct beam, ``'refl'``
+    if a saved reflectivity, else ``None`` (unclassified / fresh).'''
+    number=self._active_file_number()
+    if number is None:
+      return None
+    if number in self.ref_norm:
+      return 'db'
+    for refl in self.reduction_list:
+      r_num=refl.options.get('number')
+      if r_num is None:
+        continue
+      if isinstance(r_num, list):
+        r_num='['+",".join(map(str, r_num))+']'
+      if str(r_num)==number:
+        return 'refl'
+    return None
+
   def _active_file_is_known(self):
     """Return True if the active file's run number is already saved as a
     direct beam (in ``ref_norm``) or as a reflectivity (in
@@ -2371,23 +2484,24 @@ class MainGUI(QtWidgets.QMainWindow):
     one the user has already classified (in which case the user's stored
     extraction region should be left alone).
     """
-    if self.active_data is None:
-      return False
-    if type(self.active_data.number) is list:
-      number='['+",".join(map(str, self.active_data.number))+']'
-    else:
-      number=str(self.active_data.number)
-    if number in self.ref_norm:
-      return True
-    for refl in self.reduction_list:
-      r_num=refl.options.get('number')
-      if r_num is None:
-        continue
-      if isinstance(r_num, list):
-        r_num='['+",".join(map(str, r_num))+']'
-      if str(r_num)==number:
-        return True
-    return False
+    return self._active_file_role() is not None
+
+  @log_call
+  def _applyRoleRegion(self):
+    '''On file load, mirror the active file's *role* region into the
+    spinboxes when the role changes (prompt-30).
+
+    Only a role *switch* (db<->refl) re-seeds the spinboxes, so reloading
+    a file of the same role leaves user-tuned / auto-fit values intact
+    (no regression to refl-stitching or Fix A's fresh-file Y reseed).
+    Fresh (unclassified) files keep ``calcReflParams``' auto-fit region.
+    '''
+    role=self._active_file_role()
+    if role is None:
+      return
+    if role!=self.active_role:
+      self._apply_region_to_ui(self.region_db if role=='db' else self.region_refl)
+    self.active_role=role
 
   @log_call
   def calcReflParams(self):

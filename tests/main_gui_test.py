@@ -3,12 +3,13 @@
 import os
 import unittest
 from time import time
+from types import SimpleNamespace
 from unittest.mock import patch
 from qtpy.QtWidgets import QApplication, QMainWindow, QMessageBox
 from qtpy.QtTest import QTest
 from qtpy.QtCore import QLocale#, Qt
 
-from quicknxs.main_gui import MainGUI
+from quicknxs.main_gui import MainGUI, ExtractionRegion
 from quicknxs.qreduce import NXSData, Reflectivity
 
 # Create a single QApplication instance for all tests
@@ -1651,6 +1652,144 @@ class CalcReflParamsFreshFileReseed(unittest.TestCase):
                      'known files must keep the user-set y_width')
 
 
+class RoleDecoupling(unittest.TestCase):
+  """prompt-30: the direct-beam role and reflectivity role keep separate
+  extraction regions, so loading a file of one role can no longer leave
+  the other role's stale widths in the spinboxes.
+
+  The GUI infers a file's role from ref_norm / reduction_list and, on a
+  role *switch*, mirrors that role's stored ExtractionRegion into the
+  spinboxes.  setNorm / addRefList capture each role's region from the
+  stored object's options.
+  """
+
+  # Distinctive regions modelled on the real REF_M 11486 reduction:
+  # the direct beam 44035 has a wide stripe (x_width 24 / y_width 100)
+  # while the refl 44161 has a narrow one (x_width 17 / y_width 55).
+  DB_REGION=ExtractionRegion(x_pos=230.5, x_width=24., y_pos=134., y_width=100.,
+                             bg_pos=30., bg_width=20., scale=1.0)
+  REFL_REGION=ExtractionRegion(x_pos=172.3, x_width=17., y_pos=137., y_width=55.,
+                               bg_pos=30., bg_width=20., scale=2.0)
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning',
+                                    return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_db_after_refl_uses_db_region(self):
+    """A refl is active; loading a known direct beam must mirror the DB
+    region into the spinboxes, not the refl's narrow widths."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_db=self.DB_REGION
+    self.gui.region_refl=self.REFL_REGION
+    # Spinboxes currently show the refl region (the cross-talk setup).
+    self.gui.active_role='refl'
+    self.gui._apply_region_to_ui(self.REFL_REGION)
+    self.assertEqual(self.gui.ui.refYWidth.value(), 55.)
+
+    # Classify the active file as a direct beam, then drive the same hook
+    # fileLoaded fires.
+    number=self.gui._active_file_number()
+    self.gui.ref_norm={number: self.gui.refl}
+    self.gui.reduction_list=[]
+    self.gui._applyRoleRegion()
+
+    self.assertEqual(self.gui.active_role, 'db')
+    self.assertEqual(self.gui.ui.refXWidth.value(), 24.,
+                     'DB load must mirror the DB x_width, not the refl 17')
+    self.assertEqual(self.gui.ui.refYWidth.value(), 100.,
+                     'DB load must mirror the DB y_width, not the refl 55')
+    self.assertEqual(self.gui.ui.refXPos.value(), 230.5)
+
+  def test_refl_after_db_uses_refl_region(self):
+    """A DB is active; loading a known reflectivity must mirror the refl
+    region, not the DB's wide widths."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_db=self.DB_REGION
+    self.gui.region_refl=self.REFL_REGION
+    self.gui.active_role='db'
+    self.gui._apply_region_to_ui(self.DB_REGION)
+    self.assertEqual(self.gui.ui.refYWidth.value(), 100.)
+
+    number=self.gui._active_file_number()
+    self.gui.ref_norm={}
+    self.gui.reduction_list=[SimpleNamespace(options={'number': number})]
+    self.gui._applyRoleRegion()
+
+    self.assertEqual(self.gui.active_role, 'refl')
+    self.assertEqual(self.gui.ui.refXWidth.value(), 17.,
+                     'refl load must mirror the refl x_width, not the DB 24')
+    self.assertEqual(self.gui.ui.refYWidth.value(), 55.,
+                     'refl load must mirror the refl y_width, not the DB 100')
+
+  def test_same_role_reload_preserves_region(self):
+    """Reloading a file of the *same* role must not re-seed the spinboxes,
+    so user-tuned / auto-fit values survive (no refl-stitching regression)."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_refl=self.REFL_REGION
+    self.gui.active_role='refl'
+    # User tunes y to a value that differs from region_refl.
+    self.gui.auto_change_active=True
+    self.gui.ui.refYWidth.setValue(70.)
+    self.gui.auto_change_active=False
+
+    number=self.gui._active_file_number()
+    self.gui.ref_norm={}
+    self.gui.reduction_list=[SimpleNamespace(options={'number': number})]
+    self.gui._applyRoleRegion()
+
+    self.assertEqual(self.gui.active_role, 'refl')
+    self.assertEqual(self.gui.ui.refYWidth.value(), 70.,
+                     'same-role reload must not clobber the on-screen region')
+
+  def test_setNorm_and_addRefList_capture_role_regions(self):
+    """setNorm captures region_db and addRefList captures region_refl, each
+    byte-for-byte from the stored object's options."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.setNorm()
+    self.assertEqual(self.gui.active_role, 'db')
+    self.assertEqual(self.gui.region_db,
+                     ExtractionRegion.from_options(self.gui.refl.options),
+                     'setNorm must capture the DB region from refl.options')
+
+    self.gui.addRefList(do_plot=False)
+    self.assertEqual(self.gui.active_role, 'refl')
+    self.assertEqual(self.gui.region_refl,
+                     ExtractionRegion.from_options(self.gui.refl.options),
+                     'addRefList must capture the refl region from refl.options')
+
+  def test_fresh_file_keeps_active_role(self):
+    """An unclassified (fresh) file does not switch roles or re-seed the
+    spinboxes — calcReflParams' auto-fit (Fix A) owns that case."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_db=self.DB_REGION
+    self.gui.region_refl=self.REFL_REGION
+    self.gui.active_role='db'
+    self.gui._apply_region_to_ui(self.DB_REGION)
+    self.gui.ref_norm={}
+    self.gui.reduction_list=[]
+    self.assertIsNone(self.gui._active_file_role())
+
+    self.gui._applyRoleRegion()
+    self.assertEqual(self.gui.active_role, 'db',
+                     'fresh file must not change the active role')
+    self.assertEqual(self.gui.ui.refYWidth.value(), 100.,
+                     'fresh file must not re-seed the spinboxes')
+
+
 # ──────────────────────────────────────────────────────────────
 #  Test suite registration
 # ──────────────────────────────────────────────────────────────
@@ -1691,3 +1830,4 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(NavigationToolbarLabel
 # Load Extraction round-trip tests
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LoadExtractionRoundTrip))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(CalcReflParamsFreshFileReseed))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(RoleDecoupling))
