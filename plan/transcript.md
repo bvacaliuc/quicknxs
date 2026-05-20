@@ -965,3 +965,25 @@ Thanks! A little while ago you said: "- 44035's extraction window in your state 
 
 Ok, proceed with (A), but make a plan to do (C) based on the knowledge you have gained. That plan would be executed in a new session (this session has about run its course, and its been great!).
 
+```
+● Both done. Summary:
+
+  Fix (A) committed in cdbf821 — prompt-28.2 Fix A: reseed Y on fresh files in calcReflParams
+  - New helper MainGUI._active_file_is_known() checks ref_norm and reduction_list for the active file's run number.
+  - calcReflParams now runs get_yregion when either actionAutoYLimits is on or the file is fresh. Refl-stitching behaviour for already-classified files is unchanged.
+  - Two regression tests in tests/main_gui_test.py::CalcReflParamsFreshFileReseed (the first drives the exact prompt-28.2 sequence; the second confirms known files keep their tuned region).
+  - All adjacent tests (10) still pass; main_gui.py lints clean. Your 44035-with-17/55 path can no longer happen.
+  
+  Fix (C) plan written to plan/prompt-30-decouple-db-refl-ui.md — committed in 13d8b30. It lays out:
+  - The per-role ExtractionRegion dataclass + self.region_db/self.region_refl/self.active_role.
+  - Role inference on file load via _active_file_is_known() (the Fix-A helper carries forward).
+  - _apply_region(role) to mirror the role's region into the spinboxes — the spinboxes become a view of the role state, not the source of truth.
+  - Concrete touchpoints in main_gui.py (table at the end of the plan).
+  - Risks, verification plan including an interactive smoke test, and acceptance criteria.
+  
+  Enjoy the work computer verification — and thanks, this was a great session.
+```
+
+## Prompt 30
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. Please read plan/prompt-30-decouple-db-refl-ui.md and execute it. This is a result of a long running session. You may avail yourself of the documents in plan/** as needed and appropriate to continue the work.
