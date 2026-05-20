@@ -135,7 +135,13 @@ def main():
     # known to be TOF-bin-density dependent (plan/prompt-28-findings.md), so it
     # does not gate the verdict; raise --bins to drive it toward 1.
     shape_ok = corr > 0.9
-    ratio_note = "matched" if 0.5 < ratio < 2.0 else "bin-density offset (raise --bins)"
+    if 0.5 < ratio < 2.0:
+        ratio_note = "matched"
+    else:
+        factor = (1.0 / ratio) if ratio else float("inf")
+        ratio_note = ("off by ~%.2gx — constant scale/normalization factor "
+                      "(bin-independent for specular; see "
+                      "plan/prompt-31-load-reduced-data.md)" % factor)
     print("\n  intensity ratio verdict   : %s" % ratio_note)
     print("\n%s: load+reproduce specular shape %s the v2 reference (corr=%.3f)"
           % ("PASS" if shape_ok else "FAIL",

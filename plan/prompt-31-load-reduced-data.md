@@ -29,31 +29,45 @@ compares to the embedded `[Data]` table:
 
 ```
 reconstructed: 3 direct beams, 3 refls
-log-R Pearson correlation : 0.9609     # shape matches the v2 reference
-median ratio (mine/ref)   : 0.3109     # ~3.2x dim at 40 TOF bins
-RMS log10 residual (dex)  : 0.6266
+                              40 bins      160 bins
+log-R Pearson correlation :   0.9609       0.9670     # shape matches v2
+median ratio (mine/ref)   :   0.3109       0.3120     # ~3.2x dim, STABLE
+RMS log10 residual (dex)  :   0.6266       0.6233
 ```
 
-**Shape reproduction is excellent (corr 0.96).** The intensity offset is
-the TOF-bin-density effect already documented in
-`plan/prompt-28-findings.md` (off-spec ratio went 0.45→1.30 from 40→80
-bins). The recipe carries no `[Event Mode Options]`, so `parse()` defaults
-to 40 bins; v2 used 400. The script now takes `--bins` to drive the parity
-sweep.
+**Shape reproduction is excellent (corr 0.96–0.97).** The intensity offset
+is a **constant ~3.2× factor that does NOT move with bin count** (0.311 at
+40 bins vs 0.312 at 160). This is *unlike* the off-spec smoothing case in
+`plan/prompt-28-findings.md` (where the ratio was bin-density dependent,
+0.45→1.30 from 40→80). For **specular**, the bin-independent constant
+points to a **normalization-convention** difference, not a binning artifact.
+
+### Investigation lead: the ~3.2× specular constant
+Per `setup/patterns/numerical-diagnostics.md` (clean-factor audit before
+chasing physics): 1/0.311 ≈ **3.21** (near π ≈ 3.14). Candidates, in
+likely order — audit each as a parameter, not new physics:
+- **Sample-length / footprint correction.** The recipe sets
+  `sample_length 10.0`; check whether quicknxsv1 applies the footprint /
+  beam-spill factor that v2 (Mantid `MagnetismReflectometryReduction`)
+  applies. This is the most likely single global factor.
+- **`sin_scale` / solid-angle** in `qreduce.Reflectivity`
+  (`self.R = sin_scale*options['scale']*self.Rraw`, ~line 2932) and the
+  direct-beam `Rraw` normalization.
+- **Stitch method.** This script *concatenates* the 3 refls' points; v2
+  weight-merges overlaps. That perturbs overlap regions but cannot produce
+  a uniform 3.2× across all Qz — so it is not the main cause, but use the
+  GUI/`Reducer` stitch for a definitive number.
+Confirm constancy is real (not a stitch artifact) by comparing a **single**
+refl (e.g. 44159 alone) to the reference over its own Qz range.
 
 ## Remaining work
 
-### 1. Intensity-ratio parity sweep
-Run the validation at matched binning to confirm the ratio → 1:
-```
-pixi run python scripts/validate_load_reduced_specular.py --bins 200
-pixi run python scripts/validate_load_reduced_specular.py --bins 400   # matches v2
-```
-400 bins ≈ 10× the histogram memory of 40 — watch for OOM on an 8 GB box
-(run nothing else concurrently; see CLAUDE.md OOM section). Capture the
-ratio-vs-bins trend; if it does **not** approach 1, investigate the DB
-normalization convention (solid-angle / `Rraw` scaling in
-`qreduce.Reflectivity`) rather than binning.
+### 1. Resolve the specular normalization constant
+Find and document the ~3.2× factor (above). A constant scale is often
+acceptable in reflectometry (curves are scaled in fitting), but the match
+is only a "stunning success" once the convention is understood. Do **not**
+keep raising `--bins` for specular — empirically it does not move the
+ratio.
 
 ### 2. GUI smoke test of Load Extraction on a v2 file
 `make gui` → File → Load Extraction… → pick
