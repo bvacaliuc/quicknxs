@@ -42,23 +42,38 @@ is a **constant ~3.2× factor that does NOT move with bin count** (0.311 at
 0.45→1.30 from 40→80). For **specular**, the bin-independent constant
 points to a **normalization-convention** difference, not a binning artifact.
 
-### Investigation lead: the ~3.2× specular constant
+### Root cause (located): the hardcoded `0.005` beam-footprint constant
 Per `setup/patterns/numerical-diagnostics.md` (clean-factor audit before
-chasing physics): 1/0.311 ≈ **3.21** (near π ≈ 3.14). Candidates, in
-likely order — audit each as a parameter, not new physics:
-- **Sample-length / footprint correction.** The recipe sets
-  `sample_length 10.0`; check whether quicknxsv1 applies the footprint /
-  beam-spill factor that v2 (Mantid `MagnetismReflectometryReduction`)
-  applies. This is the most likely single global factor.
-- **`sin_scale` / solid-angle** in `qreduce.Reflectivity`
-  (`self.R = sin_scale*options['scale']*self.Rraw`, ~line 2932) and the
-  direct-beam `Rraw` normalization.
-- **Stitch method.** This script *concatenates* the 3 refls' points; v2
-  weight-merges overlaps. That perturbs overlap regions but cannot produce
-  a uniform 3.2× across all Qz — so it is not the main cause, but use the
-  GUI/`Reducer` stitch for a definitive number.
-Confirm constancy is real (not a stitch artifact) by comparing a **single**
-refl (e.g. 44159 alone) to the reference over its own Qz range.
+chasing physics): 1/0.311 ≈ **3.21**. The constant is **angle-independent**
+(shape matches, corr 0.97), which *rules out* a θ-dependent footprint
+correction — that would distort the curve, not scale it.
+
+`quicknxs/qreduce.py` applies the footprint as a **hardcoded constant**:
+```python
+# Reflectivity.__init__, line ~2929  (and OffSpecular, line ~3010)
+if self.ai > 0.0002:
+    sin_scale = 0.005 / sin(self.ai)   # 0.005 = nominal beam width, HARDCODED
+self.R = sin_scale * self.options['scale'] * self.Rraw
+```
+Both v1 and v2 carry the same `1/sin(ai)` term, so it **cancels in the
+ratio**, leaving the constant `0.005 / W_v2`, where `W_v2` is v2's
+geometry-derived footprint width (Mantid `MagnetismReflectometryReduction`).
+That constant is the observed ~3.2×.
+
+Note the recipe's `sample_length = 10.0` does **not** enter here — in v1 it
+only feeds the Q-**resolution** (`s_width = sample_length*sin(ai)`,
+qreduce.py:3185), not the intensity. So the fix is *not* "use
+sample_length"; it is "derive the footprint width from the beam/slit +
+sample geometry as v2 does, instead of the hardcoded `0.005`."
+
+### Fixing it (separate, validated change — not done here)
+Replacing the `0.005` with a geometry-derived footprint changes the
+absolute intensity of **every** reduction (specular and off-spec, both
+instruments), so it must be validated against several datasets and the v2
+reference before landing — out of scope for the Load-Reduced session.
+First confirm the constant is exactly reproducible on a **single** refl
+(44159 alone vs the reference over its Qz range), then derive `W` from
+slit/sample geometry and check the ratio → 1 across all three refls.
 
 ## Remaining work
 
