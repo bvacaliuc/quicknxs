@@ -38,15 +38,27 @@ fan. Root-caused empirically (`session13/` vs `correctReduction/`):
   **capped at 200** (`default_interface.py:81`), and `loadExtraction` does
   not feed it to `_get_dataset` anyway.
 
-### Fix options (pick one; needs a re-reduction to confirm)
-1. **Honor a configurable bin count on Load Extraction.** Make
-   `_get_dataset` / `loadExtraction` read at the GUI's `eventTofBins` (and
-   raise its max to ≥400), or pass an explicit bins arg, when the recipe has
-   no `[Event Mode Options]`.
-2. **Raise the Event-Mode-less default** in `_get_dataset` from 40 to ~200–400
-   for off-spec recipes.
-3. Then re-run the off-spec smoothing and re-compare to `correctReduction`
-   and `session12/`; expect the band to fill and coverage to approach v2's.
+### Fix (LANDED, commit `792e445`) + headless verification
+Implemented option 1: `HeaderParser(default_bins=…)` → `_get_dataset`
+forwards it (an `[Event Mode Options]` entry still overrides);
+`loadExtraction` passes the GUI `eventTofBins`; its cap is raised 200→1000
+so v2's 400 is selectable. In the GUI: set **Event TOF bins = 400** before
+*Load Extraction…*.
+
+Verified headless (`reduce_offspec_headless --no-smooth`, 40 vs 400 bins,
+the v2 OffSpecSmooth recipe). TOF slices per run 21–37 → 381–397; central
+(x∈±0.03) point cloud 14.5k → 197k (13.6×); peak I 0.865 → 25.57 (~30×).
+Smoothed-cell coverage proxy (histogram + 3σ dilation; validated against the
+real 40-bin session13 map at 71% vs 73% measured):
+
+| TOF bins | central coverage | gap band Qz[0.05,0.10] |
+|---|---|---|
+| 40  | 71% | 79% |
+| 400 | 91% | **100%** |
+
+So 400 bins fills the gap band and brightens it (~30× I) — the white band
+resolves. (A full smoothed re-reduction at 400 bins to image it is left to
+the user / a slower run; the proxy + intensity are conclusive.)
 
 ### Secondary issues seen in session13 (file separately)
 - `pcolormesh ... not monotonically increasing or decreasing` warning
