@@ -1435,7 +1435,8 @@ class MainGUI(QtWidgets.QMainWindow):
       self._pending_header=None
       from_backup=True
     try:
-      parser=HeaderParser(header, parse_meta=not from_backup)
+      parser=HeaderParser(header, parse_meta=not from_backup,
+                          default_bins=self.ui.eventTofBins.value())
     except Exception:
       warning('Could not evaluate header information, probably the wrong format:\n\n',
               exc_info=True)

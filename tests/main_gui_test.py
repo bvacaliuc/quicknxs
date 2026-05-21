@@ -88,6 +88,13 @@ class MainGUIGeneral(unittest.TestCase):
     self.assertNotEqual(ystart, self.gui.ui.refYPos.value(), 'y-fitting')
     self.assertNotEqual(ywstart, self.gui.ui.refYWidth.value(), 'yw-fitting')
 
+  def test_eventTofBins_max_supports_v2_resolution(self):
+    # v2 reduces off-spec at 400 TOF bins; Load Extraction reads at this
+    # spinbox value, so the cap must allow >=400 (prompt-30.1).
+    self.assertGreaterEqual(self.gui.ui.eventTofBins.maximum(), 400)
+    self.gui.ui.eventTofBins.setValue(400)
+    self.assertEqual(self.gui.ui.eventTofBins.value(), 400)
+
 
 class MainGUIActions(unittest.TestCase):
   def setUp(self):

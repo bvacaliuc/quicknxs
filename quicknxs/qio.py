@@ -379,13 +379,18 @@ class HeaderParser(object):
   export_date=None
   states_in_file=None
 
-  def __init__(self, header, parse_meta=True):
+  def __init__(self, header, parse_meta=True, default_bins=None):
     if isinstance(header, bytes):
       header=header.decode('utf8', 'ignore')
     # if header is a single line, assume it is a file name, not a header string
     if '\n' not in header:
       header=self.read_file_header(header)
     self.header=header
+    # TOF bin count to use when re-reading event data for a recipe that has
+    # no [Event Mode Options] section (e.g. QuickNXS v2 .dat files).  None
+    # keeps NXSData's built-in default (40).  An [Event Mode Options] entry,
+    # when present, still overrides this in _get_dataset.
+    self.default_bins=default_bins
     self.sections={}
     if parse_meta:
       self._collect_meta_data()
@@ -548,6 +553,11 @@ class HeaderParser(object):
     # Disable caching: each NXS file holds ~89 MB per channel; caching all
     # files during header parsing causes unbounded memory growth → OOM.
     read_opts['use_caching']=False
+    # Honor a caller-supplied TOF bin count (e.g. the GUI's eventTofBins on
+    # Load Extraction).  v2 recipes have no [Event Mode Options] section, so
+    # without this they would re-bin at the default 40 → sparse off-spec.
+    if self.default_bins is not None:
+      read_opts['bins']=self.default_bins
     if options['EVT_ID'] is not None:
       if "Event Mode Options" not in self.section_data:
         raise ValueError('No "Event Mode Options" section defined but EVT_ID is set')
