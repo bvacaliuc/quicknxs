@@ -4,7 +4,7 @@ import os
 import unittest
 from time import time
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from qtpy.QtWidgets import QApplication, QMainWindow, QMessageBox
 from qtpy.QtTest import QTest
 from qtpy.QtCore import QLocale#, Qt
@@ -94,6 +94,18 @@ class MainGUIGeneral(unittest.TestCase):
     self.assertGreaterEqual(self.gui.ui.eventTofBins.maximum(), 400)
     self.gui.ui.eventTofBins.setValue(400)
     self.assertEqual(self.gui.ui.eventTofBins.value(), 400)
+
+  def test_close_open_plots_releases_windows(self):
+    # Non-modal plot windows must be closed on exit, not left for interpreter
+    # shutdown (matplotlib canvas torn down after QApplication -> SIGSEGV).
+    d1, d2 = MagicMock(), MagicMock()
+    self.gui.open_plots.append(d1)
+    self.gui.open_plots.append(d2)
+    self.gui._close_open_plots()
+    d1.close.assert_called_once()
+    d2.close.assert_called_once()
+    self.assertEqual(len(self.gui.open_plots), 0,
+                     'open_plots must be emptied so no canvas survives to shutdown')
 
 
 class MainGUIActions(unittest.TestCase):

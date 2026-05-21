@@ -2625,6 +2625,22 @@ Do you want to try to restore the working reduction list?""",
                             ]):
       fig.set_config(gui.figure_params[i])
 
+  def _close_open_plots(self):
+    '''Close every non-modal plot window we kept alive in ``open_plots``.
+
+    These ``PlotDialog`` windows own matplotlib canvases; if they survive to
+    interpreter shutdown they are destroyed after the ``QApplication``, which
+    causes a SIGSEGV on exit.  Closing them here releases the C++ resources
+    while the event loop is still alive.
+    '''
+    for dlg in list(self.open_plots):
+      try:
+        dlg.close()
+        dlg.deleteLater()
+      except Exception:
+        debug('Failed to close plot window on exit', exc_info=True)
+    del self.open_plots[:]
+
   def closeEvent(self, event=None):
     '''
     Save window and dock geometry.
@@ -2636,6 +2652,11 @@ Do you want to try to restore the working reduction list?""",
     if hasattr(self.trigger, 'wait'):
       self.trigger.wait()
     del(self.trigger)
+    # Close any non-modal plot windows kept alive in open_plots (Reducer
+    # result plots, compare/preview dialogs).  Leaving them for interpreter
+    # shutdown tears their matplotlib canvases down after the QApplication,
+    # which segfaults on exit (Error 139).
+    self._close_open_plots()
     debug('Gathering figure and window layout')
     # store geometry and setting parameters
     figure_params=[]
