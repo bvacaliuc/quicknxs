@@ -988,3 +988,56 @@ Ok, proceed with (A), but make a plan to do (C) based on the knowledge you have 
 
 You are working in the quicknxsv1 project, feature/read-event-nexus branch. Please read plan/prompt-30-decouple-db-refl-ui.md and execute it. This is a result of a long running session. You may avail yourself of the documents in plan/** as needed and appropriate to continue the work. To the plan, I would add the following: please review the files in /SNS/users/6ov/shared/REF_M/11486/correctReduction/. These represent a quicknxsv2 expression of an off-specular reduced dataset performed in 2025-04-08. You should be capable of loading these data sets as 'Load Reduced Data', configure similarly and produce statistically similar results. Further, the files in /SNS/users/6ov/shared/REF_M/11486/session12/** represent what quicknxsv2 *today* can produce (provided certain bugs are worked-around). I would consider it a stunning success if quicknxsv1 that we are working on can read these files *as well* and produce similar results. This is a big undertaking, so use these "correct outputs" to your benefit, keep an eye on your context and when you hit the 75% threshold, please develop as many plans as needed for the remaining work. Good luck! The computer is yours until I get back home from work tonight. Qapla'!
 
+There is evidence that Claude used 2 ( *or possibly 3* ) sessions to do this work.
+
+```
+  Interim status while the sweep runs — everything is committed and pushed:
+
+  ┌─────────┬─────────────────────────────────────────────────────────────┐
+  │ Commit  │                            What                             │
+  ├─────────┼─────────────────────────────────────────────────────────────┤
+  │ 1b2439f │ Parser fix — v2 [Global Options] now loads (was IndexError) │
+  ├─────────┼─────────────────────────────────────────────────────────────┤
+  │ ddb7944 │ prompt-30 role decoupling + RoleDecoupling tests            │
+  ├─────────┼─────────────────────────────────────────────────────────────┤
+  │ e9223bc │ Load-Reduced validation script + remaining-work plans       │
+  └─────────┴─────────────────────────────────────────────────────────────┘
+```
+then
+```
+● All work committed and pushed (5 commits, 72b0d0e..0a92e5c). All five tasks complete. Here's the wrap-up.
+
+  What I did tonight
+
+  1. Made quicknxsv1 load QuickNXS v2 reduced files (1b2439f)
+  HeaderParser crashed with IndexError on every v2 correctReduction/*.dat because v2 right-aligns the [Global Options] value column, leaving one space before lock_direct_beam_y False. Fixed with an eval-free name/value parse. All 7 v2 
+  files now load through File → Load Extraction… (= "Load Reduced Data" in v1).
+
+  2. Executed prompt-30 — DB/refl role decoupling (ddb7944)
+  Added ExtractionRegion + per-role region_db/region_refl/active_role. setNorm/addRefList capture each role's region; loadExtraction seeds both (replacing the last-refl spinbox dump); _applyRoleRegion mirrors a role's region into the
+  spinboxes only on a role switch, so same-role reloads and Fix A's fresh-file reseed are untouched. 5 new RoleDecoupling tests; full GUI suite 109/109; Fix A + LoadExtraction regressions hold.
+
+  3. Validated Load-Reduced reproduction (e9223bc, 6ab5a18, 0a92e5c)
+  scripts/validate_load_reduced_specular.py reduces the v2 recipe through the real HeaderParser path and compares to the embedded reference: log-R correlation 0.96–0.97 — the specular curve shape reproduces excellently. A bin sweep (40
+  vs 160) showed the intensity ratio is a constant ~3.2×, not the off-spec bin-density effect. I root-caused it: the hardcoded 0.005 beam-footprint constant at qreduce.py:2929/:3010 (v2 derives it from geometry; the 1/sin(ai) term
+  cancels, leaving an angle-independent constant — consistent with the matching shape). sample_length only feeds resolution, not intensity.
+
+  Honest status vs. your asks
+  
+  - prompt-30: architecture + the classified-file / state-restore cross-talk are fixed and tested. The headline fresh 44035 → x_width=24 (AC1) needs a get_xregion per-DB width detector (planned, not built — I couldn't reverse-engineer
+  v2's exact value without its source) and an interactive smoke test I can't run headlessly.
+  - Load Reduced Data: loads + reproduces shape on real v2 data. The 3.2× scale is located but not fixed — fixing the footprint touches every reduction, so it needs multi-dataset validation (scoped in the plan).
+  - session12/: does not exist on this mount (only session1–9; session12 appears only in compare/*.png names) — likely on the other machine. Documented for when it lands.
+
+  For the next session
+
+  plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md (committed) lay out: get_xregion, the footprint fix, changeRegionValues/mouse-handler capture, per-role AutoYLimits, the interactive smoke test, and the bin/footprint
+   parity steps.
+
+  Qapla'! The branch is pushed so your other machines can pull it.
+```
+
+### Prompt 30.1
+
+Great! I tested the current state of the quicknxsv1 (0a92e5c7) and produced my result in /home/bvacaliuc/shared/REF_M/11486/session13/**. Note: /home/bvacaliuc/shared/REF_M/11486/** is an rsync-copy of /SNS/users/6ov/shared/REF_M/11486/** I made because on this machine /SNS/users/6ov/** is accessed via an sshfs mount over a 50Mbps link. Thank you for making it possible for me to load quicknxsv2 files. I loaded correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat and performed reductions. I note from your earlier responses that there are still remaining tasks in plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md. However, I'm uncertain as to what parts have been done already from these two plans and what remains. Please review these plans against your context so far as well as the new information from session13/**. As for myself, I observe a discrepancy in the offspecular (compare session13/quicknxsv1-offspecular-smoothing-options.png with session12/quicknxsv1-offspecular-smoothing-options.png) plot that shows missing data. This is a similar issue that was reported earlier (see plan/prompt-28.2-offspec.png and plan/prompt-31-offspec.png). Please review the current state of the code, my interactive tests made so far and suggest reasonable next steps.
+
