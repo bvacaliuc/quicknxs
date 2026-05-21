@@ -11,6 +11,49 @@ Reference data on this machine:
 QuickNXS 4.3.0rc1 / Mantid 6.12.0 (2025-04-08, IPTS-34473, DB 44033/34/35,
 data 44159/60/61). The intended off-spec/specular "correct" outputs.
 
+## session13 finding (prompt-30.1): off-spec "missing data" = 40-bin under-sampling
+
+The user loaded `correctReduction/...OffSpecSmooth_Off_Off.dat` in the real
+GUI (confirming the parser fix end to end) and saw a white horizontal band
+at **Qz ≈ 0.06–0.09** in the smoothed off-spec map, vs. the continuous v2
+fan. Root-caused empirically (`session13/` vs `correctReduction/`):
+
+- **Not dropped events.** The chopper TOF fix (`_compute_tof_range_us`) is
+  present; neither grid has a zero-data Qz band. Coverage analysis: v1's
+  central (qx∈[-0.03,0.03]) coverage never exceeds ~73% and is irregular,
+  while v2 is 100% above Qz≈0.045. v1's mid-Qz intensity is ~15–100× below
+  v2 (`meanI` 2e-4 vs 5e-2), so it sinks below the log colormap floor →
+  appears white.
+- **Cause: TOF bins = 40, not 400.** `HeaderParser._get_dataset`
+  (`qio.py:545`) reads with `NXSData.DEFAULT_OPTIONS` (**bins=40**) and only
+  overrides when the recipe has an `[Event Mode Options]` section — which v2
+  specular/off-spec `.dat` files do **not**. So Load Extraction reduces at
+  40 TOF bins. v2 used 400. 40 bins → a sparse (qx,qz) point cloud → the
+  Gaussian smoothing (R=3σ) leaves many empty grid cells (holes/streaks)
+  and spreads intensity thin. This is the off-spec face of prompt-28's
+  bin-density effect (40-bin intensity ~0.45× of 400-bin).
+- The grid-size auto-formula `int((x2-x1)/σ*1.41)` (`gui_utils.py:787`) is
+  *fine* (~1.4 cells/σ); the grid is not the problem, the input density is.
+- **The GUI cannot work around it:** `eventTofBins` defaults to 40, is
+  **capped at 200** (`default_interface.py:81`), and `loadExtraction` does
+  not feed it to `_get_dataset` anyway.
+
+### Fix options (pick one; needs a re-reduction to confirm)
+1. **Honor a configurable bin count on Load Extraction.** Make
+   `_get_dataset` / `loadExtraction` read at the GUI's `eventTofBins` (and
+   raise its max to ≥400), or pass an explicit bins arg, when the recipe has
+   no `[Event Mode Options]`.
+2. **Raise the Event-Mode-less default** in `_get_dataset` from 40 to ~200–400
+   for off-spec recipes.
+3. Then re-run the off-spec smoothing and re-compare to `correctReduction`
+   and `session12/`; expect the band to fill and coverage to approach v2's.
+
+### Secondary issues seen in session13 (file separately)
+- `pcolormesh ... not monotonically increasing or decreasing` warning
+  (`mplwidget.py:311`) — possible cosmetic mis-render of off-spec cells.
+- **`Error 139` (SIGSEGV)** at GUI exit after the off-spec session — a
+  stability bug, unrelated to the missing-data appearance.
+
 ## What landed (committed, tested)
 
 ### Parse (was a hard blocker)
