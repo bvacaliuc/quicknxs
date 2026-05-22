@@ -1310,4 +1310,17 @@ Thanks. Is there a lesson to be learned in general (beyond ui-aspects.md) regard
 
 ## Prompt 31
 
-You are working in the quicknxsv1 project, feature/read-event-nexus branch. Please read plan/prompt-31-plan.md and execute it. This is a result of a long running session. You may avail yourself of the documents in plan/** as needed and appropriate to continue the work. In case you need it the sources for quicknxsv2 are available as well as all git history. Files in /SNS/users/6ov/shared/REF_M/11486/** may be instructive. Good luck! As before, the computer is yours until I get back home from work tonight. Have fun!
+For this prompt, please delay execution for 2hours (my token limit is up). You are working in the quicknxsv1 project, feature/read-event-nexus branch. Please read plan/prompt-31-plan.md and execute it. This is a result of a long running session. You may avail yourself of the documents in plan/** as needed and appropriate to continue the work. In case you need it the sources for quicknxsv2 are available as well as all git history. Files in /SNS/users/6ov/shared/REF_M/11486/** may be instructive. Good luck! As before, the computer is yours until I get back home from work tonight. Have fun!
+
+```
+● Understood — I'll hold off and start in 2 hours when your token limit resets. The wakeup tool caps a single delay at 1 hour, so I'll chain two 1-hour waits, then begin executing plan/prompt-31-plan.md in the quicknxsv1 project on the
+  feature/read-event-nexus branch.
+
+  Scheduling the first hour now.
+
+● First hour scheduled (wakes ~09:41). When it fires I'll chain the second hour, then begin the work. Nothing else to do until then — see you on the other side.
+```
+
+Isn't that nice? :)
+
+
