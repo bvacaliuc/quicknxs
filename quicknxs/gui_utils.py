@@ -191,7 +191,7 @@ class Reducer(object):
     nslices=dia.ui.numberSlices.value()
     use_pf=dia.ui.usePf.isChecked()
     no_dp=dia.ui.lambdaNoDirectPulse.isChecked()
-    dia.destroy()
+    dia.deleteLater()
     del preview_data
     app=QApplication.instance()
     if result==QDialog.Accepted:
@@ -236,10 +236,10 @@ class Reducer(object):
     data=self.exporter.output_data['OffSpec'][self.channels[0]]
     dia=SmoothDialog(self._parent_window, data)
     if not dia.exec_():
-      dia.destroy()
+      dia.deleteLater()
       return
     settings=dia.getOptions()
-    dia.destroy()
+    dia.deleteLater()
     pbinfo="Smoothing Channel "
     pb=ProgressDialog(self._parent_window, title="Smoothing",
                       info_start=pbinfo+self.channels[0],
@@ -248,7 +248,10 @@ class Reducer(object):
     try:
       self.exporter.smooth_offspec(settings, pb)
     finally:
-      pb.destroy()
+      # close()+deleteLater(), not destroy() — see loadExtraction note: a
+      # destroy()'d dialog left in the window list crashes closeAllWindows().
+      pb.close()
+      pb.deleteLater()
 
   @log_call
   def push_to_mantidplot(self):

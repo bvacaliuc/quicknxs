@@ -1809,6 +1809,30 @@ class RoleDecoupling(unittest.TestCase):
                      'fresh file must not re-seed the spinboxes')
 
 
+class WidgetDisposalSafety(unittest.TestCase):
+  """Dialogs / progress windows must be disposed with close()/deleteLater(),
+  never QWidget.destroy().
+
+  A destroy()'d widget tears down its native window but stays registered with
+  the QApplication, so QApplication::closeAllWindows() on exit dereferences a
+  dangling QWindow and segfaults (Error 139).  Root-caused via gdb on the
+  off-spec preview flow; reproduced as destroy()+closeAllWindows() -> SIGSEGV
+  while close()+deleteLater()+closeAllWindows() is clean.
+  """
+
+  def test_no_widget_destroy_calls(self):
+    import quicknxs.main_gui as mg
+    import quicknxs.gui_utils as gu
+    for mod in (mg, gu):
+      with open(mod.__file__, encoding='utf8') as fh:
+        src=fh.read()
+      self.assertNotIn('.destroy()', src,
+                       '%s disposes a widget with .destroy(); use '
+                       'close()/deleteLater() instead — destroy() leaves a '
+                       'dangling QWindow that crashes closeAllWindows() on exit'
+                       % os.path.basename(mod.__file__))
+
+
 # ──────────────────────────────────────────────────────────────
 #  Test suite registration
 # ──────────────────────────────────────────────────────────────
@@ -1850,3 +1874,4 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(NavigationToolbarLabel
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LoadExtractionRoundTrip))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(CalcReflParamsFreshFileReseed))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(RoleDecoupling))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(WidgetDisposalSafety))

@@ -1486,7 +1486,12 @@ class MainGUI(QtWidgets.QMainWindow):
         self.fileOpen(refl.origin[0])
       self.ref_list_channels=list(self.active_data.keys())
     finally:
-      pb.destroy()
+      # Dispose via close()+deleteLater(), never destroy(): destroy() tears
+      # down the native window but leaves the widget registered, so the
+      # QApplication::closeAllWindows() on exit dereferences a dangling
+      # QWindow and segfaults (Error 139).
+      pb.close()
+      pb.deleteLater()
 
   @log_input
   def cutPoints(self):
@@ -2152,7 +2157,7 @@ class MainGUI(QtWidgets.QMainWindow):
       return
     dialog=ReduceDialog(self, self.ref_list_channels, self.reduction_list)
     dialog.exec_()
-    dialog.destroy()
+    dialog.deleteLater()
 
   @log_call
   def quickReduce(self):
