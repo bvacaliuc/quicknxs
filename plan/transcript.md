@@ -1194,3 +1194,49 @@ well, after doing 'make gui', loading a reduced data file and then using Offspec
 
 It still gave the error on fault. ~/.quicknxs/quicknxs-crash.log is not empty. I ran 'make strace' and produced a set of strace.* for you to review. Perhaps this data set gives you the information you need?
 
+```
+● I've hit the limit of headless reproduction (8 attempts, all clean) and there's no native debugger here (gdb/lldb/catchsegv/py-spy all absent). The faulthandler only gives Python frames (app.exec_); to pinpoint a native null-deref I
+  need the C++ backtrace from your actual crash. I won't ship a third guess — my own repros argue against the obvious suspects.
+
+  Here's where we are, confirmed by the strace: it's a null-pointer dereference in C++ rendering, firing right after the 12s smoothing completes (the 12s matches headless smooth_data exactly), during the off-spec result paint — not
+  teardown (so setdestroyonexit was wrong) and not the smoothing compute (clean headless). Let me get your input on how to nail it down.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Approach 
+
+How should we pin down the exact crash? (8 headless repros were clean, so I need data from your real crash.)
+
+ 1. Capture native backtrace      ┌──────────────────────────────────────────────────────────────┐
+   with gdb                       │ pixi run gdb -ex run -ex 'bt' -ex 'thread apply all bt'      │
+  2. Bisect interactively via     │   -ex quit --args python scripts/quicknxs --instrument ref_m │
+    quick toggles                 │ reproduce -> close -> paste backtrace                        │
+ 3. Ship probable mitigation      │                                                              │
+   now                            │ - pinpoints exact C++ frame                                  │
+                                  │ - ends the guessing                                          │
+                                  │ - needs gdb installed                                        │
+                                  └──────────────────────────────────────────────────────────────┘
+```
+
+### Prompt 30.5
+
+I installed 'gdb' into the system and executed the requested command:
+
+`gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' -ex run -ex 'bt full' -ex 'thread apply all bt' --args pixi run python scripts/quicknxs --instrument ref_m 2>&1 | tee ~/.quicknxs/gdb-bt.log`
+
+The ~/.quicknxs/gdb-bt.log ended with:
+
+```
+[Inferior 1 (process 1355150) exited with code 0213]
+No stack.
+```
+
+But there still was a ~/.quicknxs/quicknxs-crash.log emitted. So I ran gdb line under pixi:
+
+```
+pixi shell
+gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' -ex run -ex 'bt full' -ex 'thread apply all bt' --args python scripts/quicknxs --instrument ref_m 2>&1 | tee ~/.quicknxs/gdb-bt.log
+```
+
+*NOW* we get the expected SEGV and stack trace in ~/.quicknxs/gdb-bt.log - great! Please analyze it!
+
+
