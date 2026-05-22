@@ -1179,10 +1179,13 @@ class SmoothDialogDrawPlotFix(unittest.TestCase):
 
 
 class SmoothOffspecProgressCleanup(unittest.TestCase):
-  """Verify ProgressDialog is destroyed even if smooth_offspec raises."""
+  """Verify the ProgressDialog is disposed even if smooth_offspec raises."""
 
-  def test_progress_destroyed_on_error(self):
-    """pb.destroy() should be called even when exporter.smooth_offspec raises."""
+  def test_progress_disposed_on_error(self):
+    """pb.deleteLater() should be called even when exporter.smooth_offspec
+    raises.  Disposal goes through close()/deleteLater(), not destroy():
+    a destroy()'d dialog left in the window list crashes
+    QApplication::closeAllWindows() on exit (Error 139)."""
     from quicknxs.gui_utils import Reducer, ProgressDialog
     from quicknxs.qreduce import NXSData, Reflectivity
     from qtpy.QtWidgets import QWidget
@@ -1208,13 +1211,14 @@ class SmoothOffspecProgressCleanup(unittest.TestCase):
       }
       # Patch exporter.smooth_offspec to raise
       with patch.object(reducer.exporter, 'smooth_offspec', side_effect=RuntimeError('test')):
-        with patch.object(ProgressDialog, 'destroy') as mock_destroy:
-          with patch.object(ProgressDialog, 'show'):
-            try:
-              reducer.smooth_offspec()
-            except RuntimeError:
-              pass
-            mock_destroy.assert_called_once()
+        with patch.object(ProgressDialog, 'deleteLater') as mock_delete:
+          with patch.object(ProgressDialog, 'close'):
+            with patch.object(ProgressDialog, 'show'):
+              try:
+                reducer.smooth_offspec()
+              except RuntimeError:
+                pass
+              mock_delete.assert_called_once()
     parent.deleteLater()
 
 
