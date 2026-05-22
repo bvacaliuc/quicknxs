@@ -218,6 +218,13 @@ Decomposing v1 vs the v2 `[Data]` table in each run's **exclusive** Qz range
   stitched curve** that masks this per-run variation (and the RMS residual is
   ~0.63 dex). Because each segment is offset differently, v1's stitched curve
   has small kinks at the overlaps that the same `scale` factors cannot remove.
+- **Spin-state check:** the same decomposition on the `On_Off` cross-section
+  gives 0.41 / 0.14 / 0.15 (vs `Off_Off` 0.38 / 0.31 / 0.19) for the same
+  ai / ROI / scale / DB. So the residual is NOT a clean function of `ai`
+  alone — it also varies with cross-section/intensity (caveat: the 44160
+  `On_Off` point is low-statistics, n=13). This **rules out a simple `f(ai)`
+  footprint patch** and reinforces that the fix needs the actual Mantid
+  per-event normalization, not a one-parameter angle correction.
 
 ### Localization
 The angle-dependent term lives **inside Mantid's
