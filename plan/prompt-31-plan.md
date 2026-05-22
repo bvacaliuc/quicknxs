@@ -61,33 +61,46 @@ This machine is ~8 GB RAM with ~3–4 GB free during a GUI/test session; OOM
 
 ## Phases (rough priority order; 1 & 3 are independent and may interleave)
 
-### Phase 1 — Specular intensity: the constant ~3.2× footprint  ★ highest value
-**Problem.** quicknxsv1 specular R is a *constant* ~3.2× dimmer than v2
-(bin-independent — confirmed 40 vs 160 bins both ~0.31). Root located:
-`quicknxs/qreduce.py` hardcodes the beam-footprint scale
-`sin_scale = 0.005 / sin(self.ai)` at **line ~2929 (`Reflectivity`)** and
-**~3010 (`OffSpecular`)**. The `1/sin(ai)` cancels in the ratio, leaving the
-constant `0.005 / W_v2`; `sample_length` (=10 mm) here only feeds Q-resolution
-(qreduce.py ~3185), not intensity.
+### Phase 1 — Specular intensity discrepancy  ★ highest value
+> **STATUS 2026-05-22 (Session A): hypothesis DISPROVEN — do NOT change the
+> `0.005` footprint.** Full evidence in `plan/prompt-31-load-reduced-data.md`
+> ("Phase 1 update"). Summary:
+> - quicknxsv2 (`data_set.py:297-302`), the v2 notebook (`event_reduction.py:64`)
+>   and the canonical **mr_reduction** (`reflectivity_output.py:99-115`) ALL use
+>   the *same* `area_ratio · 0.005/sin(θ)` scaling v1 uses, applied *after*
+>   Mantid. The footprint constant is identical on both sides → not the bug.
+> - The real discrepancy is **angle-correlated and per-run, not a global
+>   constant**: median v1/ref ≈ 0.38 / 0.31 / 0.19 at ai = 0.0079 / 0.0195 /
+>   0.0483 (same DB, same ROI area, same scale for 159/160). Within a run it is
+>   a clean constant (44159 plateau steady at ~0.38). Reproduce:
+>   `pixi run python scripts/diag_specular_decompose.py`.
+> - The angle-dependent term lives inside Mantid `MagnetismReflectometryReduction`
+>   (C++, **not on this machine**; Mantid not importable in v1's env).
+
+**Original (incorrect) problem statement, kept for history.** quicknxsv1
+specular R was thought to be a *constant* ~3.2× dimmer than v2 due to the
+hardcoded `sin_scale = 0.005 / sin(self.ai)` at `qreduce.py` ~2929
+(`_calc_normal`) and ~3010 (`_calc_fan` — NOT `OffSpecular`; `_calc_offspec`
+applies no footprint at all). That ~3.2× was a stitched-curve *median*; the
+underlying offset is actually angle-dependent (see above).
 
 **Steps**
-- [ ] *(Explore subagent)* Determine how v2 / Mantid
-  `MagnetismReflectometryReduction` (and `mr_reduction`, branch `next`)
-  normalizes the footprint — from slit-defined beam width + `sample_length`,
-  or a fixed value. Return the exact formula + source refs. Do **not** edit.
-- [ ] Derive the correct footprint width `W` (likely from slit widths /
-  geometry already on `MRDataset`, capped by `sample_length`). Confirm
-  `0.005 / W ≈ 3.2` for these runs as a sanity check (numerical-diagnostics
-  clean-factor audit).
-- [ ] Replace the hardcoded `0.005` at both sites with the geometry-derived
-  footprint. Add a focused unit test (footprint value for a known dataset).
-- [ ] **Validate** with `validate_load_reduced_specular.py`: median ratio →
-  ~1.0 (corr stays ≥0.96). Run a heavy off-spec reduction (background, one at
-  a time) to confirm off-spec intensity also lands near v2.
-- [ ] **Caution:** this changes absolute intensity of *every* reduction (both
-  instruments, specular + off-spec). Validate against ≥2 datasets before
-  landing; keep it a single, well-documented commit. `make test-core`/`test-gui`.
-**Done when:** specular ratio ≈1 on 44159–61 and ≥1 other dataset, all tests pass.
+- [x] *(Explore subagent)* Determine how v2 / Mantid normalizes the footprint.
+  **Result:** identical `0.005/sin(θ)` + ROI-area ratio on both sides (triple
+  confirmed). The footprint is not the differentiator.
+- [x] Decompose per-run to localize the true offset. **Result:** angle-correlated
+  per-run residual (0.38/0.31/0.19), localized to Mantid's C++ algorithm.
+  Added `scripts/diag_specular_decompose.py`; findings written up.
+- [ ] **(Next session, needs Mantid)** Characterize the exact angle law f(ai)
+  the reference carries — by reading `MagnetismReflectometryReduction.cpp`
+  (mantidproject/mantid `Framework/Reflectometry/`) OR running v2/mr_reduction
+  per-run to divide v2 RAW R(Q) by v1 RAW R(Q). Target: reproduce 0.38/0.31/0.19.
+- [ ] Only after f(ai) is understood: port it into `_calc_normal`/`_calc_fan`,
+  add a unit test pinning f(ai) for a known dataset, validate ratio→1 on ≥2
+  datasets. **Caution:** changes absolute intensity of every reduction; single
+  well-documented commit; `make test-core`/`test-gui`.
+**Done when:** specular ratio ≈1 on 44159–61 and ≥1 other dataset, all tests
+pass — **deferred**; this session delivered the diagnosis + handoff only.
 
 ### Phase 2 — `get_xregion` per-DB x-width (prompt-30 AC1)
 **Problem.** Fresh direct beams inherit the previous (refl) `x_width`;

@@ -173,3 +173,77 @@ header format is shared.
   only parse incompatibility found was the Global Options spacing (fixed).
 - The referenced `.nxs.h5` files exist under
   `/SNS/REF_M/IPTS-34473/nexus/REF_M_440{33,34,35,59,60,61}.nxs.h5`.
+
+## prompt-31 Phase 1 update (2026-05-22): footprint hypothesis DISPROVEN
+
+The earlier root-cause above ("replace the hardcoded `0.005` with a
+geometry-derived footprint width `W`") is **WRONG** and must NOT be
+implemented. Three independent reads of the v2/reference side show the
+footprint scale is the **identical** `0.005/sin(θ)` constant that v1 uses,
+applied *after* Mantid, together with the **identical** ROI-area ratio:
+
+- quicknxsv2 `src/quicknxs/interfaces/data_handling/data_set.py:297-302`
+- quicknxsv2 `test/notebooks/event_reduction.py:64-72` (`quicknxs_scale`)
+- **mr_reduction** (branch `next`) `src/mr_reduction/reflectivity_output.py:99-115`
+  (`quicknxs_scaling_factor`) — the canonical REF_M reference
+
+All three compute `scale = (norm_x·norm_y)/(peak_x·low_res) · 0.005/sin(tth)`
+where `tth = two_theta·π/360 = θ_incident`. v1's `_calc_normal`/`_calc_fan`
+apply the same `0.005/sin(ai)` and the same area ratio (the `+1` pixel
+offsets even match). So the footprint constant is **not** the discrepancy;
+changing it would *break* the agreement with v2's convention, not fix it.
+
+### What the discrepancy actually is: angle-correlated, per-run (NOT a constant)
+Decomposing v1 vs the v2 `[Data]` table in each run's **exclusive** Qz range
+(where that run alone feeds the stitched reference, so the per-run stitch
+`scale` cancels → the ratio is effectively per-run RAW `v1/v2`):
+
+| run   | ai (rad) | sin_scale=0.005/sin | scale | DB    | median v1/ref |
+|-------|----------|---------------------|-------|-------|---------------|
+| 44159 | 0.00786  | 0.6362              | 2.254 | 44033 | **0.382**     |
+| 44160 | 0.01948  | 0.2567              | 2.254 | 44033 | **0.312**     |
+| 44161 | 0.04831  | 0.1035              | 2.081 | 44033 | **0.192**     |
+
+- Within a single run it IS a clean constant: the 44159 low-Qz plateau
+  (Qz 0.012–0.018) holds steady at v1/ref ≈ 0.375–0.40.
+- But it **shrinks as incident angle grows** (0.38 → 0.31 → 0.19): v1 is
+  increasingly dim relative to v2 at higher angle. All three runs share the
+  same DB (44033), the same ROI pixel area (1008), and 159/160 share the same
+  `scale` — so it is NOT scale, area, footprint constant, proton charge, or
+  TOF-bin count (the stitched median is bin-independent: 0.311@40, 0.312@160).
+- Backing out v2's effective footprint (`sin_scale/ratio`) gives 1.665 /
+  0.823 / 0.539 — which does **not** fit `0.005/sin(ai)` or any clean power
+  law. So the reference carries an angle-dependent normalization v1 lacks.
+- The "constant ~3.2×" framing in this file was a **median over the whole
+  stitched curve** that masks this per-run variation (and the RMS residual is
+  ~0.63 dex). Because each segment is offset differently, v1's stitched curve
+  has small kinks at the overlaps that the same `scale` factors cannot remove.
+
+### Localization
+The angle-dependent term lives **inside Mantid's
+`MagnetismReflectometryReduction`** algorithm. v2 calls it with
+`SampleLength=conf.sample_size`, `ConstantQBinning=conf.use_constant_q`,
+`UseSANGLE=...` (data_set.py:242-277) and only applies `area·0.005/sin`
+*afterward*. The Mantid C++ source is **not on this machine** (bounded
+`find` over /home/bvacaliuc/Projects, /opt, /usr found nothing; Mantid is
+not importable in v1's pixi env). A populated `mr_reduction` checkout (branch
+`next`) is at `/home/bvacaliuc/Projects/Claude/2/mr_reduction` but it only
+*calls* the Mantid algorithm — it does not reimplement the per-angle term.
+
+### Reproduce
+`pixi run python scripts/diag_specular_decompose.py` (loads the 6 NXS via the
+real `HeaderParser` path; ~1 min over sshfs) prints the per-segment table
+above. `scripts/validate_load_reduced_specular.py` gives the stitched median.
+
+### Next session — do this BEFORE any qreduce.py change (no speculative fix)
+1. Read Mantid `MagnetismReflectometryReduction.cpp` (mantidproject/mantid,
+   `Framework/Reflectometry/`) and find the angle/wavelength-dependent
+   normalization between summing the peak and dividing by the direct beam —
+   candidate suspects: constant-Q rebinning weighting, a solid-angle/`dQ`
+   Jacobian, or a per-pixel `sin`/`cos` factor. The target law must reproduce
+   v1/v2 ≈ 0.38/0.31/0.19 at ai = 0.0079/0.0195/0.0483.
+2. OR run v2/mr_reduction per-run (needs a Mantid env; heavy — watch OOM on
+   8 GB) to get each run's RAW R(Q) and divide by v1's RAW R(Q) to measure the
+   exact f(ai) before porting it into `_calc_normal`/`_calc_fan`.
+3. Only then change qreduce.py, add a unit test pinning f(ai) for a known
+   dataset, and validate ratio→1 on ≥2 datasets per the plan's caution.
