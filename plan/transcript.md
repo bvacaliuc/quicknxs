@@ -1039,7 +1039,7 @@ then
 
 ### Prompt 30.1
 
-Great! I tested the current state of the quicknxsv1 (0a92e5c7) and produced my result in /home/bvacaliuc/shared/REF_M/11486/session13/**. Note: /home/bvacaliuc/shared/REF_M/11486/** is an rsync-copy of /SNS/users/6ov/shared/REF_M/11486/** I made because on this machine /SNS/users/6ov/** is accessed via an sshfs mount over a 50Mbps link. Thank you for making it possible for me to load quicknxsv2 files. I loaded correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat and performed reductions. I note from your earlier responses that there are still remaining tasks in plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md. However, I'm uncertain as to what parts have been done already from these two plans and what remains. Please review these plans against your context so far as well as the new information from session13/**. As for myself, I observe a discrepancy in the offspecular (compare session13/quicknxsv1-offspecular-smoothing-options.png with session12/quicknxsv1-offspecular-smoothing-options.png) plot that shows missing data. This is a similar issue that was reported earlier (see plan/prompt-28.2-offspec.png and plan/prompt-31-offspec.png). Please review the current state of the code, my interactive tests made so far and suggest reasonable next steps.
+Great! I tested the current state of the quicknxsv1 (0a92e5c7) and produced my result in /home/bvacaliuc/shared/REF_M/11486/session13/**. Note: /home/bvacaliuc/shared/REF_M/11486/** is an rsync-copy of /SNS/users/6ov/shared/REF_M/11486/** I made because on this machine /SNS/users/6ov/** is accessed via an sshfs mount over a 50Mbps link. Thank you for making it possible for me to load quicknxsv2 files. I loaded correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat and performed reductions. I note from your earlier responses that there are still remaining tasks in plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md. However, I'm uncertain as to what parts have been done already from these two plans and what remains. Please review these plans against your context so far as well as the new information from session13/**. As for myself, I observe a discrepancy in the offspecular (compare session13/quicknxsv1-offspecular-smoothing-options.png with session12/quicknxsv1-offspecular-smoothing-options.png) plot that shows missing data. This is a similar issue that was reported earlier (see plan/prompt-28.2-offspec.png and plan/prompt-30.1-offspec.png). Please review the current state of the code, my interactive tests made so far and suggest reasonable next steps.
 
 During the above prompt operation, I observed something and asked a 'by the way' question:
 
@@ -1238,5 +1238,56 @@ gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' -ex run -ex 'bt fu
 ```
 
 *NOW* we get the expected SEGV and stack trace in ~/.quicknxs/gdb-bt.log - great! Please analyze it!
+
+```
+● SIGSEGV-on-exit: fixed and verified
+
+  The gdb backtrace cracked it. Root cause: dialogs and progress windows were disposed with QWidget.destroy(), which tears down the native window but leaves the widget registered with the QApplication. On exit,
+  QApplication::closeAllWindows() walks that dangling QWindow and null-derefs (si_addr=0x8). Your "load reduced data" + "Off-Specular Preview" flow hit two of those disposal sites.
+
+  Fix (9a4d7cc, 50d9eb1, pushed):
+  - Replaced all 6 .destroy() calls (loadExtraction progress dialog, Reduce/Smooth/GISANS dialogs + their progress dialogs) with close()/deleteLater().
+  - WidgetDisposalSafety test guards against reintroducing .destroy(); updated the smooth-cleanup test for the new disposal.
+
+  Verification (this time, properly):
+  - Mechanism reproduced: destroy()+closeAllWindows() → SIGSEGV (offscreen and xcb); close()+deleteLater() → clean.
+  - End-to-end: MainGUI → loadExtraction → closeAllWindows() now exits 0 (was 139).
+  - Full GUI suite: 112 passed, 0 failed.
+  
+  Please re-test make gui (load at bins=400, Off-Specular Preview, then close) — the exit crash should be gone, and ~/.quicknxs/quicknxs-crash.log should stay empty.
+
+  Two notes:
+  - I pushed 9a4d7cc a moment before noticing one test (SmoothOffspecProgressCleanup) still asserted the old destroy() behavior; I fixed it forward in 50d9eb1 and confirmed the suite green before pushing that. My mistake for trusting
+  the notification's exit code over the pytest summary — won't repeat it.
+  - The two earlier commits (a1aef4d open_plots cleanup, e4b2328 sip.setdestroyonexit) were based on wrong theories but are harmless hygiene, so I kept them. If you'd prefer a clean history reflecting only the real fix, say the word and
+   I'll revert those two.
+```
+
+### Prompt 30.6
+
+add the Qt gotcha to ui-aspects.md and please add a 'make gdb' to quicknxsv1's Makefile so its easier to run next time we need it.
+
+```
+● Both done:
+
+  1. make gdb (quicknxsv1, d7784cc, pushed) — launches the GUI under gdb on the env python and tees the native backtrace to ~/.quicknxs/gdb-bt.log. Usage:
+  make gdb            # reproduce the crash, then close → backtrace captured
+  make gdb INSTRUMENT=ref_l GDB_LOG=/tmp/bt.log   # overridable
+  It bakes in the lesson that bit us: pixi run gdb --args python … (debug the env python), not gdb --args pixi run … (only traces the wrapper).
+  
+  2. Qt disposal gotcha added to setup/patterns/ui-aspects.md (parent repo, 614a819, pushed) — the destroy() → dangling QWindow → closeAllWindows() SIGSEGV pattern, with the symptom, why it eludes faulthandler/headless repro, the gdb
+  signature, and the minimal repro/fix check.
+
+  One thing to flag: I committed the pattern on dragonfly, not main. ui-aspects.md doesn't exist on main yet — dragonfly is 67 commits ahead, so the whole file (and now this gotcha) is part of your pending dragonfly → main sync. Pushing
+   it onto main directly would've created a partial file, so I left it where the file actually lives; it'll reach the other machines when you next sync dragonfly to main. (I only committed the doc — the M quicknxsv1/quicknxsv2
+  submodule-pointer bumps are left for you.)
+```
+
+### Prompt 30.7
+
+Thanks. Is there a lesson to be learned in general (beyond ui-aspects.md) regarding gdb and investigations? I.e. is there a cross-project pattern that triggers the use of strace and gdb? If there isn't, please add it at this time. Finally, as this session is getting long, please analyze the plan/** again for the remaining items (you suggested the 3.2x footprint factor) and develop a plan/prompt-31-plan.md that I can start a clean session with. Let that plan include the remaining items you discover (from plan/prompt-30-remaining.md) and incorporate items you identified in plan/prompt-31-load-reduced-data.md. Ensure that the plan uses multi-agent steps to manage context, possible OOM issues and can handle token limits by waiting.
+
+## Prompt 31
+
 
 
