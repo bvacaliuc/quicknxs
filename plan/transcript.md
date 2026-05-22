@@ -1287,7 +1287,27 @@ add the Qt gotcha to ui-aspects.md and please add a 'make gdb' to quicknxsv1's M
 
 Thanks. Is there a lesson to be learned in general (beyond ui-aspects.md) regarding gdb and investigations? I.e. is there a cross-project pattern that triggers the use of strace and gdb? If there isn't, please add it at this time. Finally, as this session is getting long, please analyze the plan/** again for the remaining items (you suggested the 3.2x footprint factor) and develop a plan/prompt-31-plan.md that I can start a clean session with. Let that plan include the remaining items you discover (from plan/prompt-30-remaining.md) and incorporate items you identified in plan/prompt-31-load-reduced-data.md. Ensure that the plan uses multi-agent steps to manage context, possible OOM issues and can handle token limits by waiting.
 
+```
+  1. Cross-project diagnostic pattern — there wasn't one, so I added setup/patterns/native-crash-and-hang-diagnosis.md (parent repo dragonfly, 29c82b2, pushed) and indexed it in the parent CLAUDE.md. It triggers on SIGSEGV/139, 
+  abort/134, OOM/137, or hangs and captures:
+  - The escalation ladder faulthandler → strace → gdb (what each sees and its blind spot — e.g. faulthandler bottoming out at app.exec_ means "go to gdb").
+  - si_addr/exit-code triage (0x8 = null deref; 139/137/134 disambiguation).
+  - The wrapper trap (debug the env interpreter, not pixi run/conda run) — the exact thing that cost us a round-trip.
+  - The discipline: reproduce the mechanism and prove the fix flips it before shipping; read the real result, not a wrapper's exit code.
+  
+  2. plan/prompt-31-plan.md (quicknxsv1, 24ede00, pushed) — a clean-session, multi-agent plan consolidating both source plans into 5 phases:
+  1. ~3.2× specular footprint (the hardcoded 0.005 at qreduce.py:2929/3010) — highest value
+  2. get_xregion per-DB x-width (prompt-30 AC1)
+  3. prompt-30 Layer 2 hygiene (capture paths, per-role AutoY, mouse handlers)
+  4. Off-spec fidelity vs correctReduction/session12 (after the footprint fix)
+  5. pcolormesh non-monotonic warning (cosmetic)
+  
+  It opens with orchestration rules for your constraints: one heavy reduction at a time via background Bash + wait on the completion notification (no polling), Explore subagents for read-heavy research to keep the orchestrator lean,
+  checkpoint-commit per phase, and hand off to a new session at ~75% context (the plan file is the handoff — no chat state needed). Suggested layout: Session A = Phase 1, Session B = Phases 2–3, Session C = Phases 4–5.
+
+  It also records what's already DONE so a fresh session won't redo it. You can start a clean session pointed at plan/prompt-31-plan.md.
+```
+
 ## Prompt 31
 
-
-
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. Please read plan/prompt-31-plan.md and execute it. This is a result of a long running session. You may avail yourself of the documents in plan/** as needed and appropriate to continue the work. In case you need it the sources for quicknxsv2 are available as well as all git history. Files in /SNS/users/6ov/shared/REF_M/11486/** may be instructive. Good luck! As before, the computer is yours until I get back home from work tonight. Have fun!
