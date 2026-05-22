@@ -1041,3 +1041,156 @@ then
 
 Great! I tested the current state of the quicknxsv1 (0a92e5c7) and produced my result in /home/bvacaliuc/shared/REF_M/11486/session13/**. Note: /home/bvacaliuc/shared/REF_M/11486/** is an rsync-copy of /SNS/users/6ov/shared/REF_M/11486/** I made because on this machine /SNS/users/6ov/** is accessed via an sshfs mount over a 50Mbps link. Thank you for making it possible for me to load quicknxsv2 files. I loaded correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat and performed reductions. I note from your earlier responses that there are still remaining tasks in plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md. However, I'm uncertain as to what parts have been done already from these two plans and what remains. Please review these plans against your context so far as well as the new information from session13/**. As for myself, I observe a discrepancy in the offspecular (compare session13/quicknxsv1-offspecular-smoothing-options.png with session12/quicknxsv1-offspecular-smoothing-options.png) plot that shows missing data. This is a similar issue that was reported earlier (see plan/prompt-28.2-offspec.png and plan/prompt-31-offspec.png). Please review the current state of the code, my interactive tests made so far and suggest reasonable next steps.
 
+During the above prompt operation, I observed something and asked a 'by the way' question:
+
+```
+  /btw Interesing, you speak of 'eventTofBins' and v1 using 40 while v2 using 400 and of this being a gui setting. However, the GUI implies that the units of this input is in *microseconds* (and that is how the scientists understand it…
+    
+    Good catch — this is a real semantic ambiguity worth separating out, and you're right to flag it before any relabeling happens. Here's my understanding from the code I've seen, plus what the review should cover.
+    
+    What the code does today
+    
+    In the code, eventTofBins is unambiguously a count (number of TOF bins), not a width in microseconds:
+    
+    - The widget is a QSpinBox with min=5, max=200 (now raised to 1000), step=5, value=40, and tooltip "The number of bins for the Time of Flight channels."
+    - It flows to NXSData as bins=…, whose option description is "Number of ToF bins for event mode."
+    - fileOpen passes it as bins=self.ui.eventTofBins.value() alongside a separate bin_type=self.ui.eventBinMode.currentIndex(). So there are two controls: a mode selector (eventBinMode → bin_type) and a count (eventTofBins → bins). In
+    qreduce.py the event loaders read bins=read_options['bins'] and there's a _bincount helper.
+    
+    So everywhere I've looked, the integer means "how many bins," and the value range (5–200, default 40) is consistent with a count, not µs (5 µs bins would be absurdly fine; 5 bins is a sensible floor).
+    
+    Why the microseconds impression is reasonable anyway
+    
+    The count implies a width once you know the TOF frame. The chopper-defined window is ~16,700 µs at 60 Hz (~33,400 µs at 30 Hz, per the prompt-28 chopper work). So:
+    
+    - 40 bins → ~420–835 µs/bin (coarse)
+    - 400 bins → ~42–85 µs/bin (fine) 
+     
+    A scientist who thinks in "I want ~50 µs resolution" is implicitly choosing ~400 bins. That's exactly the v1-40 vs v2-400 gap behind the off-spec sparsity. So the count and the µs view are two ends of width = frame / count — but the
+     GUI exposes the count and labels it as a count, which is likely the mismatch you're sensing.
+    
+    What I'm not certain of (and why the review matters)
+    
+    - The exact bin_events/_bincount algorithm and whether any bin_type mode (linear-TOF vs 1/t vs logarithmic) reinterprets the value — I haven't read it in full.
+    - Whether some UI label near the field actually shows "µs" (which would contradict the tooltip and be a genuine bug).
+    - What v2's "400" precisely denotes — I've been treating it as a bin count from the prompt-29 log, but whether v2 specifies a count, a Δt, or fixed TOF edges should be confirmed so the v1↔v2 match is exact, not just close.
+    
+    Viable options the addendum should weigh 
+    
+    1. Keep it a count, make the µs explicit — add a read-only "≈ X µs/bin" hint derived from the active frame width, and align the tooltip/label. Lowest risk; resolves the mental-model gap without changing behavior.
+    2. Add a width-in-µs binning mode — let the user enter Δt (µs) directly (constant-Δt edges), converted internally to a count/edges, while keeping the count mode. Closest to how scientists think; medium effort; must interact cleanly
+    with bin_type and the chopper-aware TOF window. 
+    3. Document/expose the existing bin_type modes — clarify what linear/1-over-t/log mean and which one matches v2's convention.
+    4. Match v2's TOF edges directly — instead of a count, reconstruct the same edges v2 used (if v2 stores them), which would make Load Extraction reproduce v2 exactly rather than approximately.
+    
+    Importantly, this review is orthogonal to the fix in flight: wiring the GUI value through Load Extraction and raising the 200 cap is correct under the current count semantics and closes the 40→400 sparsity regardless of how the
+    field is later relabeled. The semantics review is a clarity/UX improvement layered on top, best captured as its own plan (e.g., plan/prompt-32-eventtofbins-semantics.md) so it doesn't entangle the off-spec fix.
+```
+
+commit 799037aeef500bec77ddc61dab20256b9c9f808a is an expansion of the ToF bins (max value) to 1000 to allow the user to set 400 and for header extraction to honor the UI setting by providing a default.
+commit 78d7e208055d5c8a18fa16515ddc1f78e2c252dc for the main prompt above is just a documentation fix to set ToF bins to 400 before loading.
+
+```
+● All green: 135 passed, pushed (792e445..78d7e20). Here's the consolidated picture you asked for.
+
+  The off-spec "missing data" — diagnosed, fixed, verified
+
+  Cause: not dropped events (the chopper fix is intact). v2 .dat recipes carry no [Event Mode Options], so Load Extraction re-binned events at the default 40 TOF bins (v2 used 400) → sparse (qx,qz) cloud → holey smoothed grid, and low
+  mid-Qz intensity sank below the log color floor → the white band at Qz≈0.06–0.09.
+
+  Fix (792e445): HeaderParser(default_bins=…) → _get_dataset forwards it; loadExtraction passes the GUI eventTofBins, cap raised 200→1000. → In the GUI, set Event TOF bins = 400 before Load Extraction….
+
+  Verified (78d7e20, headless): at 400 bins the gap band Qz[0.05,0.10] coverage goes 79%→100%, central 71%→91% (≈v2), intensity ~30×. The band fills.
+
+  Three secondary findings (separate from the gap): a pcolormesh non-monotonic warning (cosmetic), a SIGSEGV on GUI exit (Error 139), and the constant ~3.2× specular intensity (hardcoded 0.005 footprint, prompt-31).
+
+  Plan status (your "what's done vs. remaining" question)
+
+  prompt-31 — Load Reduced Data
+  - ✅ Parse v2 files · ✅ Specular shape (corr 0.96) · ✅ GUI Load Extraction on a v2 file (your session13) · ✅ Off-spec sparsity fixed + verified (this session)
+  - ❌ Remaining: confirm the smoothed 400-bin image in the GUI; the ~3.2× footprint constant; pcolormesh + SIGSEGV.
+
+  prompt-30 — role decoupling
+  - ✅ Layer 1 (regions, role-switch apply, capture, loadExtraction seeds both, tests) — confirmed loading in session13.
+  - ❌ Remaining: get_xregion per-DB x-width (AC1's x_width=24); fresh-file→DB capture; position/policy split; changeRegionValues/mouse capture; per-role AutoYLimits; the explicit reload-spinbox smoke test.
+  
+  All of the above is committed to plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md and pushed.
+
+  Suggested next steps (in priority order)
+
+  1. Confirm visually: in the GUI set TOF bins=400, Load Extraction… the v2 off-spec recipe, and compare the smoothed map to session12/ — should now match.
+  2. SIGSEGV on exit — worth chasing next; it's a stability risk independent of the science. I can investigate (likely a Qt/matplotlib teardown or the pcolormesh path).
+  3. ~3.2× footprint (qreduce.py:2929/3010) — the one remaining quantitative gap vs v2; needs a geometry-derived footprint + multi-dataset validation.
+  4. prompt-30 get_xregion — to finish AC1.
+
+  Want me to take on the SIGSEGV (#2) or the footprint (#3) next?
+```
+
+### Prompt 30.2
+
+I have confirmed visually that the extraction with setting bins=400 in the GUI before Load Extraction produces the expected! (See session13/quicknxsv1-*-tof-400.png if necessary). Lets proceed with the SIGSEGV on exit investigation.
+
+```
+SIGSEGV-on-exit: fix shipped + self-diagnosing instrumentation
+
+  Root cause (high confidence): the off-spec Reduce → "Plotting…" step opens non-modal PlotDialog result windows — each owns a matplotlib canvas — and stores them in MainGUI.open_plots, which closeEvent never closed. They survived to
+  interpreter shutdown, where their canvases are torn down after the QApplication → SIGSEGV (Error 139). This matches your session13 exactly (you ran the off-spec reduction with output plots, then closed).
+
+  Fix (a1aef4d, pushed): closeEvent now calls _close_open_plots() to close()+deleteLater() every kept-alive plot window while the event loop is still alive. 111 GUI tests pass incl. a new test_close_open_plots_releases_windows.
+
+  Diagnostic safety net (same commit): faulthandler writes a C-level traceback to ~/.quicknxs/quicknxs-crash.log on any fatal fault — validated against a controlled SIGSEGV.
+
+  Honest caveat: it would not reproduce headless (generic exit, lingering dialogs, and _run-scoped teardown were all clean under offscreen and xcb), so it's environment/data-sensitive. The fix targets the most likely cause; if anything
+  still faults, the crash log will name the exact frame.
+
+  Please verify (this working tree already has the fix — no pull needed)
+
+  1. make gui
+  2. Event TOF bins = 400 → Load Extraction… the v2 off-spec recipe → run the Reduce with plotting (your session13 flow).
+  3. Close the app. Clean exit (no Error 139) → fixed.
+  4. If it still crashes, send me ~/.quicknxs/quicknxs-crash.log — it'll pinpoint the faulting module.
+
+  One latent follow-up I noticed but did not touch (out of scope for this crash): the GISANS path calls QThread.terminate() (main_gui.py:585,1216), which is unsafe and could segfault if GISANS is cancelled. Worth converting to a
+  graceful requestInterruption()/quit()/wait() later.
+
+  Want me to wait for your make gui result, or move on to the ~3.2× footprint constant (get_xregion/prompt-30) while you test?
+```
+
+### Prompt 30.3
+
+well, after doing 'make gui', loading a reduced data file and then using Offspecular Preview, I still get the error 139 on exit. Did your fix address all the tabs and possible paths or just the GISANS one? If just the GISANS one, then please apply your fix to all possible paths. The ~/.quicknxs/quicknxs-crash.log file is available for your review. Thank you!
+
+```
+  First, a clarification: my earlier fix (a1aef4d) was the open_plots result-window cleanup — not GISANS (the QThread.terminate() was a separate latent note I flagged for later, not something I changed). That cleanup was correct hygiene
+   but, as your re-test showed, not the root cause.
+
+  What the crash log revealed
+  
+  Current thread ... (most recent call first):
+    scripts/quicknxs, line 51 in _run        # return app.exec_()
+    scripts/quicknxs, line 67 in <module>    # sys.exit(_run(...))
+  Extension modules: ... PyQt5.QtCore, PyQt5.QtGui, PyQt5.QtWidgets ...
+  No Python frame is executing — the segfault is during interpreter teardown after app.exec_() returns. That's a PyQt5 C++ destruction-order crash: at shutdown sip destroys every remaining wrapped C++ object, and with matplotlib
+  FigureCanvas widgets (from the off-spec/preview plots) still alive, that ordered teardown races QApplication destruction → Error 139. It's global, not per-tab — which is why no single tab/dialog fix would catch it.
+
+  The all-paths fix (e4b2328)
+  
+  At the entry point: sip.setdestroyonexit(False). The process is exiting, so the OS reclaims memory; we skip the unsafe ordered C++ teardown. This is the canonical remedy and applies no matter which tab/dialog/canvas was created.
+  Verified: setdestroyonexit exists and a full create→exec_→exit cycle stays clean.
+
+  Please verify
+  
+  1. make gui (this working tree has the fix).
+  2. Load a reduced file → use Off-Specular Preview (your exact repro) → close the app.
+  3. Check ~/.quicknxs/quicknxs-crash.log:
+    - Empty → fixed. (It's truncated at every startup, so empty = no fault this run.)
+    - Non-empty → still crashing — send it; the new traceback will name the next-deeper cause and I'll escalate (e.g., explicit canvas teardown before exit, or os._exit).
+
+  I couldn't reproduce it headless despite faithful attempts (generic exit, lingering plot dialogs, real-exec_, and a synthetic SmoothDialog canvas all exit cleanly here), so this is environment/data-specific — but the crash class is
+  unambiguous from the log and setdestroyonexit(False) is its standard cure.
+```
+
+### Prompt 30.4
+
+It still gave the error on fault. ~/.quicknxs/quicknxs-crash.log is not empty. I ran 'make strace' and produced a set of strace.* for you to review. Perhaps this data set gives you the information you need?
+
