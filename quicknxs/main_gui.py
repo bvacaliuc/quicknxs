@@ -1885,6 +1885,16 @@ class MainGUI(QtWidgets.QMainWindow):
         self.ui.rangeStart.setValue(self.cut_areas[norm][0])
         self.ui.rangeEnd.setValue(self.cut_areas[norm][1])
         self.auto_change_active=old_aca
+    # prompt-30 item 4: snapshot the edited region into the active file's
+    # role region so a user edit survives a later switch-away/switch-back.
+    # Keyed on the file's *actual* role (not active_role) so a fresh
+    # (unclassified) file -- owned by calcReflParams' auto-fit -- cannot
+    # pollute either stored role region.
+    role=self._active_file_role()
+    if role=='db':
+      self.region_db=self._read_region_from_ui()
+    elif role=='refl':
+      self.region_refl=self._read_region_from_ui()
     self.trigger('initiateReflectivityPlot', False)
 
   @log_call

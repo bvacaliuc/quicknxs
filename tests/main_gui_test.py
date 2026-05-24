@@ -1825,6 +1825,40 @@ class RoleDecoupling(unittest.TestCase):
     self.assertEqual(self.gui.ui.refYWidth.value(), 100.,
                      'fresh file must not re-seed the spinboxes')
 
+  def test_changeRegionValues_snapshots_active_role(self):
+    """prompt-30 item 4: a user edit to a classified file's region is
+    snapshotted into that role's stored region, so it survives a later
+    switch-away/switch-back (not merely kept on screen)."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.setNorm()                       # classify active file as a DB
+    self.assertEqual(self.gui.active_role, 'db')
+    # Simulate the user widening the DB x stripe; guard the programmatic set
+    # so only the explicit changeRegionValues() performs the snapshot.
+    self.gui.auto_change_active=True
+    self.gui.ui.refXWidth.setValue(40.)
+    self.gui.auto_change_active=False
+    self.gui.changeRegionValues()
+    self.assertEqual(self.gui.region_db.x_width, 40.,
+                     'changeRegionValues must snapshot the edit into region_db')
+
+  def test_changeRegionValues_fresh_file_does_not_pollute_role_region(self):
+    """A fresh (unclassified) file's edits must NOT be written into a role
+    region (calcReflParams' auto-fit owns fresh files)."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_refl=self.REFL_REGION    # a known refl region is on record
+    self.gui.region_db=self.DB_REGION
+    self.gui.active_role='refl'
+    self.gui.ref_norm={}                     # active file is fresh
+    self.gui.reduction_list=[]
+    self.gui.auto_change_active=True
+    self.gui.ui.refXWidth.setValue(99.)
+    self.gui.auto_change_active=False
+    self.gui.changeRegionValues()
+    self.assertEqual(self.gui.region_refl.x_width, 17.,
+                     'a fresh-file edit must not overwrite region_refl')
+    self.assertEqual(self.gui.region_db.x_width, 24.,
+                     'a fresh-file edit must not overwrite region_db')
+
 
 class WidgetDisposalSafety(unittest.TestCase):
   """Dialogs / progress windows must be disposed with close()/deleteLater(),
