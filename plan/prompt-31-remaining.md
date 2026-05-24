@@ -10,8 +10,9 @@ updated `plan/prompt-31-plan.md` Phase 1 STATUS banner.
 launch via background Bash and wait for the completion notification (don't
 poll). Prefer `pytest -k <name> --timeout=...`; full `make test-gui` only as a
 final gate. GUI click-throughs need a display → hand to the user with a
-checklist. **Pushes are now human-only** (commit, then tell the user what's
-ready — see parent `CLAUDE.md` "Pushing is a human action").
+checklist. **Push policy:** do not push to `code.ornl.gov` (read-only; human-only),
+but quicknxsv1's remote is **GitHub**, which is *not* held — its pushes are allowed
+(no reflexive idle/handoff pushes). See parent `CLAUDE.md` "Pushing is a human action".
 
 ## 1 — Phase 1 specular intensity FIX  (DEFERRED — needs Mantid) ★
 Session A **diagnosed** this and deliberately made **no code change** (the
@@ -62,16 +63,16 @@ the #1 specular issue; its known discrepancy is bin-density (see prompt-28).
 `mplwidget.py:311` emits "coordinates not monotonically increasing/decreasing"
 on off-spec. Sanitize coords / shading without changing the science.
 
-## Ops / handoff follow-ups (HUMAN — not quicknxs code)
-- **Push pending commits.** Per the new human-push policy, Session A left commits
-  unpushed: this session's `plan/prompt-31-remaining.md` (+ any new quicknxsv1
-  commits) on `feature/read-event-nexus`. Earlier Phase 1 commits (`f77204b`,
-  `dfe52eb`) were already on GitHub.
-- **Round-trip to `main` + push** (only when `code.ornl.gov` is writable again —
-  it is currently READ-ONLY, see `MEMORY.md` → gitlab-readonly): dragonfly
-  commits `aeca94d` (numerical-diagnostics caveat) and `b2518ed` (push-policy)
-  need to land on `main`. Reconcile the duplicate local-only commit `ffdcc21`
-  in `~/Projects/Claude/main`.
+## Ops / handoff follow-ups
+- **quicknxsv1 → GitHub** (allowed): commits `0d72436` and `a1d32e6` (+ this wording
+  fix) on `feature/read-event-nexus` are unpushed (`f77204b`, `dfe52eb` already on
+  GitHub). GitHub is not held, so these may be pushed — confirm with the user first
+  per the no-reflexive-push norm.
+- **Parent repo → code.ornl.gov** (HELD, human-only, currently READ-ONLY — see
+  `MEMORY.md` → gitlab-readonly): dragonfly commits `aeca94d` (numerical-diagnostics
+  caveat) and `b2518ed` + `4242e3f` (push-policy) need to round-trip onto `main` and
+  be pushed once code.ornl.gov is writable. Reconcile the duplicate local-only
+  commit `ffdcc21` in `~/Projects/Claude/main`.
 
 ## Acceptance for "prompt-31 complete"
 Specular intensity matches v2 within tolerance on ≥2 datasets (needs #1);
