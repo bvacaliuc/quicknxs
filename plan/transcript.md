@@ -1650,3 +1650,162 @@ quicknxsv1 ended development in late 2015. quicknxsv2 began development in 2017,
 Now, the work we have done on quicknxsv1 is quite relevant to this effort as a reality check, as well as the non-mantid alternative, in my opinion. The discussions I'm having with scientists are that the focus should be on building up quicknxsv2. However, I am extremely concerned about the 'mantidization' of the new_workflow given that there is are serious efforts underway on "mantid-replacements" (and I have my own thoughts about this as well). So, what *I* would like to do is work with you to perform a separation of frontend and backend of quicknxsv1 along the lines discussed and agreed upon during the hack-a-thon for quicknxsv2-modularization. That will be the subject of a future session, to be sure. But for this session, I just want your perspective on whether we should first finish prompt-32-responsiveness-design, 2b+3 or rather incorporate it into the future "quicknxsv1-modularization" effort.
 
 As always, obtain any tool you need, be resourceful and ask me if you are missing any information or capability that you need to complete your investigation. Thank you so much!
+
+```
+● I've now got the full picture from both the v1 responsiveness design and the v2 modularization knowledge base. Here's my analysis and recommendation.
+
+  Bottom line
+
+  Yes, merge feature/responsiveness → feature/read-event-nexus — it's a near-trivial merge and the policy-correct move. On the strategic question: keep 2a, fold Phase 3 into the future v1 modularization, and hold 2b. The v2 hackathon
+  already answered the threading question for you, and its conclusion transfers directly to v1.
+
+  ---
+  1. The merge: yes, and it's nearly free
+  
+  The branches diverged at 65b2dbd. Since then:
+  - read-event-nexus: +1 commit (fd72449) touching only plan/transcript.md (the prompt-33 planning doc).
+  - responsiveness: +5 commits — the real 2a code (activity_status.py, main_gui.py +834/−349, two test files, CLAUDE.md +53, design docs).
+  
+  I ran a merge dry-run: every code change applies cleanly. The only conflict is plan/transcript.md, because both sessions appended their transcript to a shared base — resolve by keeping both tails (union). This is exactly the
+  regular-merge-commit pattern your CLAUDE.md prescribes.
+
+  Why merge beats the alternatives:
+  - Rebase responsiveness onto the new tip — ❌ it's published (origin/feature/responsiveness); rewriting published history violates your no-force-push/no-rewrite discipline and desyncs sibling clones.
+  - Continue on responsiveness + cherry-pick the prompt-33 doc — works, but leaves a branch named "responsiveness" carrying prompt-31 reduction work (semantically muddled), and hits the same transcript.md conflict anyway.
+  - Merge keeps both histories intact, no rewrite, read-event-nexus stays the canonical trunk. Your instinct is right.
+  
+  After the merge, responsiveness's tip becomes an ancestor — it's fully absorbed. Leave the remote branch alone (deleting it is a push = your action); just stop developing it as a separate line.
+
+  One caveat on "continue prompt-31 afterward": of the five items in prompt-31-remaining.md, #1 (specular fix) and #4 (off-spec fidelity) are Mantid-blocked on this 8 GB machine and explicitly deferred. The actionable work this session
+  is #2 get_xregion (clean red/green target — known expected x_width = 12/16/24 for DB 44033/34/35), #3 prompt-30 Layer-2 hygiene, and #5 (cosmetic). I'd start with #2.
+
+  ---
+  2. Phase 2b + 3: defer into the modularization
+  
+  Your prompt-32 design doc already contains the key admission, in "What stays unsolved without threading": even with 2b, a single long call (one matplotlib draw() or one numpy reduction step) still blocks; 2b only shrinks the blind
+  window from "the whole multi-step op" to "one inner step." The freeze scientists actually feel is only fixed by Phase 3 (threading) — and Phase 3 is a frontend/backend boundary problem. You independently re-derived exactly what the v2
+   hackathon concluded:
+
+  ┌────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                    v1 prompt-32 finding                    │                                                                            v2 KB equivalent                                                                            │
+  ├────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ "What stays unsolved without threading" — the real fix is  │ 11-technical-debt.md:373 H1 "Synchronous reduction on Qt main thread… 1–10 s UI freezes per drag"                                                                      │
+  │ Phase 3                                                    │                                                                                                                                                                        │
+  ├────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Phase 3 = move compute/IO to a QThread, keep widgets on    │ 08-risks…md:109 R5 "a refactor doesn't fix it [by itself]… Scope threading out of the hackathon… back-end API should not preclude threading; stateless primitives are  │
+  │ GUI thread                                                 │ trivially thread-safe"                                                                                                                                                 │
+  ├────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Threading is the "future" phase                            │ 06-modularization-strategies.md:35 "Threading model improvement — low for this decision; orthogonal; shouldn't block modularization"                                   │
+  └────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Phase 3 → fold into the v1 modularization. Threading cleanly requires that the compute/IO be callable without touching Qt — which is precisely the boundary the modularization draws. Do it now on today's monolithic
+  qreduce.py/main_gui.py and you'd sever Qt couplings ad-hoc, just for threads, then redo it properly when the boundary lands. Do the boundary first and Phase 3 becomes "run the ref_core-equivalent call in a QThreadPool worker, marshal
+  a plain dataclass back, plot on the GUI thread." The v2 team scored this 60 h / 2–3 weeks (13-debt-triage.md:47) because it presupposes the boundary.
+  
+  Phase 2b → hold (don't build it now). Be clear on why, because it's subtle: 2b is pure frontend (an ActivityQueue intercepting ~25 user signals, single-threaded), so the modularization wouldn't invalidate it — the dispatcher lives in
+  the frontend either way. The reason to hold is different:
+  - It's medium-risk signal re-wiring (the doc's own rating) for a narrow payoff — 2a already delivers the headline UX (immediate ack, fading "Complete", wait-cursor on the running op); 2b only adds the stacked count.
+  - Phase 3 partly supersedes it: once compute runs off-thread, the right responsiveness model is "jobs-in-flight," not a synchronous deferred-drain queue. Building the drain queue now is potentially throwaway design even though the
+  code would survive.
+  - Exception: ship 2b now only if stacked-click confusion is a real, present pain for your scientists today. Absent that, 2a is the natural stopping point for this line.
+
+  ---
+  3. The real question: is a v1 modularization worth doing at all?
+  
+  Yes — and I'd argue it's your highest-leverage move, more than polishing v1's internals. Your instinct that v1 is "a reality check… and the non-mantid alternative" is exactly right, and the v2 KB itself flags it:
+
+  - 08-risks…md:130 R6 — "v1's active development complicates the lineage story… if v1 eventually gets ported onto the new back-end, there will be a third caller to accommodate." The hackathon already sees v1 coming.
+  - 14-mr-lr-cross-reference.md:11 — deliberately scopes out lr_reduction:new_workflow and quicknxsv1 (the "non-Mantid reduction lineage") from pre-hackathon material "so the message stays clean… They can be revisited later in the
+  hack-a-thon or in a follow-on effort."
+
+  You are sitting on the artifact that debate lacks: a working, non-Mantid, dual-instrument (REF_M and REF_L) reducer. That is the exact shape everyone agrees on — one common backend, per-instrument frontends. The agreed v2 endpoint
+  (Option 3, ref_core: a Mantid+orsopy backend both GUI and autoreduce import) is a design on paper; a frontend/backend-separated v1 is a runnable existence proof of the non-Mantid path — a far stronger input to a contested decision
+  than another slide deck.
+  
+  There's also timing leverage: developers are about to deep-dive new_workflow "to re-write it using Mantid functions," which is the re-Mantidization you're worried about. A v1 backend carve-out (even just its design + the boundary map)
+   produced before or during that deep-dive is your concrete counterweight — it shows the non-Mantid backend reducing both instruments today.
+
+  And note the elegant convergence: Phase 3 is the meeting point of your two efforts. The responsiveness work and the modularization aren't competing for your time — Phase 3 is the same milestone seen from both ends. That's the
+  strongest reason not to spend 2b risk now: you'd be hand-building a single-threaded workaround weeks before the boundary work hands you real threading.
+
+  ---
+  Proposed next step
+  
+  Merge now (I'll resolve transcript.md as a union and report exactly what I did), then start prompt-31 #2 get_xregion with a red test against the v2 header values 12/16/24. Phase 3 goes on the future v1-modularization plan; 2b stays
+  parked unless stacked-click pain says otherwise.
+```
+
+Claude continues...
+
+```
+● Recorded and committed (d3a009e). Here's my read of the validation:
+
+  The implementation is validated as an auto-seed. Three things go right: the db widths are correctly ordered (8 < 13 < 22, tracking 12 < 16 < 24), they're within the ±4px tolerance, and x_center matches v2's x_pos to ~1px. The
+  refl/FWHM threshold (4/8/17) being far too narrow confirms 'db'/tails is the correct choice. AC1 is met — fresh 44035 auto-fits to 22 (vs the stale 17 it used to inherit, vs v2's 24).
+
+  The one caveat: a systematic 2–4px undershoot, worst on the narrowest beam (44033: 8 vs 12). The deltas (4/3/2) shrink as the beam widens, which smells like v2's round-up-pixel / boundary convention (one of the four "silent default"
+  disagreements the v2 KB flags), not a threshold-fraction error. I'd resolve exact parity by reading v2's x_width code, not curve-fitting 3 points — and that's really part of the v1↔v2 reconciliation theme you care about, not a
+  same-session tweak.
+  
+  So my recommendation is to accept it (it's a validated starting estimate the user adjusts, and AC1 is met) and leave exact v2-parity to the reconciliation work. But this depends on your intent for v1 — faithful-to-v2 vs
+  sensible-default — which is your call:
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ get_xregion 
+
+How should I treat the ~2-4px x_width undershoot vs v2 (8/13/22 → 12/16/24)?
+
+❯ 1. Accept as-is (Recommended)
+     The auto-seed is validated: correct ordering, within ±4px, x_center spot-on, AC1 met (fresh 44035 → 22, replacing the stale 17). Exact v2-parity is deferred to the future v1↔v2 reconciliation, done by reading v2's x_width code.
+  2. Read v2's algorithm now
+     I open quicknxsv2/mr_reduction's actual x_width code, identify the boundary/round-up-pixel convention causing the 2-4px gap, and reconcile get_xregion to it principledly (not curve-fit). More work; resolves parity properly.
+  3. Quick empirical tune now
+     Widen the 'db' threshold fraction to better hit 12/16/24 on these 3 DBs and re-run validation. Fast, but overfits 3 datapoints and may not generalize.
+```
+
+Claude continues...
+
+```
+● Working tree clean. Session wrap-up — everything is committed locally; nothing pushed (yours).
+
+  What I did this session
+
+  Strategic answer (your core question) — stands as given, and is recorded in the merge commit body so it travels to your other machines:
+  - 2a: keep. Phase 3: fold into the future quicknxsv1 modularization (it's a frontend/backend boundary problem — the v2 KB reached the identical conclusion: threading is orthogonal, low-priority, scoped as a follow-on, enabled by a
+  Qt-free backend). 2b: hold (frontend-safe but medium-risk re-wiring, narrow payoff, partly superseded by Phase 3).
+  - The v1 modularization is worth doing — it's your working, non-Mantid, dual-instrument reality check, which the v2 KB itself flags (R6, 14-cross-ref) as the deferred non-Mantid lineage. Phase 3 is the meeting point of the two
+  efforts.
+
+  Three commits on feature/read-event-nexus:
+
+  ┌─────────┬───────────────────────────────────────────────────────────────────────────────────────┐
+  │ Commit  │                                         What                                          │
+  ├─────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ c92112f │ Merge of feature/responsiveness (phase 2a) — clean, only transcript.md union-resolved │
+  ├─────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ 81363ae │ prompt-31 #2: get_xregion + fresh-file refXWidth reseed (red/green TDD)               │
+  ├─────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ d3a009e │ Plan note recording the numerical validation                                          │
+  └─────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+  
+  Verified: qcalc_test (18), CalcReflParamsFreshFileReseed+RoleDecoupling (7), 34 file/region GUI tests — all green; ruff check quicknxs/ clean. Numerically validated get_xregion('db') against the real REF_M DBs (within ±4px of v2's
+  12/16/24, correctly ordered, x_center spot-on; you accepted the ~2–4px undershoot).
+
+  Yours to handle
+  
+  - Pushes (all of it) — feature/read-event-nexus is ready and is the right PR target into next. The parent-repo quicknxsv1 submodule pointer now differs (expected).
+  - GUI smoke test (needs a display): start fresh, load 44035 → x_width spinbox ≈ 22–24, y_width ≈ 100, regardless of any previously-active refl; then load a known refl and confirm it keeps its narrow width.
+
+  prompt-31 remaining (when you want to continue)
+
+  - #3 prompt-30 Layer-2 hygiene — small/careful, several sub-parts each wanting a display smoke test (not a clean autonomous unit).
+  - #5 pcolormesh non-monotonic warning — cosmetic, low priority.
+  - #1 / #4 (specular fix, off-spec fidelity) — still Mantid-blocked on this machine; deferred.
+
+  Want me to take #3 or #5 next, or stop here?
+```
+
+### Prompt 33.1
+
+I did the GUI smoke test, loaded 44035, adjusted x_width and y_width spinboxes, added as direct beam, then loaded 44159. As you can see it overwrote the region. See ~/shared/REF_M/QuickNXSv1/session5/quicknxsv1-overview-44159-view.png. Was that what you meant or did I misunderstand? Did you instead mean if I loaded another direct beam (like 44033) *that* would keep its narrow width (8)? If the latter, then yes, I can confirm that.
+
+After than, go ahead with #3
