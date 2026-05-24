@@ -198,6 +198,7 @@ class MainGUI(QtWidgets.QMainWindow):
     # fading "Complete" when the GUI returns to idle.  Added first so it owns
     # the left region of the status bar.
     self._busy_depth=0
+    self._cursor_active=False
     self.activity_indicator=ActivityIndicator(self.ui.statusbar)
 
     # widgets in the statusbar
@@ -390,17 +391,25 @@ class MainGUI(QtWidgets.QMainWindow):
       attrib(*args)
 
   # ---- immediate status feedback ------------------------------------------
-  def _activity_begin(self, message=None):
+  def _activity_begin(self, message=None, show_cursor=True):
     '''
-    Enter a "busy" scope: show *message* and a wait cursor immediately, and
-    force a repaint so they appear *before* the (possibly multi-second,
-    GUI-thread-blocking) work begins.  ``ExcludeUserInputEvents`` repaints
-    without letting a queued click re-enter the handler.
+    Enter a "busy" scope: show *message* (and, for heavier actions, a wait
+    cursor) immediately, and force a repaint so they appear *before* the
+    (possibly multi-second, GUI-thread-blocking) work begins.
+    ``ExcludeUserInputEvents`` repaints without letting a queued click re-enter
+    the handler.
 
-    Scopes nest; the wait cursor is pushed only on the outermost entry.
+    Scopes nest.  The wait cursor is pushed the first time any scope requests
+    it and popped once when the outermost scope exits.  ``show_cursor`` is
+    ``False`` for quick/continuous actions (region drags, color-scale tweaks,
+    dialog openers): the event loop is blocked during a synchronous slot, so a
+    runtime "only after 200 ms" timer can never fire mid-op — instead the
+    cursor is gated by action class, which is what keeps quick replots from
+    flickering the pointer while genuinely heavy ops still show it.
     '''
-    if self._busy_depth==0:
+    if show_cursor and not self._cursor_active:
       QtWidgets.QApplication.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+      self._cursor_active=True
     self._busy_depth+=1
     if message:
       self.activity_indicator.show_busy(message)
@@ -419,12 +428,14 @@ class MainGUI(QtWidgets.QMainWindow):
       return
     self._busy_depth-=1
     if self._busy_depth==0:
-      QtWidgets.QApplication.restoreOverrideCursor()
+      if self._cursor_active:
+        QtWidgets.QApplication.restoreOverrideCursor()
+        self._cursor_active=False
       if done:
         self.activity_indicator.show_complete(done)
 
   @contextmanager
-  def busy(self, message, done=u'Complete'):
+  def busy(self, message, done=u'Complete', show_cursor=True):
     '''
     Context manager wrapping a long-running handler so the user gets instant
     acknowledgement and a reliable "Complete" when it finishes::
@@ -432,14 +443,29 @@ class MainGUI(QtWidgets.QMainWindow):
         with self.busy(u'Loading run 12345...'):
             ...slow work...
 
-    The ``finally`` guarantees the scope (and the wait cursor) is released even
-    if the body raises.
+    Pass ``show_cursor=False`` for quick or dialog-opening actions.  The
+    ``finally`` guarantees the scope (and the wait cursor) is released even if
+    the body raises.
     '''
-    self._activity_begin(message)
+    self._activity_begin(message, show_cursor=show_cursor)
     try:
       yield
     finally:
       self._activity_end(done)
+
+  def _activity_transient(self, message):
+    '''
+    Coalesced status for high-frequency inputs (spinbox drags, color-scale
+    tweaks, folder rescans).  Shows *message* immediately (no wait cursor) and,
+    once the input stops for the indicator's settle window, surfaces a fading
+    "Complete" — so a drag does not flash "Complete" on every value change.
+    Never opens a busy scope, so it is safe to call from rapid valueChanged
+    slots and never interferes with nested ``busy`` depth counting.
+    '''
+    self.activity_indicator.busy_until_idle(message)
+    app=QtWidgets.QApplication.instance()
+    if app is not None:
+      app.processEvents(QtCore.QEventLoop.ExcludeUserInputEvents)
 
   def connect_plot_events(self):
     '''
@@ -1219,6 +1245,7 @@ class MainGUI(QtWidgets.QMainWindow):
     Imax=10**self.ui.offspecImax.value()
     if Imin>=Imax:
       return
+    self._activity_transient(u'Adjusting off-specular color scale...')
     for i, ignore in enumerate(self.ref_list_channels):
       plot=plots[i]
       if plot.cplot is not None:
@@ -1255,6 +1282,7 @@ class MainGUI(QtWidgets.QMainWindow):
     Imax=10**self.ui.gisansImax.value()
     if Imin>=Imax:
       return
+    self._activity_transient(u'Adjusting GISANS color scale...')
     for i, ignore in enumerate(self.ref_list_channels):
       plot=plots[i]
       if plot.cplot is not None:
@@ -1691,6 +1719,9 @@ class MainGUI(QtWidgets.QMainWindow):
     Called by the path watcher to update the file list when the folder
     has been modified.
     '''
+    # The directory listing (glob) can be slow over sshfs; announce it. Coalesced
+    # so a burst of live-data file events doesn't flash repeatedly.
+    self._activity_transient(u'Scanning data folder...')
     self.updateFileList(self.active_file, self.active_folder)
 
   @log_call
@@ -1772,14 +1803,15 @@ class MainGUI(QtWidgets.QMainWindow):
   @log_call
   def toggleColorbars(self):
     if not self.auto_change_active:
-      plots=[self.ui.xy_pp, self.ui.xy_mp, self.ui.xy_pm, self.ui.xy_mm,
-             self.ui.xtof_pp, self.ui.xtof_mp, self.ui.xtof_pm, self.ui.xtof_mm,
-             self.ui.xy_overview, self.ui.xtof_overview,
-             self.ui.offspec_pp, self.ui.offspec_mp, self.ui.offspec_pm, self.ui.offspec_mm]
-      for plot in plots:
-        plot.clear_fig()
-      self.overview_lines=None
-      self.plotActiveTab()
+      with self.busy(u'Updating plot display...'):
+        plots=[self.ui.xy_pp, self.ui.xy_mp, self.ui.xy_pm, self.ui.xy_mm,
+               self.ui.xtof_pp, self.ui.xtof_mp, self.ui.xtof_pm, self.ui.xtof_mm,
+               self.ui.xy_overview, self.ui.xtof_overview,
+               self.ui.offspec_pp, self.ui.offspec_mp, self.ui.offspec_pm, self.ui.offspec_mm]
+        for plot in plots:
+          plot.clear_fig()
+        self.overview_lines=None
+        self.plotActiveTab()
 
   @log_call
   def toggleHide(self):
@@ -1803,6 +1835,9 @@ class MainGUI(QtWidgets.QMainWindow):
     '''
     if self.auto_change_active or self.proj_lines is None:
       return
+    # Coalesced status: dragging a region spinbox or toggling BG-X shows
+    # "Adjusting..." and settles to "Complete" once changes stop (no per-tick flash).
+    self._activity_transient(u'Adjusting extraction region...')
     lines=self.proj_lines
     olines=self.overview_lines
 
@@ -1854,8 +1889,9 @@ class MainGUI(QtWidgets.QMainWindow):
 
   @log_call
   def replotProjections(self):
-    self.initiateProjectionPlot.emit(True)
-    self.initiateReflectivityPlot.emit(True)
+    with self.busy(u'Replotting projections...'):
+      self.initiateProjectionPlot.emit(True)
+      self.initiateReflectivityPlot.emit(True)
 
   @log_call
   def setNorm(self, do_plot=True, do_remove=True):
@@ -1987,28 +2023,29 @@ class MainGUI(QtWidgets.QMainWindow):
       warning('Please select a dataset with total reflection plateau\nand normalization.',
               extra={'title': 'Select other dataset'})
       return
-    self.auto_change_active=True
-    if len(self.reduction_list)>0:
-      # try to match both datasets by fitting a polynomiral to the overlapping region
-      rescale, xfit, yfit=get_scaling(self.refl, self.reduction_list[-1],
-                                      self.ui.addStitchPoints.value(),
-                                      polynom=self.ui.polynomOrder.value())
-      self.ui.refScale.setValue(self.ui.refScale.value()+log10(rescale)) #change the scaling factor
-      self.initiateReflectivityPlot.emit(False)
-      self.ui.refl.plot(xfit, yfit, '-r', lw=2)
-    else:
-      # normalize total reflection plateau
-      # Start from low Q and search for the critical edge
-      wmean, npoints=get_total_reflection(self.refl, return_npoints=True)
-      self.ui.refScale.setValue(self.ui.refScale.value()+log10(wmean)) #change the scaling factor
-      self.initiateReflectivityPlot.emit(False)
-      # show a line in the plot corresponding to the extraction region
-      first=len(self.refl.R)-self.ui.rangeStart.value()
-      Q=self.refl.Q[:first][self.refl.R[:first]>0]
-      totref=Line2D([Q.min(), Q[npoints]], [1., 1.], color='red')
-      self.ui.refl.canvas.ax.add_line(totref)
-    self.auto_change_active=False
-    self.ui.refl.draw()
+    with self.busy(u'Normalizing scaling...'):
+      self.auto_change_active=True
+      if len(self.reduction_list)>0:
+        # try to match both datasets by fitting a polynomiral to the overlapping region
+        rescale, xfit, yfit=get_scaling(self.refl, self.reduction_list[-1],
+                                        self.ui.addStitchPoints.value(),
+                                        polynom=self.ui.polynomOrder.value())
+        self.ui.refScale.setValue(self.ui.refScale.value()+log10(rescale)) #change the scaling factor
+        self.initiateReflectivityPlot.emit(False)
+        self.ui.refl.plot(xfit, yfit, '-r', lw=2)
+      else:
+        # normalize total reflection plateau
+        # Start from low Q and search for the critical edge
+        wmean, npoints=get_total_reflection(self.refl, return_npoints=True)
+        self.ui.refScale.setValue(self.ui.refScale.value()+log10(wmean)) #change the scaling factor
+        self.initiateReflectivityPlot.emit(False)
+        # show a line in the plot corresponding to the extraction region
+        first=len(self.refl.R)-self.ui.rangeStart.value()
+        Q=self.refl.Q[:first][self.refl.R[:first]>0]
+        totref=Line2D([Q.min(), Q[npoints]], [1., 1.], color='red')
+        self.ui.refl.canvas.ax.add_line(totref)
+      self.auto_change_active=False
+      self.ui.refl.draw()
 
   @log_call
   def addRefList(self, do_plot=True):
@@ -2103,52 +2140,53 @@ class MainGUI(QtWidgets.QMainWindow):
     '''
     if self.auto_change_active:
       return
-    entry=item.row()
-    column=item.column()
-    refl=self.reduction_list[entry]
-    options=dict(refl.options)
-    # reset options that can't be changed
-    if column==0:
-      item.setText(str(options['number']))
-      return
-    elif column==12:
-      item.setText(str(options['normalization'].options['number']))
-      return
-    # update settings from selected option
-    elif column in [1, 4, 5, 6, 7, 8, 9, 10]:
-      key=[None, 'scale', None, None,
-           'x_pos', 'x_width',
-           'y_pos', 'y_width',
-           'bg_pos', 'bg_width',
-           'dpix'][column]
-      try:
-        options[key]=float(item.text())
-      except ValueError:
-        item.setText(str(options[key]))
-      else:
-        refl_new=self.recalculateReflectivity(refl, options)
-        self.reduction_list[entry]=refl_new
-    elif column==2:
-      try:
-        refl.options['P0']=int(item.text())
-      except ValueError:
-        item.setText(str(options['P0']))
-    elif column==3:
-      try:
-        refl.options['PN']=int(item.text())
-      except ValueError:
-        item.setText(str(options['PN']))
-    elif column==11:
-      try:
-        options['tth']=float(item.text())
-      except ValueError:
-        item.setText(str(options['tth']))
-      else:
-        refl_new=self.recalculateReflectivity(refl, options)
-        self.reduction_list[entry]=refl_new
-    self.ui.reductionTable.resizeColumnsToContents()
-    self.reflectivityUpdated.emit(True)
-    self.initiateReflectivityPlot.emit(True)
+    with self.busy(u'Updating reduction table...'):
+      entry=item.row()
+      column=item.column()
+      refl=self.reduction_list[entry]
+      options=dict(refl.options)
+      # reset options that can't be changed
+      if column==0:
+        item.setText(str(options['number']))
+        return
+      elif column==12:
+        item.setText(str(options['normalization'].options['number']))
+        return
+      # update settings from selected option
+      elif column in [1, 4, 5, 6, 7, 8, 9, 10]:
+        key=[None, 'scale', None, None,
+             'x_pos', 'x_width',
+             'y_pos', 'y_width',
+             'bg_pos', 'bg_width',
+             'dpix'][column]
+        try:
+          options[key]=float(item.text())
+        except ValueError:
+          item.setText(str(options[key]))
+        else:
+          refl_new=self.recalculateReflectivity(refl, options)
+          self.reduction_list[entry]=refl_new
+      elif column==2:
+        try:
+          refl.options['P0']=int(item.text())
+        except ValueError:
+          item.setText(str(options['P0']))
+      elif column==3:
+        try:
+          refl.options['PN']=int(item.text())
+        except ValueError:
+          item.setText(str(options['PN']))
+      elif column==11:
+        try:
+          options['tth']=float(item.text())
+        except ValueError:
+          item.setText(str(options['tth']))
+        else:
+          refl_new=self.recalculateReflectivity(refl, options)
+          self.reduction_list[entry]=refl_new
+      self.ui.reductionTable.resizeColumnsToContents()
+      self.reflectivityUpdated.emit(True)
+      self.initiateReflectivityPlot.emit(True)
 
   @log_call
   def changeActiveChannel(self):
@@ -2162,27 +2200,29 @@ class MainGUI(QtWidgets.QMainWindow):
         selection=i
     if selection>=len(self.channels):
       return
-    self.active_channel=self.channels[selection]
-    if self.active_channel in self.ref_list_channels:
-      for i, refli in enumerate(self.reduction_list):
-        refli=self.recalculateReflectivity(refli)
-        self.reduction_list[i]=refli
-    self.updateLabels()
-    self.plotActiveTab()
-    self.initiateProjectionPlot.emit(False)
-    self.initiateReflectivityPlot.emit(False)
+    with self.busy(u'Switching channel...'):
+      self.active_channel=self.channels[selection]
+      if self.active_channel in self.ref_list_channels:
+        for i, refli in enumerate(self.reduction_list):
+          refli=self.recalculateReflectivity(refli)
+          self.reduction_list[i]=refli
+      self.updateLabels()
+      self.plotActiveTab()
+      self.initiateProjectionPlot.emit(False)
+      self.initiateReflectivityPlot.emit(False)
 
   @log_call
   def clearRefList(self, do_plot=True):
     '''
     Remove all items from the reduction list.
     '''
-    self.reduction_list=[]
-    self.ui.reductionTable.setRowCount(0)
-    self.ui.actionAutoYLimits.setChecked(True)
-    self.reflectivityUpdated.emit(do_plot)
-    if do_plot:
-      self.initiateReflectivityPlot.emit(False)
+    with self.busy(u'Clearing reduction list...'):
+      self.reduction_list=[]
+      self.ui.reductionTable.setRowCount(0)
+      self.ui.actionAutoYLimits.setChecked(True)
+      self.reflectivityUpdated.emit(do_plot)
+      if do_plot:
+        self.initiateReflectivityPlot.emit(False)
 
   @log_call
   def removeRefList(self):
@@ -2192,11 +2232,12 @@ class MainGUI(QtWidgets.QMainWindow):
     index=self.ui.reductionTable.currentRow()
     if index<0:
       return
-    self.reduction_list.pop(index)
-    self.ui.reductionTable.removeRow(index)
-    #self.ui.reductionTable.setRowCount(0)
-    self.reflectivityUpdated.emit(True)
-    self.initiateReflectivityPlot.emit(False)
+    with self.busy(u'Removing dataset...'):
+      self.reduction_list.pop(index)
+      self.ui.reductionTable.removeRow(index)
+      #self.ui.reductionTable.setRowCount(0)
+      self.reflectivityUpdated.emit(True)
+      self.initiateReflectivityPlot.emit(False)
 
   @log_call
   def overwriteDirectBeam(self):
@@ -2227,6 +2268,7 @@ class MainGUI(QtWidgets.QMainWindow):
     Recalculate reflectivity based on changed overwrite parameters.
     '''
     if not self.auto_change_active and self.active_data is not None:
+      self._activity_transient(u'Applying overwrite parameters...')
       self.updateLabels()
       self.calcReflParams()
       self.initiateProjectionPlot.emit(True)
@@ -2242,9 +2284,11 @@ class MainGUI(QtWidgets.QMainWindow):
       warning(u'Please select at least\none dataset to reduce.',
               extra={'title': u'Select a dataset'})
       return
-    dialog=ReduceDialog(self, self.ref_list_channels, self.reduction_list)
-    dialog.exec_()
-    dialog.deleteLater()
+    # No wait cursor: the dialog is interactive and runs its own progress.
+    with self.busy(u'Opening reduction options...', show_cursor=False):
+      dialog=ReduceDialog(self, self.ref_list_channels, self.reduction_list)
+      dialog.exec_()
+      dialog.deleteLater()
 
   @log_call
   def quickReduce(self):
@@ -2647,10 +2691,11 @@ class MainGUI(QtWidgets.QMainWindow):
     '''
     Show a graphical representation of the peakfinder process.
     '''
-    self.pf.visualize(snr=self.ui.pfSNR.value(),
-                      min_width=self.ui.pfMinWidth.value(),
-                      max_width=self.ui.pfMaxWidth.value(),
-                      ridge_length=self.ui.pfRidgeLength.value())
+    with self.busy(u'Visualizing peak finding...'):
+      self.pf.visualize(snr=self.ui.pfSNR.value(),
+                        min_width=self.ui.pfMinWidth.value(),
+                        max_width=self.ui.pfMaxWidth.value(),
+                        ridge_length=self.ui.pfRidgeLength.value())
 
 
   def recalculateReflectivity(self, old_object, overwrite_options=None):
@@ -2794,57 +2839,65 @@ Do you want to try to restore the working reduction list?""",
     '''
     Show a dialog to enter additional options for the background calculation.
     '''
-    if self.background_dialog:
-      self.background_dialog.show()
-    else:
-      self.background_dialog=BackgroundDialog(self)
-      self.background_dialog.show()
-      self.background_dialog.resize(self.background_dialog.width(), self.height())
-      self.background_dialog.move(self.background_dialog.pos().x()+self.width(),
-                                  self.pos().y())
-      if self.refl:
-        self.background_dialog.drawXTof()
-        self.background_dialog.drawBG()
+    with self.busy(u'Opening advanced background...'):
+      if self.background_dialog:
+        self.background_dialog.show()
+      else:
+        self.background_dialog=BackgroundDialog(self)
+        self.background_dialog.show()
+        self.background_dialog.resize(self.background_dialog.width(), self.height())
+        self.background_dialog.move(self.background_dialog.pos().x()+self.width(),
+                                    self.pos().y())
+        if self.refl:
+          self.background_dialog.drawXTof()
+          self.background_dialog.drawBG()
 
   @log_call
   def open_compare_window(self):
-    dia=CompareDialog(size=QtCore.QSize(800, 800))
-    dia.show()
-    self.open_plots.append(dia)
+    with self.busy(u'Opening compare window...'):
+      dia=CompareDialog(size=QtCore.QSize(800, 800))
+      dia.show()
+      self.open_plots.append(dia)
 
   @log_call
   def open_reduction_preview(self):
-    dia=ReductionPreviewDialog(self)
-    dia.show()
-    self.open_plots.append(dia)
+    with self.busy(u'Opening reduction preview...'):
+      dia=ReductionPreviewDialog(self)
+      dia.show()
+      self.open_plots.append(dia)
 
   @log_call
   def open_rawdata_dialog(self):
-    dia=RawCompare(self)
-    dia.show()
+    with self.busy(u'Opening raw data comparison...'):
+      dia=RawCompare(self)
+      dia.show()
 
   @log_call
   def open_polarization_window(self):
-    dia=PolarizationDialog(self)
-    dia.show()
+    with self.busy(u'Opening polarization analysis...'):
+      dia=PolarizationDialog(self)
+      dia.show()
 
   @log_call
   def open_nxs_dialog(self):
     if self.active_data is None:
       return
-    dia=NXSDialog(self, self.active_data.origin)
-    dia.show()
+    with self.busy(u'Opening NeXus browser...'):
+      dia=NXSDialog(self, self.active_data.origin)
+      dia.show()
 
   @log_call
   def open_logfile_viewer(self):
-    window=QuicklogWindow(parent=self)
-    window.openFile(paths.LOG_FILE)
-    window.show()
+    with self.busy(u'Opening log viewer...'):
+      window=QuicklogWindow(parent=self)
+      window.openFile(paths.LOG_FILE)
+      window.show()
 
   def open_database_search(self):
-    dia=DatabaseDialog(self)
-    dia.datasetSelected.connect(self.fileOpen)
-    dia.show()
+    with self.busy(u'Opening database search...'):
+      dia=DatabaseDialog(self)
+      dia.datasetSelected.connect(self.fileOpen)
+      dia.show()
 
   @log_call
   def open_filter_dialog(self):

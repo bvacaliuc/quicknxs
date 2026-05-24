@@ -32,11 +32,12 @@ class ActivityIndicator(QtCore.QObject):
   :param fade_ms: duration of the opacity fade-out.
   """
 
-  def __init__(self, statusbar, hold_ms=2000, fade_ms=1200, parent=None):
+  def __init__(self, statusbar, hold_ms=2000, fade_ms=1200, settle_ms=400, parent=None):
     super(ActivityIndicator, self).__init__(parent or statusbar)
     self._statusbar = statusbar
     self.hold_ms = hold_ms
     self.fade_ms = fade_ms
+    self.settle_ms = settle_ms
 
     self._label = QtWidgets.QLabel(u'')
     self._label.setObjectName(u'activityStatus')
@@ -59,6 +60,12 @@ class ActivityIndicator(QtCore.QObject):
     self._hold.setSingleShot(True)
     self._hold.timeout.connect(self._start_fade)
 
+    # Coalescing timer for high-frequency inputs (spinbox drags): each change
+    # restarts it; when the user stops, it fires and surfaces "Complete".
+    self._settle = QtCore.QTimer(self)
+    self._settle.setSingleShot(True)
+    self._settle.timeout.connect(self._on_settle)
+
   # -- queries (used by tests and callers) ----------------------------------
   def text(self):
     return self._label.text()
@@ -72,9 +79,13 @@ class ActivityIndicator(QtCore.QObject):
   def is_fading(self):
     return self._fade.state() == QtCore.QAbstractAnimation.Running
 
+  def is_settling(self):
+    return self._settle.isActive()
+
   # -- state transitions -----------------------------------------------------
   def _quiesce(self):
-    """Cancel any in-flight hold timer / fade animation and reset opacity."""
+    """Cancel any in-flight settle / hold timer or fade animation, reset opacity."""
+    self._settle.stop()
     self._hold.stop()
     self._fade.stop()
     self._effect.setOpacity(1.0)
@@ -95,12 +106,32 @@ class ActivityIndicator(QtCore.QObject):
     else:
       self._hold.start(self.hold_ms)
 
+  def busy_until_idle(self, message, done=u'Complete'):
+    """Coalesced busy state for high-frequency inputs (e.g. spinbox drags).
+
+    Shows *message* persistently and (re)starts the settle timer; when the
+    caller stops invoking this for ``settle_ms``, a fading *done* message is
+    surfaced.  Avoids one "Complete" flash per value change.
+    """
+    self._quiesce()
+    self._statusbar.clearMessage()
+    self._label.setText(message)
+    self._settle_done = done
+    if self.settle_ms <= 0:
+      self.show_complete(done)
+    else:
+      self._settle.start(self.settle_ms)
+
   def clear(self):
     """Immediately remove any message and stop timers/animation."""
     self._quiesce()
     self._label.setText(u'')
 
   # -- internals -------------------------------------------------------------
+  def _on_settle(self):
+    # Input has stopped: transition the coalesced busy state to "Complete".
+    self.show_complete(getattr(self, '_settle_done', u'Complete'))
+
   def _start_fade(self):
     self._fade.stop()
     self._effect.setOpacity(1.0)

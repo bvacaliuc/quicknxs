@@ -104,12 +104,30 @@ with self.busy(u'Rendering off-specular preview...'):
 #    immediately, and a fading "Complete" when the outermost scope exits.
 ```
 
-**Convention: wrap every new long-running handler in `with self.busy("…"):`.**
-Scopes are depth-counted, so nested calls (e.g. `fileOpen` → `plotActiveTab`)
-fire "Complete" exactly once. Do **not** wrap high-frequency handlers (spinbox
-`valueChanged`, region drags, table edits) — the Complete flash would be the
-clutter the fade is meant to avoid. Threaded work (GISANS) sets the message in
-the start method and surfaces "Complete" in its finish slot.
+**Conventions for new handlers:**
+- **Discrete heavy action** (button/menu/tab/checkbox → one replot/reduce/IO):
+  wrap in `with self.busy("…"):`. Scopes are depth-counted, so nested calls
+  (`fileOpen` → `plotActiveTab`) fire "Complete" exactly once.
+- **High-frequency / continuous input** (spinbox `valueChanged`, region drags,
+  color-scale tweaks, folder rescans): call `self._activity_transient("…")`
+  instead. It shows the message immediately and *coalesces* — surfacing one
+  fading "Complete" only after the input settles, never a flash per tick. Never
+  opens a busy scope, so it is safe in rapid slots.
+- **Dialog opener**: `with self.busy("Opening …", show_cursor=False):` (the modal
+  is interactive — no wait cursor; release it before any `exec_`).
+- **Threaded work** (GISANS): set the message in the start method; surface
+  "Complete" in the finish slot.
+
+**Wait cursor is gated by action class, not a timer.** The event loop is blocked
+during a synchronous slot, so a runtime "only after 200 ms" timer can never fire
+mid-op. `busy(..., show_cursor=True)` (default) is for genuinely heavy discrete
+ops; quick/continuous actions pass `show_cursor=False` or use
+`_activity_transient` (no cursor) so fast replots don't flicker the pointer.
+
+See `plan/prompt-32-responsiveness-design.md` for the full action audit and the
+deferred-queue design (Phase 2b) that will add "N operations pending…" for
+*stacked* clicks — not yet implemented; clicks during a blocking op are still
+acknowledged only when that op yields/returns.
 
 **Two modal-dialog footguns that fully freeze the GUI** (keep in mind, not yet
 changed): the startup "Previous Crash" `QMessageBox` (`readSettings`, fires

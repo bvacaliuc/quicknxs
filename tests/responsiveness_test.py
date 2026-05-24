@@ -111,6 +111,54 @@ class BusyScopeTest(unittest.TestCase):
     self.assertEqual(self.gui._busy_depth, 0)
     self.assertEqual(self.gui.activity_indicator.text(), u'Complete')
 
+  # -- phase 2a: cursor classification + coalesced continuous status --------
+  def test_busy_show_cursor_false_sets_no_cursor(self):
+    with self.gui.busy(u'Opening dialog...', show_cursor=False):
+      self.assertIsNone(QApplication.overrideCursor())
+      self.assertEqual(self.gui._busy_depth, 1)
+    self.assertIsNone(QApplication.overrideCursor())
+    self.assertEqual(self.gui.activity_indicator.text(), u'Complete')
+
+  def test_busy_show_cursor_true_sets_cursor(self):
+    with self.gui.busy(u'Heavy work...', show_cursor=True):
+      self.assertIsNotNone(QApplication.overrideCursor())
+    self.assertIsNone(QApplication.overrideCursor())
+
+  def test_activity_transient_is_coalesced_no_cursor_no_scope(self):
+    self.gui._activity_transient(u'Adjusting region...')
+    self.assertEqual(self.gui._busy_depth, 0)            # not a busy scope
+    self.assertIsNone(QApplication.overrideCursor())     # no wait cursor
+    self.assertTrue(self.gui.activity_indicator.is_settling())
+    self.assertEqual(self.gui.activity_indicator.text(), u'Adjusting region...')
+    self.assertNotEqual(self.gui.activity_indicator.text(), u'Complete')
+
+  def test_changeRegionValues_uses_coalesced_status(self):
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    # plot_projections (during do_plot) set proj_lines, so the guard passes.
+    self.gui.changeRegionValues()
+    self.assertEqual(self.gui._busy_depth, 0)
+    self.assertIsNone(QApplication.overrideCursor())
+    self.assertTrue(self.gui.activity_indicator.is_settling())
+    self.assertNotEqual(self.gui.activity_indicator.text(), u'Complete')
+
+  def test_changeActiveChannel_surfaces_complete(self):
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.changeActiveChannel()
+    self.assertEqual(self.gui._busy_depth, 0)
+    self.assertEqual(self.gui.activity_indicator.text(), u'Complete')
+    self.assertIsNone(QApplication.overrideCursor())
+
+  def test_reduceDatasets_opens_without_residual_cursor(self):
+    self.gui.reduction_list = [object()]
+    self.gui.ref_list_channels = ['x']
+    with patch('quicknxs.main_gui.ReduceDialog') as MockDlg:
+      MockDlg.return_value.exec_.return_value = 0
+      self.gui.reduceDatasets()
+    self.assertEqual(self.gui._busy_depth, 0)
+    # dialog is interactive -> no wait cursor was pushed
+    self.assertIsNone(QApplication.overrideCursor())
+    self.assertEqual(self.gui.activity_indicator.text(), u'Complete')
+
   def test_loadextraction_announces_immediately(self):
     # Patch the file dialog to return our test .dat path is overkill; instead
     # verify the busy scope is entered before the (mocked) heavy work runs.

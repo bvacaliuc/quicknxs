@@ -15,8 +15,8 @@ _app = QApplication.instance() or QApplication([])
 class ActivityIndicatorTest(unittest.TestCase):
   def setUp(self):
     self.statusbar = QStatusBar()
-    # short, non-zero durations so the real-time test is fast
-    self.ind = ActivityIndicator(self.statusbar, hold_ms=40, fade_ms=40)
+    # short, non-zero durations so the real-time tests are fast
+    self.ind = ActivityIndicator(self.statusbar, hold_ms=40, fade_ms=40, settle_ms=40)
 
   def tearDown(self):
     self.ind.clear()
@@ -87,6 +87,38 @@ class ActivityIndicatorTest(unittest.TestCase):
     # hold (40) + fade (40) + margin
     QTest.qWait(200)
     self.assertEqual(self.ind.text(), u'')
+
+  # -- coalesced (busy_until_idle) ------------------------------------------
+  def test_busy_until_idle_shows_message_and_settles(self):
+    self.ind.busy_until_idle(u'Adjusting region...')
+    self.assertEqual(self.ind.text(), u'Adjusting region...')
+    self.assertTrue(self.ind.is_settling())
+    self.assertFalse(self.ind.is_holding())
+    self.assertFalse(self.ind.is_fading())
+
+  def test_repeated_busy_until_idle_keeps_settling_no_flicker(self):
+    # Each change restarts the settle timer; "Complete" must NOT appear yet.
+    for _ in range(5):
+      self.ind.busy_until_idle(u'Adjusting region...')
+      self.assertTrue(self.ind.is_settling())
+      self.assertEqual(self.ind.text(), u'Adjusting region...')
+
+  def test_show_busy_cancels_pending_settle(self):
+    self.ind.busy_until_idle(u'Adjusting...')
+    self.ind.show_busy(u'Loading...')
+    self.assertFalse(self.ind.is_settling())
+    self.assertEqual(self.ind.text(), u'Loading...')
+
+  def test_realtime_busy_until_idle_completes_then_fades(self):
+    self.ind.busy_until_idle(u'Adjusting region...')
+    # settle (40) -> show_complete -> hold (40) + fade (40) + margin
+    QTest.qWait(260)
+    self.assertEqual(self.ind.text(), u'')
+
+  def test_zero_settle_completes_immediately(self):
+    ind = ActivityIndicator(self.statusbar, hold_ms=40, fade_ms=40, settle_ms=0)
+    ind.busy_until_idle(u'x')
+    self.assertTrue(ind.is_holding())
 
 
 if __name__ == '__main__':
