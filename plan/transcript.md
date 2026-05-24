@@ -1390,5 +1390,32 @@ Thank you, Claude. You are right about ~/Projects/Claude/main - I probably creat
 
 In the 'Cross-project knowledge distribution flow' section, previously (as in commit aeca94d) when discovering a reusable pattern the directive was to implment it on 'main' then merge to the working branch. That was the right workflow, in my mind. It was only the 'push' part that needed adjustment. Can you restore that and remove all that stuff about once the human round-trips it? The only difference should be that pushes need to be done by a human; that means the human may need to push two things:  the main and the working branches. I am willing to accept that responsibility until pushes are allowed again. Perhaps it should only be restricted to remotes that include code.ornl.gov, since its the only git server that I know which reactively disables accounts when 'bot' activity is detected. Such luddites, don't you think?
 
- 
+```
+● Done. Here's what changed in this refinement:
 
+  Cross-project flow restored to the original (your preferred) workflow in CLAUDE.md:
+  1. Commit the pattern to main (git checkout main in the working clone — the don't-hop-clones guidance stays),
+  2. Merge main back into the working branch (git merge main, local),
+  3. The human pushes both main and the working branch.
+  
+  All the "agent commits on the working branch / human round-trips" language is gone.
+
+  Push hold scoped to code.ornl.gov only — it's the server that reactively disables accounts on "bot" detection and is currently read-only. So: do the full local workflow (commit + merge), human does the code.ornl.gov push (possibly two
+   branches), "until pushes are allowed again." Pushes to other remotes (the quicknxs GitHub repos) are explicitly not restricted — just no reflexive idle/handoff pushing. The diagram and Syncing bullets match.
+
+  Committed (no push):
+  - Parent dragonfly: 4242e3f (refines b2518ed; I made a new commit rather than amend, per the repo's no-amend rule — net effect of the two is the policy you described).
+  - quicknxsv1 feature/read-event-nexus: bcaa9e4 — corrected prompt-31-remaining.md so it doesn't tell the next session GitHub pushes are forbidden.
+  
+  Memory gitlab-readonly updated: scope corrected (code.ornl.gov-only), round-trip batch now aeca94d + b2518ed + 4242e3f.
+
+  plan/prompt-31-remaining.md is in place and accurate — ready for the new session whenever you are.
+```
+
+## Prompt 32
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. During testing on analysis.sns.gov, I found quicknxsv1 to be rather slow to react to button presses. I have also observed this on *this machine* (dragonfly), so I think it is a systematic behavior. It was not impressive to the scientist I was demonstrating it to. The "quick" part of quicknxs is that actions have immediate effect. Currently, it can take several seconds for the gui to react and it just feels not crisp at all. Please investigate this condition *thoroughly* and comprehensively. Make all the tests you need, use all the resources at your disposal (you have make strace, make gdb, etc) and if you need new tools to diagnose, install them per your guidance on doing so. Here are some additional items that I would like to see implemented regardless of your success in improving the responsiveness of the UI:
+
+1. when doing a 'Load Extraction' or pressing 'OffSpec Preview' tab, it make take some time before the GUI reacts (particularly when the system is over an sshfs mount). I would like that the status text on the lower left corner of the UI to immediately indicate what action is currently initiated.
+2. please investigate other potentially long running tasks and ensure a status message is surfaced immediately upon embarking on the activity
+3. Please ensure that every time the gui is idle and will respond to clicks again, that a message 'Complete' is uniformly and reliably surfaced. I also like that this message fades away after so many seconds so that it does not clutter the UI.
