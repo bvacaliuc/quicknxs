@@ -1650,6 +1650,15 @@ class CalcReflParamsFreshFileReseed(unittest.TestCase):
     self.assertEqual(self.gui.refl.options['y_width'],
                      self.gui.ui.refYWidth.value())
 
+    # X width must likewise be reseeded from the fresh file (prompt-30 AC1):
+    # a fresh file picks up its own stripe via get_xregion, not the stale
+    # refl x_width=17, and self.refl captures the fresh value.
+    self.assertNotEqual(self.gui.ui.refXWidth.value(), 17.0,
+                        'refXWidth must be reseeded from the fresh file, '
+                        'not left at the stale refl value')
+    self.assertEqual(self.gui.refl.options['x_width'],
+                     self.gui.ui.refXWidth.value())
+
   def test_known_file_preserves_user_y_values(self):
     """When the active file is a refl already in reduction_list, its
     y_pos/y_width must NOT be silently re-seeded — that would clobber a

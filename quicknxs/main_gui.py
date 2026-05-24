@@ -31,7 +31,7 @@ from .nxs_gui import NXSDialog
 from .quicklog_gui import QuicklogWindow
 from .point_picker import PointPicker
 from .polarization_gui import PolarizationDialog
-from .qcalc import get_total_reflection, get_scaling, get_xpos, get_yregion
+from .qcalc import get_total_reflection, get_scaling, get_xpos, get_yregion, get_xregion
 from .qio import HeaderParser, HeaderCreator
 from .qreduce import NXSData, NXSMultiData, Reflectivity, OffSpecular, time_from_header, \
                      GISANS, XMLData, locate_file
@@ -2674,6 +2674,17 @@ class MainGUI(QtWidgets.QMainWindow):
                                ridge_length=self.ui.pfRidgeLength.value(),
                                return_pf=True)
       self.ui.refXPos.setValue(x_peak)
+
+    if fresh_file:
+      # A never-classified file must auto-fit its own x_width rather than keep
+      # whatever the spinbox last showed (typically a previous refl's narrow
+      # stripe).  Use the wide 'db' (tails) stripe: a fresh file is normally a
+      # direct beam being classified, and AC1 wants fresh 44035 -> x_width~24,
+      # not an inherited 17.  Only the *width* comes from here; x_pos stays with
+      # get_xpos (CWT) above.  A file later classified as a refl picks up its
+      # narrow role width via addRefList/_applyRoleRegion.
+      x_width=get_xregion(data, 'db')[1]
+      self.ui.refXWidth.setValue(x_width)
 
     if self.ui.actionAutoYLimits.isChecked() or fresh_file:
       # find the central peak region with intensities larger than 10% of maximum.

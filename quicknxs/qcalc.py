@@ -12,7 +12,7 @@ from .peakfinder import PeakFinder
 from .qreduce import Reflectivity, MRDataset
 
 # used for * imports
-__all__=['get_total_reflection', 'get_scaling', 'get_xpos', 'get_yregion',
+__all__=['get_total_reflection', 'get_scaling', 'get_xpos', 'get_yregion', 'get_xregion',
          'smooth_data', 'refine_gauss']
 
 @log_both
@@ -180,6 +180,45 @@ def get_yregion(data):
     return len(yproj)/2., len(yproj)/2., 0.
   else:
     return (yregion[0]+yregion[1]+1.)/2., yregion[1]+1.-yregion[0], y_bg
+
+@log_both
+def get_xregion(data, role='db'):
+  """
+  Calculate the beam x region from the data x-projection.
+
+  Mirrors :func:`get_yregion` but on the x-projection (``data.xdata``).
+  ``role`` selects how wide ``x_width`` is, since a reflectivity frame
+  carries both the (narrow) sample-reflected stripe and the much brighter
+  transmitted beam, while a direct beam is a single full stripe:
+
+  * ``'db'`` (direct beam) — full beam stripe: pixels above 10% of the
+    peak over background (the same generous "tails" threshold as
+    :func:`get_yregion`).  Recovers the per-DB widths of the REF_M 11486
+    reference (44033≈12, 44034≈16, 44035≈24).
+  * ``'refl'`` (reflectivity) — narrower FWHM stripe: pixels above 50% of
+    the peak, so wide transmitted-beam tails do not inflate the width.
+
+  :param quicknxs.qreduce.MRDataset data: Raw data used to find the x-region
+  :param str role: ``'db'`` (tails, max/10) or ``'refl'`` (FWHM, max/2)
+
+  :returns: x_center, x_width, x_bg
+  """
+  if not isinstance(data, MRDataset):
+    raise ValueError("'data' needs to be a MRDataset or LRDataset object")
+  xproj=data.xdata
+  # find the central peak region with intensities larger than a fraction of
+  # the maximum; the fraction is wider (tails) for a direct beam, narrower
+  # (FWHM) for a reflectivity so the transmitted beam does not bleed in.
+  x_bg=median(xproj)
+  frac=0.5 if role=='refl' else 0.1
+  try:
+    x_peak_region=where((xproj-x_bg)>xproj.max()*frac)[0]
+    xregion=(x_peak_region[0], x_peak_region[-1])
+  except IndexError:
+    # there are no points in this region, return full detector size:
+    return len(xproj)/2., len(xproj)/2., 0.
+  else:
+    return (xregion[0]+xregion[1]+1.)/2., xregion[1]+1.-xregion[0], x_bg
 
 @log_both
 def get_BGscale(data, pos, width, bg_pos, bg_width):

@@ -94,6 +94,34 @@ class PositionTest(FakeData, unittest.TestCase):
     self.assertEqual(y_width, 96.)
     self.assertEqual(bg, 0.)
 
+  def test_get_xregion_wrong_call(self):
+    from quicknxs.qcalc import get_xregion
+    self.assertRaises(ValueError, get_xregion, [1, 2, 3], 'db')
+
+  def test_get_xregion_db(self):
+    # FakeData boosts x-columns 180:211 by 10x over a uniform stripe, so the
+    # x-projection has one rectangular peak there.  The 'db' (tails, max/10)
+    # threshold must recover that full stripe: center 195.5, width 31.
+    from quicknxs.qcalc import get_xregion
+    x_center, x_width, x_bg=get_xregion(self.ds, 'db')
+    self.assertAlmostEqual(x_center, 195.5)
+    self.assertEqual(x_width, 31.)
+    self.assertEqual(x_bg, median(self.ds.xdata))
+
+  def test_get_xregion_role_widths(self):
+    # With a gaussian beam (sigma 8) the 'db' tails (>10% of peak) must span
+    # wider than the 'refl' FWHM (>50% of peak), while both center on the beam.
+    from quicknxs.qcalc import get_xregion
+    ny, nx=self.ds.xydata.shape
+    beam=1000.*exp(-0.5*((arange(nx)-150.)/8.)**2)
+    self.ds.xydata=tile(beam, (ny, 1))
+    xc_db, xw_db, ignore=get_xregion(self.ds, 'db')
+    xc_rf, xw_rf, ignore=get_xregion(self.ds, 'refl')
+    self.assertAlmostEqual(xc_db, 150., delta=1.5)
+    self.assertAlmostEqual(xc_rf, 150., delta=1.5)
+    self.assertGreater(xw_db, xw_rf,
+                       'db tails (max/10) must be wider than refl FWHM (max/2)')
+
 class SmoothTest(unittest.TestCase):
   def setUp(self):
     self._progress=None
