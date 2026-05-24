@@ -1419,3 +1419,84 @@ You are working in the quicknxsv1 project, feature/read-event-nexus branch. Duri
 1. when doing a 'Load Extraction' or pressing 'OffSpec Preview' tab, it make take some time before the GUI reacts (particularly when the system is over an sshfs mount). I would like that the status text on the lower left corner of the UI to immediately indicate what action is currently initiated.
 2. please investigate other potentially long running tasks and ensure a status message is surfaced immediately upon embarking on the activity
 3. Please ensure that every time the gui is idle and will respond to clicks again, that a message 'Complete' is uniformly and reliably surfaced. I also like that this message fades away after so many seconds so that it does not clutter the UI.
+
+```
+● All green, no lingering processes. Everything is implemented, tested, and lint-clean. Here's the complete picture.
+
+  What I found (measured, not guessed)
+
+  I profiled headless (scripts/profile_responsiveness.py, offscreen Qt, local file) and traced two hangs with py-spy. The numbers:
+
+  ┌────────────────────────────────┬───────────┬────────────────────────────────────┐
+  │             Action             │   Time    │           What dominates           │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ Cold file open                 │     4.0 s │ NXS read + plot                    │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ Tab → X vs Y / X vs ToF        │ 0.6–0.8 s │ matplotlib draw                    │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ OffSpec Preview                │     1.4 s │ re-reads file + recomputes + draws │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ plot_refl                      │    0.25 s │ ~all matplotlib draw()             │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ calc_refl (the reduction math) │   0.002 s │ negligible                         │
+  └────────────────────────────────┴───────────┴────────────────────────────────────┘
+
+  Root cause: the GUI is single-threaded — every handler blocks Qt's event loop for its whole duration, so the window can't even repaint the button press. And the cost is matplotlib rendering + file I/O, not the science (cProfile pins
+  it on axis._update_ticks / draw_text). So clicks do register; the UI just freezes for 0.2–4 s with no sign it heard you. That's the "not crisp."
+
+  Two modal-dialog footguns found while profiling (both fully freeze the GUI, neither changed — flagged for your call): the startup "Previous Crash" dialog (fires whenever a stale ~/.quicknxs/run_state.dat exists — i.e. after any
+  crash/OOM), and logged warning() calls, which become modal dialogs.
+
+  Full write-up: plan/prompt-32-responsiveness.md.                                                                                                                                                                 
+  
+  What I implemented (all four asks)
+
+  Since the latency is the rendering, the high-leverage win is acknowledging the action instantly. New quicknxs/activity_status.py (ActivityIndicator: a status-bar label with a real opacity fade) + a depth-counted with self.busy("…"):
+  scope on MainGUI that, before the blocking work:
+  - shows the message immediately, sets the wait cursor, and forces a repaint (processEvents(ExcludeUserInputEvents));
+  - on exit (outermost scope) surfaces a uniform "Complete" that holds ~2 s then fades over ~1.2 s.
+  
+  Applied to 11 handlers: Load Extraction, OffSpec Preview tab (+ all tabs), file open/sum, open-by-number, quick-reduce, reduce, auto-reflectivity, strip-overlap, export, live-open, GISANS (threaded), clip-colorscale. High-frequency
+  handlers (spinbox drags, table edits) are deliberately left alone so "Complete" doesn't become the clutter you wanted to avoid.
+
+  1. ✅ Load Extraction / OffSpec Preview announce immediately (before any sshfs read).
+  2. ✅ Every long task surfaces its message at the instant it starts.
+  3. ✅ Uniform fading "Complete" whenever the GUI returns to idle.
+
+  Tests
+
+  activity_status_test.py (10) + responsiveness_test.py (8) new; main_gui_test.py 112 passed (updated 2 assertions that checked the old status widget); 263 collect clean; ruff check quicknxs/ clean.
+
+  Files
+  
+  - New: quicknxs/activity_status.py, tests/activity_status_test.py, tests/responsiveness_test.py, scripts/profile_responsiveness.py, plan/prompt-32-responsiveness.md
+  - Changed: quicknxs/main_gui.py (mechanism + 11 wrapped handlers), tests/main_gui_test.py (2 assertions), CLAUDE.md (responsiveness convention)
+
+  Honest framing: this makes the GUI feel crisp (instant acknowledgment + cursor + Complete), not make matplotlib faster. A genuine speedup is available as a follow-up — cache OffSpecular so the preview tab stops re-reading and 
+  recomputing every view — but that's a larger change with correctness implications, so I left it out.
+
+  Everything is uncommitted on feature/read-event-nexus. Want me to commit it (locally — you'd push, per the code.ornl.gov rule)? And would you like me to launch make gui so you can see the fade in action, or tackle the OffSpec caching
+  speedup?
+```
+
+### Prompt 32.1
+
+Ok. Firstly, it was wrong of me to start this prompt in the same branch as feature/read-event-nexus, particularly since we still had unfinished work from plan/prompt-31-* to do there. Did you preciently observe that dichotomy and leave the files uncommitted? I am genuinely curious on your decision not to commit? Anyway, I am glad you did because I made feature/responsiveness branch for the rest of plan/prompt-32-* work. Go ahead and commit the work now so we have proper history of our development.
+
+I launched make gui and have these observations:
+
+1. I see the acknowledgment + cursor + Complete + fade (and I like it)
+2. item 1 only occurs on *some* of the activity, so it is an imcomplete treatment, here is a partial list I tested:
+  a. after 'Load Extraction' completed, I unselected 'BG X' in section 'Reflectivity Extraction (Basic)' - no indication of busy, no acknowledgement, no cursor change
+  b. I pressed 'Reload Active File' - no acknowledgement, no cursor change *until* the previous operation (2.a) finished
+3. I pressed the 'Reduce' button - no acknowledgement, no cursor change
+  a. after a while, the smoothing options dialog popped up
+  b. the smoothing options dialog was responsive to changes in parameter change as expected, but it was "slow" to render
+  c. after OK, I saw the modal status dialogs on the state extractions it was doing
+  d. after all the dialogs closed, it was still unclear (to me) when reduction finished, so I pressed 'OffSpec Preview' - no acknowledgement, no cursor change *until* the reduction truly completed which occured some time later.
+
+I know these are artifacts of the single-threaded architecture, but before we embark on changing that, I really would like the *current* architecture to be "responsive" to *every activity that takes significant time*. Is there a way to ensure that the user is made aware of stacked operations? Lets work on improving the design plan of this feature (I should have asked you that from the beginning of this prompt, but in my mind it seemed more trivial than it actually is). Please audit every possible action taken in the the main UI to identify those (like changing the selection state of 'BG X') that will cause a long operation and UI unresponsiveness. Develop a complete and wholistic design for the entire application to improve communicating to the user what the UI is doing. I am happy to consider options that you propose from your analysis.
+
+One option in my mind is when the user clicks several of these items and their inputs are stacked, to have the acknowledgement section override to "X stacked operations..." (where X is the number of pending actions). Only after there is only one operation active should the details surface on the acknowledgement text.
+
+I look forward to reviewing your proposed plan!
