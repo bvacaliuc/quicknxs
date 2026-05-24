@@ -1500,3 +1500,129 @@ I know these are artifacts of the single-threaded architecture, but before we em
 One option in my mind is when the user clicks several of these items and their inputs are stacked, to have the acknowledgement section override to "X stacked operations..." (where X is the number of pending actions). Only after there is only one operation active should the details surface on the acknowledgement text.
 
 I look forward to reviewing your proposed plan!
+
+```
+● The design is captured in plan/prompt-32-responsiveness-design.md. Here's the essence.
+
+  The audit (88 connections → ~30 handlers) sorts into four buckets:
+  - A. Heavy & discrete (one gesture → one replot/reduce/IO): ~20 handlers. Phase 1 wrapped ~11; ~9 are still bare — exactly your cases: BG‑X toggle (changeRegionValues), channel radios, Normalize, Clear/Remove, format toggles
+  (folderModified, sshfs glob), table edits, and Reduce (I'd skipped it because it opens a modal dialog).
+  - B. Heavy & continuous (spinbox drags, already debounced): wrapping each tick would flash "Complete" repeatedly — needs coalesced status instead.
+  - C. Dialog‑openers: want an "Opening…" ack but no wait cursor during the modal.
+  - D. Instant: no feedback needed.
+  
+  The hard part — stacked clicks (3d, 2b). While a slot runs, Qt's loop is blocked, queued clicks aren't dispatched, and Qt never exposes its pending‑event count. So the only way to show "X stacked operations…" is to intercept user
+  actions into our own queue and drain them ourselves — exactly your instinct. I designed that (re‑wire the user signals through a dispatch() that enqueues; a drain() loop runs each real handler then processEvents() to ingest clicks
+  that piled up; status shows "N pending…" when >1, the specific label when 1, then fading "Complete"). Handlers stay synchronous internally, so the test suite and internal call‑chains are unaffected.
+
+  Honest limit without threading: one uninterruptible call (a single big draw() or numpy step) still blocks for its duration; the queue shrinks the blind window from "the whole operation" to "one inner step," and acknowledges the
+  backlog the instant that step returns. Fully eliminating it is the threading phase you want to defer.
+
+  A few decisions shape what I build next:
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Scope  ☐ Stacked text  ☐ Wait cursor  ✔ Submit  →
+
+How much should I implement now?
+
+  1. 2a + 2b together             ┌───────────────────────────────────────────────────────┐
+❯ 2. 2a first, then review        │ Phase 2a only:                                        │
+  3. Prototype 2b on one path     │ - every heavy action shows its message + cursor       │
+                                  │ - spinbox drags show 'Adjusting…' then one Complete   │
+                                  │ - NO stacked count yet (clicks ack when they run)     │
+                                  └───────────────────────────────────────────────────────┘
+
+←  ☒ Scope  ☒ Stacked text  ☐ Wait cursor  ✔ Submit  →
+
+Wording when operations stack up?
+
+  1. N operations pending…        ┌───────────────────────────────────────────────────────┐
+  2. Working… (N queued)          │ Reducing datasets…  (+2 queued)                       │
+ 3. Current label + (+N      ✔    │ Reducing datasets…  (+1 queued)                       │
+   queued)                        │ Rendering off-specular preview…                       │
+                                  │ Complete                                              │
+                                  └───────────────────────────────────────────────────────┘
+←  ☒ Scope  ☒ Stacked text  ☐ Wait cursor  ✔ Submit  →
+
+Wait cursor for quick (sub-second) actions?
+
+  1. Always show it               ┌───────────────────────────────────────────────────────┐
+❯ 2. Only past ~200 ms            │ Wait cursor appears only if the op runs >200 ms;      │
+                                  │ quick replots keep the normal pointer.                │
+                                  └───────────────────────────────────────────────────────┘
+```
+
+Claude worked...
+
+```
+● Committed Phase 2a as dfc946e. Here's where things stand.
+
+  Phase 2a — done & committed (on top of phase 1)
+
+  The audit (all 88 signal connections, in plan/prompt-32-responsiveness-design.md) showed phase 1 covered ~half the heavy actions. Phase 2a closes the rest:
+
+  - Your 2a (BG‑X toggle) → now shows "Adjusting extraction region…" via a new coalesced path (_activity_transient / busy_until_idle): the message holds during a drag and settles to one fading "Complete" — no per‑tick flicker. Same for
+  the off‑spec/GISANS color‑scale spinboxes and the overwrite fields.
+  - Your 3 (Reduce had no ack) → now "Opening reduction options…" the instant you click, then "Complete" when the dialog/reduction returns.
+  - Plus every other discrete action that replots/recomputes: channel switch, Normalize, Clear/Remove, reduction‑table edits, format toggles (folderModified's sshfs glob), peak‑finding, and all the "Open …" dialog launchers.
+
+  Wait cursor — your "only past 200 ms" choice: implemented honestly by action class, not a timer. A synchronous slot blocks the event loop, so a live 200 ms timer can never fire mid‑op; instead heavy discrete ops show the cursor and
+  quick/continuous ones never do — which is exactly "quick replots keep the normal pointer," without flicker. (Noted in the commit and the design doc.)
+
+  Tests: activity_status_test.py 15, responsiveness_test.py 14, full main_gui_test.py 112 — all green; ruff clean.
+
+  What 2a does not fix yet (your 2b and 3d — the stacked cases)
+
+  When you clicked Reload during the BG‑X replot, and OffSpec during the reduction, the click sat in Qt's queue with no acknowledgement until the running op finished. That's the single hard constraint: while one slot blocks, Qt won't
+  dispatch the queued click and never exposes its pending count. The only fix is the deferred command queue (Mechanism 3 in the design) that intercepts user actions into our own queue and shows your Reducing datasets… (+2 queued) format
+   — which I've designed but not built, per your "2a first, then review."
+  
+  Your move
+
+  - Try it: git pull (you're on feature/responsiveness) then make gui — exercise BG‑X, Reduce, channel switch, format toggles, etc.
+  - Two commits are local only (9b8038d, dfc946e) — code.ornl.gov is read‑only, so the pushes are yours when you're ready.
+  - Say the word and I'll build Phase 2b (the deferred queue + (+N queued)); the design and the open risks are written up in plan/prompt-32-responsiveness-design.md for your review.
+
+  Want me to proceed with 2b, or do you want to test 2a on the real GUI first?
+```
+
+### Prompt 32.2
+
+I tested it with the real GUI on analysis.sns.gov. Its not bad. The immediate feedback thru the acknowledgement gives a decent signal to the user that things are happening. Lets leave the plan where it sits as a work-in-progress and merge this 'feature/responsiveness' and 'feature/read-event-nexus' into origin/next at this point. We have done alot of work on these two features and its time to bake-in our progress. We will keep all plan/** files we have added so that future sessions can audit what has been done and what still needs todo. Please perform a retrospective and update any files with new learnings. Oh, and I did want to ask about why you thought you shouldn't commit from my prompt - I will need to find that and fix it because I absolutely want commits to happen when you finish a bout of work - its only the push that I would like to reserve for me to do. I think I'm ok with stacking several commits during a session. I'm also concerned about the ease with which you create folders outside of the starting folder and its sub folders - I've made it possible for you write to all that you need within the ~/Projects/Claude/{session}/** framework. I have referenced files outside of this to be reviewed as read-only (typically). You may always do whatever you need with /tmp/**, just please if you do repo operations requiring writes there do not leave uncommitted or unpushed files without making me aware that you did that and I need deal with the push part. Thanks for improving our cross-project knowledge transfer system - its a learning experience to be sure!
+
+```
+● Done. Here's the wrap-up, leading with your question.
+
+  Why I didn't commit (and the fix)
+
+  It wasn't foresight — it was a rule. My harness system prompt says "Commit or push only when the user asks." That's a Claude Code default, not anything in your CLAUDE.md, which is why you couldn't find it. CLAUDE.md overrides harness
+  defaults, so I fixed it there:
+
+  - Parent CLAUDE.md (committed b4382b8 on dragonfly) now has a "Committing is expected (do not wait to be asked)" section: commit on finishing each logical bout of work, stacking several commits per session is welcome, commit freely / 
+  push never.
+  - "Pushing is a human action" generalized to every push, every remote (your reservation) — I removed the old "push the GitHub repos normally" carve-out. code.ornl.gov stays additionally read-only.
+  - New "Write scope" section: confine writes to ~/Projects/Claude/{session}/** and /tmp/**; flag out-of-scope writes instead of doing them silently; surface any uncommitted/unpushed repo state.
+
+  Merges (local — yours to push)
+
+  Both features are merged into next with regular --no-ff commits, zero conflicts (next was a strict ancestor; responsiveness already contained read-event-nexus):
+  - next → c8b8bc7, 109 commits ahead of origin/next; 29 sanity tests pass on it.
+  - Push caveat: your own branch protection on next (enforce_admins:true + required CI) will reject a direct push. Land it via a PR from feature/responsiveness → next, or relax protection. feature/responsiveness (+1) and
+  feature/read-event-nexus (+6) are also unpushed.
+
+  Retrospective updates
+
+  - Parent CLAUDE.md — the three policy/scope changes above (b4382b8, dragonfly; pending main round-trip, batched with the prior dragonfly knowledge commits).
+  - Memory: gitlab-readonly updated (all-pushes-human + the new pending pushes); new quicknxs-embedded-pat security note.
+  - py-spy-for-hangs was already in setup/patterns/native-crash-and-hang-diagnosis.md — no change needed. All plan files kept as the WIP audit trail, as you asked.
+
+  Three things for you (per the rule I just wrote)
+
+  1. Pushes pending (all yours): quicknxsv1 next + the two feature branches (GitHub, via PR); parent dragonfly b4382b8 (+ the main round-trip, code.ornl.gov when writable).
+  2. Out-of-scope write I made: py-spy → ~/.local/bin/ (via uv tool install, before the write-scope rule existed). Remove with uv tool uninstall py-spy if unwanted.
+  3. Pre-existing parent uncommitted state I deliberately left alone: M mr_reduction, M quicknxsv1 (submodule pointers), ?? mantid/.
+
+  And the security item from earlier still stands: rotate that GitHub PAT embedded in quicknxsv1/.git/config (tracked in the new memory).
+
+  Glad the immediate-feedback approach felt right on analysis.sns.gov — and thanks for the calibration on commits and write scope; both are baked into CLAUDE.md now so future sessions inherit them.
+```
