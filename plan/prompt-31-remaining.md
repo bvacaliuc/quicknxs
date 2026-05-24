@@ -46,6 +46,30 @@ fixtures — OOM). Keep `CalcReflParamsFreshFileReseed` + `RoleDecoupling` green
 **User/display smoke test:** fresh-load 44035 → spinbox `x_width≈24`,
 `y_width≈100` regardless of previously-active refl. (prompt-30 AC1)
 
+**STATUS (Session B, 2026-05-24): DONE + numerically validated** (commit
+`81363ae`). `get_xregion(data, role)` in `qcalc.py`: `role='db'` = tails
+(max/10, like `get_yregion`); `role='refl'` = FWHM (max/2). `calcReflParams`
+reseeds `refXWidth` from `get_xregion(data,'db')` on fresh files (hardcoded
+`'db'` — `active_role` defaults to `'refl'` and would mis-narrow a fresh DB;
+position still from `get_xpos`). Green: `qcalc_test` (18),
+`CalcReflParamsFreshFileReseed`+`RoleDecoupling` (7), 34 file/region GUI tests;
+`ruff` clean on `quicknxs/`. Headless validation vs v2 headers
+(`/tmp/validate_xregion.py`, real DB loads):
+
+| run | v1 x_center | v1 xw(db) | v2 x_pos | v2 x_width |
+|---|---|---|---|---|
+| 44033 | 227.0 | 8 | 227.0 | 12 |
+| 44034 | 229.5 | 13 | 228.5 | 16 |
+| 44035 | 231.0 | 22 | 230.5 | 24 |
+
+x_center matches x_pos to ~1px; `xw(db)` is correctly ordered and within ±4px
+but **systematically narrow by 2–4px** (FWHM/refl threshold 4/8/17 is far too
+narrow — confirms tails is right). The undershoot likely reflects v2's
+round-up-pixel / boundary convention; exact parity would need reading v2's
+x_width code, not curve-fitting 3 points. Adequate as an auto-seed (AC1 "≈24"
+met: fresh 44035 → 22, vs the stale 17 it replaces). **Remaining:** GUI display
+smoke test (fresh-load 44035 → spinbox ~22–24) — needs a display; hand to user.
+
 ## 3 — Phase 3: prompt-30 Layer 2 hygiene  (small, careful; see prompt-30-remaining.md)
 Fresh-file→DB capture in `setNorm`; position-vs-policy split in
 `ExtractionRegion`; `changeRegionValues` snapshot-capture; `plotPickX/Y/XY` via
