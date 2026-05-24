@@ -1323,4 +1323,43 @@ For this prompt, please delay execution for 2hours (my token limit is up). You a
 
 Isn't that nice? :)
 
+```
+● Retry failed differently (publickey denied) — the first attempt authenticated fine (it reached the server-side hook), so this is intermittent ORNL GitLab/agent trouble, not a problem with the commit. The pattern commit ffdcc21 is
+  safely in ../main/, 1 ahead of origin/main, clean tree — it just needs a push when GitLab access is restored. I won't loop on it.
+
+  All four tasks are complete. Here's the session summary.
+
+  Session A (prompt-31 Phase 1) — done
+
+  What I set out to do: Phase 1 of plan/prompt-31-plan.md — fix the specular intensity that's ~3.2× dim vs quicknxsv2, which the plan attributed to the hardcoded 0.005 beam-footprint constant in qreduce.py.
+
+  Key finding — the plan's hypothesis is wrong, and I did not ship the proposed fix:
+  - quicknxsv2 (data_set.py:301), its notebook (event_reduction.py:70), and the canonical mr_reduction (reflectivity_output.py:99-115) all use the identical area_ratio × 0.005/sin(θ) scaling v1 uses. Replacing 0.005 would have broken
+  the match, not fixed it.
+  - The real offset is not a global constant — it's angle-correlated per-run: median v1/ref ≈ 0.38 / 0.31 / 0.19 at ai = 0.0079 / 0.0195 / 0.0483 (same DB, ROI, scale). The "3.2×" was a stitched-curve median masking that drift (RMS ~0.6
+   dex).
+  - The On_Off cross-section gives 0.41 / 0.14 / 0.15 — so it's not even a clean f(ai); it also varies with cross-section. The differentiator lives inside Mantid's MagnetismReflectometryReduction (C++, not on this machine).
+  
+  Committed & pushed to GitHub (feature/read-event-nexus, commits f77204b, dfe52eb):
+  - scripts/diag_specular_decompose.py — reproducible per-segment decomposition
+  - corrected write-ups in plan/prompt-31-load-reduced-data.md and plan/prompt-31-plan.md, redirecting the next session
+  
+  Why no qreduce.py change: per the "definitive diagnosis before code change" principle — the root term is in Mantid internals I can't read here, and the residual is structured (angle + spin), so any one-line fix would be speculative.
+
+  Next session needs: Mantid MagnetismReflectometryReduction.cpp, or a Mantid env to run v2/mr_reduction per-run, to characterize the exact normalization before touching _calc_normal/_calc_fan.
+
+  Two loose ends for you:
+  1. I added a validated lesson to setup/patterns/numerical-diagnostics.md (a clean median factor can hide a structured residual — disaggregate first). It's committed in ~/Projects/Claude/main (ffdcc21) but the push to code.ornl.gov was
+   rejected (GitLab internal API down, then publickey) — please run git -C ~/Projects/Claude/main push origin main when access is back.
+  2. I deliberately skipped merging main → dragonfly because the parent repo has your staged MM quicknxsv1 pointer and I didn't want to entangle it.
+```
+
+### Prompt 31.1
+
+Hmmm. So code.ornl.gov has become readonly for many accounts at this time. Please make a memory for all sessions on this machine that is is currently not possible to push anything to code.ornl.gov until further notice. This means the setup/patterns/numerical-diagnostics.md has to be added to the dragonfly branch of the parent project. I have an issue with the way you implemented this: you created a new project in ~/Projects/Claude/main to add this, but there was a 'main' branch in the folder that you were started in (~/Projects/Claude/1/**). Why did you feel the need to create a new folder? Have you not switched branches to code into 'main' before? Why the new behavior to create new folders outside the space you are working in? Anyway, I have commited the file with the same message, please make a note that we still have to update main and round-trip that task.
+
+I am beginning to regret what I said about pushes. The reason code.ornl.gov has become readonly is reportedly due to 'bots' and I fear I may have contributed to this with requiring pushes when a session goes idle. I think we should return to the instructions where pushes are for the human collaborator (except in certain cases where an autonomous agentic system is active in which communication through the git repository is explicit). Please update the cross-project patterns in your parent repos.
+
+Once you have finished that, I would like to start a new session. Please make sure that the plan/prompt-31-remaining.md contains the items that you consider still need to be dealt in this session. Thank you for understanding!
+
 
