@@ -1626,3 +1626,10 @@ I tested it with the real GUI on analysis.sns.gov. Its not bad. The immediate fe
 
   Glad the immediate-feedback approach felt right on analysis.sns.gov — and thanks for the calibration on commits and write scope; both are baked into CLAUDE.md now so future sessions inherit them.
 ```
+
+Ok, so that was silly, 'next' is a protected branch and I need to make a PR for this if we are going to put it into next. So now we have this situation:
+
+* 'feature/read-event-nexus' - work-in-progress, [prompt-31-remaining.md](prompt-31-remaining.md)
+* 'feature/responsiveness' - work-in-progress, based on top of 'feature/read-event-nexus', [prompt-32-responsiveness-design.md](prompt-32-responsiveness-design.md) of which we have done 2a and have 2b and 3 pending.
+
+I think what I will do is start a new session in feature/read-event-nexus to continue the prompt-31-remaining work, but to first merge 'feature/responsiveness' so that feature/read-event-nexus is the branch that the PR will target.
