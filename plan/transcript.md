@@ -1362,4 +1362,33 @@ I am beginning to regret what I said about pushes. The reason code.ornl.gov has 
 
 Once you have finished that, I would like to start a new session. Please make sure that the plan/prompt-31-remaining.md contains the items that you consider still need to be dealt in this session. Thank you for understanding!
 
+```
+● Policy section reads cleanly. Everything you asked for is done — here's the rundown.
+
+  On the folder question: I didn't create ~/Projects/Claude/main — it already existed as a sibling clone, and I wrongly chose to hop into it rather than git checkout main in my own working clone. The trigger was over-caution about your
+  staged MM quicknxsv1 pointer. I've recorded the correction (switch branches in place; never hop clones) and baked it into CLAUDE.md too.
+
+  What I did this turn:
+  - Memory — added gitlab-readonly.md (code.ornl.gov is read-only / no pushes until further notice, with the pending main round-trip TODO) and feedback_branch-switching.md, both indexed in MEMORY.md.
+  - Push policy reverted to human-only — rewrote CLAUDE.md ("Pushing is a human action" + Syncing / Cross-project-distribution / CLAUDE.md-edits sections) and aligned setup/docs/architecture.md + getting-started.md. Agents now commit;
+  the human pushes — except an explicitly authorized multi-agent git workflow. Committed on dragonfly as b2518ed (your pattern commit aeca94d is already there).
+  - plan/prompt-31-remaining.md — created and committed (a1d32e6 on feature/read-event-nexus). Covers the deferred Phase-1 fix (needs Mantid), Phases 2–5, and the ops follow-ups.
+  
+  Committed, not pushed (yours to push, per the new policy):
+  - feature/read-event-nexus (quicknxsv1 → GitHub, not blocked): 0d72436 (yours) + a1d32e6.
+  - dragonfly (parent → code.ornl.gov, blocked/read-only): b2518ed (+ aeca94d) — and the duplicate local-only ffdcc21 in ~/Projects/Claude/main to reconcile during the eventual main round-trip.
+
+  Ready for the new session — plan/prompt-31-remaining.md is in place as the entry point.
+
+  One optional flag: quicknxsv1's own CLAUDE.md still tells agents to auto-enable PR auto-merge on GitHub. That's project-specific and a different remote, so I left it — say the word if you want the human-push philosophy extended there
+  too.
+```
+
+### Prompt 31.2
+
+Thank you, Claude. You are right about ~/Projects/Claude/main - I probably created that. You were right to correct my statement that you created it. I like that you notice small inaccuracies in my statements. Coding is an extremely precise undertaking. Please keep being precise like this! May I make a small variation to the cross-project pattern you just modified? Here is what I would like:
+
+In the 'Cross-project knowledge distribution flow' section, previously (as in commit aeca94d) when discovering a reusable pattern the directive was to implment it on 'main' then merge to the working branch. That was the right workflow, in my mind. It was only the 'push' part that needed adjustment. Can you restore that and remove all that stuff about once the human round-trips it? The only difference should be that pushes need to be done by a human; that means the human may need to push two things:  the main and the working branches. I am willing to accept that responsibility until pushes are allowed again. Perhaps it should only be restricted to remotes that include code.ornl.gov, since its the only git server that I know which reactively disables accounts when 'bot' activity is detected. Such luddites, don't you think?
+
+ 
 
