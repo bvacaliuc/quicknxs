@@ -637,7 +637,11 @@ class FileLoadingFixes(unittest.TestCase):
     self.assertFalse(result)
 
   def test_open_by_number_not_found_shows_statusbar(self):
-    """openByNumber() shows a status bar message when run is not found."""
+    """openByNumber() surfaces a message when run is not found.
+
+    Status now flows through the uniform activity indicator (the lower-left
+    status channel) rather than QStatusBar.showMessage directly.
+    """
     from quicknxs.config import instrument
     orig = instrument.data_base
     try:
@@ -645,7 +649,7 @@ class FileLoadingFixes(unittest.TestCase):
       self.gui.openByNumber('888888')
     finally:
       instrument.data_base = orig
-    self.assertIn('888888', self.gui.ui.statusbar.currentMessage())
+    self.assertIn('888888', self.gui.activity_indicator.text())
 
   @unittest.skipUnless(hasattr(__import__('signal'), 'SIGALRM'), 'SIGALRM not available')
   def test_open_by_number_sigalrm_timeout(self):
@@ -653,7 +657,7 @@ class FileLoadingFixes(unittest.TestCase):
     with patch('quicknxs.main_gui.locate_file', side_effect=TimeoutError('sshfs stall')):
       result = self.gui.openByNumber('40205')
     self.assertFalse(result)
-    self.assertIn('timed out', self.gui.ui.statusbar.currentMessage().lower())
+    self.assertIn('timed out', self.gui.activity_indicator.text().lower())
 
   # ── fileOpenDialog / fileOpenSumDialog ────────────────────
 
