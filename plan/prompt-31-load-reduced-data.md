@@ -243,7 +243,7 @@ real `HeaderParser` path; ~1 min over sshfs) prints the per-segment table
 above. `scripts/validate_load_reduced_specular.py` gives the stitched median.
 
 ### Next session — do this BEFORE any qreduce.py change (no speculative fix)
-1. Read Mantid `MagnetismReflectometryReduction.cpp` (mantidproject/mantid,
+1. Read Mantid `MagnetismReflectometryReduction.cpp` (populated checkout at ~/Projects/Claude/1/mantid,
    `Framework/Reflectometry/`) and find the angle/wavelength-dependent
    normalization between summing the peak and dividing by the direct beam —
    candidate suspects: constant-Q rebinning weighting, a solid-angle/`dQ`

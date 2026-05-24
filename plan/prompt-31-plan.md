@@ -93,7 +93,7 @@ underlying offset is actually angle-dependent (see above).
   Added `scripts/diag_specular_decompose.py`; findings written up.
 - [ ] **(Next session, needs Mantid)** Characterize the exact angle law f(ai)
   the reference carries — by reading `MagnetismReflectometryReduction.cpp`
-  (mantidproject/mantid `Framework/Reflectometry/`) OR running v2/mr_reduction
+  (populated checkout at ~/Projects/Claude/1/mantid `Framework/Reflectometry/`) OR running v2/mr_reduction
   per-run to divide v2 RAW R(Q) by v1 RAW R(Q). Target: reproduce 0.38/0.31/0.19.
 - [ ] Only after f(ai) is understood: port it into `_calc_normal`/`_calc_fan`,
   add a unit test pinning f(ai) for a known dataset, validate ratio→1 on ≥2

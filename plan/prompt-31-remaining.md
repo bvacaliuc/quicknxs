@@ -28,11 +28,11 @@ plan's original "replace the hardcoded `0.005`" hypothesis is DISPROVEN).
   this machine; Mantid not importable in v1's env).
 - **Reproduce:** `pixi run python scripts/diag_specular_decompose.py`.
 - **Next steps (before any qreduce.py edit):** read
-  `MagnetismReflectometryReduction.cpp` (mantidproject/mantid,
+  `MagnetismReflectometryReduction.cpp` (populated checkout at ~/Projects/Claude/1/mantid,
   `Framework/Reflectometry/`) to find the angle/wavelength term between summing
   the peak and dividing by the direct beam (suspects: constant-Q rebinning
   weight, solid-angle/dQ Jacobian, per-pixel sin/cos); OR run v2/mr_reduction
-  per-run (populated checkout at `~/Projects/Claude/2/mr_reduction`, branch
+  per-run (populated checkout at `~/Projects/Claude/1/mr_reduction`, branch
   `next`; needs a Mantid env — heavy, watch OOM) and divide v2 RAW R(Q) by v1
   RAW R(Q) to measure the exact term. Then port into `_calc_normal`/`_calc_fan`,
   add a unit test pinning the term for a known dataset, validate ratio→1 on ≥2
