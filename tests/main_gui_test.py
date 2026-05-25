@@ -1946,6 +1946,48 @@ class PcolormeshWarningFilter(unittest.TestCase):
                     'warnings unrelated to monotonicity must be re-emitted')
 
 
+class SmoothDialogDataDrivenLimits(unittest.TestCase):
+  """SmoothDialog axis limits, region box and sigma track the actual data
+  extent (no longer hardcoded +/-0.035 view / +/-0.03 region / 0.0005 sigma).
+  No set_aspect is applied -- the kernel honestly reflects the axis scales."""
+
+  def _dialog(self, kdiff_min, kdiff_max, qz_max):
+    import numpy as np
+    from quicknxs.gui_utils import SmoothDialog
+    ny, nx=6, 20
+    item=np.zeros((ny, nx, 6))
+    item[:, :, 2]=np.linspace(kdiff_min, kdiff_max, nx)   # ki_z (kf_z=0 -> ki_z-kf_z spans data)
+    item[:, :, 1]=np.linspace(0.0, qz_max, ny)[:, None]   # Qz spans [0, qz_max]
+    item[:, :, 5]=1.0                                      # I>0 everywhere
+    parent=QMainWindow()
+    dia=SmoothDialog(parent, [item])
+    dia.ui.kizmkfzVSqz.setChecked(True)
+    dia.drawPlot()
+    return dia, parent
+
+  def test_xlim_tracks_data_not_hardcoded(self):
+    dia, parent=self._dialog(kdiff_min=-0.11, kdiff_max=0.086, qz_max=0.37)
+    xlo, xhi=dia.ui.plot.canvas.ax.get_xlim()
+    self.assertAlmostEqual(xlo, -0.11, places=3,
+                           msg='x lower limit must track the data, not the old -0.035')
+    self.assertAlmostEqual(xhi, 0.086, places=3,
+                           msg='x upper limit must track the data, not the old +0.035')
+    # region box (grid spin fields) sits inside the data extent, not at +/-0.03
+    self.assertLess(dia.ui.gridXmin.value(), -0.05,
+                    'gridXmin must be data-driven (~ -0.10), not the old -0.03')
+    self.assertGreater(dia.ui.gridXmax.value(), 0.05)
+    dia.destroy()
+    parent.deleteLater()
+
+  def test_ylim_tracks_qz_data(self):
+    dia, parent=self._dialog(kdiff_min=-0.11, kdiff_max=0.086, qz_max=0.37)
+    ylo, yhi=dia.ui.plot.canvas.ax.get_ylim()
+    self.assertAlmostEqual(yhi, 0.37, places=2,
+                           msg='y upper limit must track the Qz data extent')
+    dia.destroy()
+    parent.deleteLater()
+
+
 # ──────────────────────────────────────────────────────────────
 #  Test suite registration
 # ──────────────────────────────────────────────────────────────
@@ -1990,3 +2032,4 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(RoleDecoupling))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(WidgetDisposalSafety))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(QtHandlerStatusbarOptOut))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(PcolormeshWarningFilter))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDialogDataDrivenLimits))

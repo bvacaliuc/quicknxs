@@ -666,74 +666,92 @@ class SmoothDialog(QDialog):
   def drawPlot(self):
     '''
       Plot the unsmoothed data.
+
+      Axis limits, the grid/region box and the sigma-kernel size are all
+      derived from the actual data extent.  (Formerly hardcoded: +/-0.035
+      view, +/-0.03 region, 0.0005 sigma -- which clipped the off-spec fan and
+      stretched the kernel.)  ``grid_percentage`` / ``sigma_percentage`` mirror
+      quicknxsv2's smooth_dialog.
+
+      No ``set_aspect`` is applied: a sigma_x==sigma_y kernel is a circle in
+      *data* units, so it looks elongated when the x and y ranges differ.  That
+      honestly reflects the real axis scales and is intended -- we do not
+      distort the axes to round out the spot.
     '''
     self.drawing=True
     try:
       data=self.data
       plot=self.ui.plot
       plot.clear()
+      grid_percentage=0.05    # inset of the region box inside the data extent
+      sigma_percentage=0.005  # sigma spot as a fraction of the region size
+      min_sigma_size=0.0001   # floor so a narrow axis still shows a spot
       Qzmax=0.001
+      kizmkfz=self.ui.kizmkfzVSqz.isChecked()
+      qxqz=self.ui.qxVSqz.isChecked()
+      x_min=x_max=y_min=y_max=None
       for item in data:
         Qx=item[:, :, 0]
         Qz=item[:, :, 1]
         ki_z=item[:, :, 2]
         kf_z=item[:, :, 3]
         I=item[:, :, 5]  # noqa: E741
-
         Qzmax=max(ki_z.max()*2., Qzmax)
-        if self.ui.kizmkfzVSqz.isChecked():
-          plot.pcolormesh((ki_z-kf_z), Qz, I, log=True,
-                          imin=1e-6, imax=1., shading='gouraud')
-        elif self.ui.qxVSqz.isChecked():
-          plot.pcolormesh(Qx, Qz, I, log=True,
-                          imin=1e-6, imax=1., shading='gouraud')
+        if kizmkfz:
+          xdata=ki_z-kf_z
+          ydata=Qz
+        elif qxqz:
+          xdata=Qx
+          ydata=Qz
         else:
-          plot.pcolormesh(ki_z, kf_z, I, log=True,
-                          imin=1e-6, imax=1., shading='gouraud')
-      if self.ui.kizmkfzVSqz.isChecked():
-        plot.canvas.ax.set_xlim([-0.035, 0.035])
-        plot.canvas.ax.set_ylim([0., Qzmax*1.01])
+          xdata=ki_z
+          ydata=kf_z
+        plot.pcolormesh(xdata, ydata, I, log=True,
+                        imin=1e-6, imax=1., shading='gouraud')
+        # accumulate the data extent (where there is intensity) across items
+        mask=I>0
+        if not mask.any():
+          continue
+        xm=xdata[mask]
+        ym=ydata[mask]
+        x_min=xm.min() if x_min is None else min(x_min, xm.min())
+        x_max=xm.max() if x_max is None else max(x_max, xm.max())
+        y_min=ym.min() if y_min is None else min(y_min, ym.min())
+        y_max=ym.max() if y_max is None else max(y_max, ym.max())
+      if x_min is None or x_max<=x_min or y_max<=y_min:
+        # degenerate / empty intensity: fall back to a small symmetric window
+        x_min, x_max, y_min, y_max=-0.035, 0.035, 0., max(Qzmax, 0.01)
+      plot.canvas.ax.set_xlim([x_min, x_max])
+      plot.canvas.ax.set_ylim([y_min, y_max])
+      if kizmkfz:
         plot.set_xlabel(u'k$_{i,z}$-k$_{f,z}$ [Å$^{-1}$]')
         plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
-        x1=-0.03
-        x2=0.03
-        y1=0.
-        y2=Qzmax
         sigma_pos=(0., Qzmax/3.)
-        sigma_ang=0.
-        self.ui.sigmasCoupled.setChecked(True)
-        self.ui.sigmaY.setEnabled(False)
-        self.ui.sigmaX.setValue(0.0005)
-        self.ui.sigmaY.setValue(0.0005)
-      elif self.ui.qxVSqz.isChecked():
-        plot.canvas.ax.set_xlim([-0.0005, 0.0005])
-        plot.canvas.ax.set_ylim([0., Qzmax*1.01])
+        coupled=True
+      elif qxqz:
         plot.set_xlabel(u'Q$_x$ [Å$^{-1}$]')
         plot.set_ylabel(u'Q$_z$ [Å$^{-1}$]')
-        x1=-0.0002
-        x2=0.0002
-        y1=0.
-        y2=Qzmax
         sigma_pos=(0., Qzmax/3.)
-        sigma_ang=0.
-        self.ui.sigmasCoupled.setChecked(False)
-        self.ui.sigmaY.setEnabled(True)
-        self.ui.sigmaX.setValue(0.00001)
-        self.ui.sigmaY.setValue(0.0005)
+        coupled=False
       else:
-        plot.canvas.ax.set_xlim([0., Qzmax/2.*1.01])
-        plot.canvas.ax.set_ylim([0., Qzmax/2.*1.01])
         plot.set_xlabel(u'k$_{i,z}$ [Å$^{-1}$]')
         plot.set_ylabel(u'k$_{f,z}$ [Å$^{-1}$]')
-        x1=0.0
-        x2=Qzmax/2.
-        y1=0.
-        y2=Qzmax/2.
         sigma_pos=(Qzmax/6., Qzmax/6.)
-        sigma_ang=0.#-45.
-        self.ui.sigmasCoupled.setChecked(True)
-        self.ui.sigmaX.setValue(0.0005)
-        self.ui.sigmaY.setValue(0.0005)
+        coupled=True
+      sigma_ang=0.
+      # region box: inset from the data extent; seeds the grid spin fields
+      x1=x_min+(x_max-x_min)*grid_percentage
+      x2=x_max-(x_max-x_min)*grid_percentage
+      y1=y_min+(y_max-y_min)*grid_percentage
+      y2=y_max-(y_max-y_min)*grid_percentage
+      # sigma proportional to the region (separately in x and y), floored so a
+      # narrow axis (e.g. Qx) does not collapse the spot to nothing
+      sigma_x=max((x2-x1)*sigma_percentage, min_sigma_size)
+      sigma_y=max((y2-y1)*sigma_percentage, min_sigma_size)
+      self.ui.sigmasCoupled.setChecked(coupled)
+      self.ui.sigmaY.setEnabled(not coupled)
+      self.ui.sigmaX.setValue(sigma_x)
+      self.ui.sigmaY.setValue(sigma_x if coupled else sigma_y)
       if plot.cplot is not None:
         plot.cplot.set_clim([1e-6, 1.])
       self.rect_region=Line2D([x1, x1, x2, x2, x1], [y1, y2, y2, y1, y1])
