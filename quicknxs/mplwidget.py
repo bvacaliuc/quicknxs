@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 import os
 import tempfile
-import logging
-import warnings
 from qtpy import QtGui, QtCore, QtWidgets
 from qtpy.QtPrintSupport import QPrinter, QPrintPreviewDialog
 import matplotlib.cm
@@ -29,33 +27,6 @@ try:
     import matplotlib.backends.qt_editor.figureoptions as figureoptions
 except ImportError:
     figureoptions=None
-
-_log=logging.getLogger(__name__)
-
-# Session-once flag for the expected pcolormesh non-monotonic-coordinate
-# warning.  matplotlib emits "coordinates not monotonically increasing or
-# decreasing" for the curved, non-rectilinear Q-grids that off-specular maps
-# use (and for legitimately overlapping, un-stripped runs).  The mesh still
-# renders correctly, so we keep that out of stderr and note it once to the log
-# *file* only -- a genuine coordinate bug still leaves a breadcrumb there.
-_NONMONOTONIC_NOTED=False
-
-
-def _note_pcolormesh_warnings(caught):
-  '''Triage warnings captured around a pcolormesh draw: swallow the expected
-  non-monotonic-coordinate warning (noting it once per session, file-only via
-  ``extra={'no_statusbar': True}``) and faithfully re-emit every other warning.'''
-  global _NONMONOTONIC_NOTED
-  for w in caught:
-    if 'monotonic' in str(w.message).lower():
-      if not _NONMONOTONIC_NOTED:
-        _log.info(u'pcolormesh: non-monotonic coordinates (expected for curved '
-                  u'or overlapping off-specular Q-grids); rendering as-is, '
-                  u'further occurrences this session suppressed.',
-                  extra={'no_statusbar': True})
-        _NONMONOTONIC_NOTED=True
-    else:
-      warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
 
 class NavigationToolbar(NavigationToolbar2QT):
   '''
@@ -335,20 +306,13 @@ class MPLWidget(QtWidgets.QWidget):
     '''
       Convenience wrapper for self.canvas.ax.plot
     '''
-    # Off-specular Q-grids are curved/non-monotonic by nature; matplotlib's
-    # resulting warning is expected noise (see _note_pcolormesh_warnings).
-    # Capture warnings around the draw, swallow that one (file-only breadcrumb),
-    # re-emit the rest -- without touching coordinates or shading.
-    with warnings.catch_warnings(record=True) as caught:
-      warnings.simplefilter('always')
-      if self.cplot is None or not update:
-        if log:
-          self.cplot=self.canvas.ax.pcolormesh(datax, datay, dataz, norm=LogNorm(imin, imax), **opts)
-        else:
-          self.cplot=self.canvas.ax.pcolormesh(datax, datay, dataz, **opts)
+    if self.cplot is None or not update:
+      if log:
+        self.cplot=self.canvas.ax.pcolormesh(datax, datay, dataz, norm=LogNorm(imin, imax), **opts)
       else:
-        self.update(datax, datay, dataz)
-    _note_pcolormesh_warnings(caught)
+        self.cplot=self.canvas.ax.pcolormesh(datax, datay, dataz, **opts)
+    else:
+      self.update(datax, datay, dataz)
     return self.cplot
 
   def imshow(self, data, log=False, imin=None, imax=None, update=True, **opts):

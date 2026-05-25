@@ -1913,39 +1913,6 @@ class QtHandlerStatusbarOptOut(unittest.TestCase):
     self.assertEqual(len(h.logged_items), 1, 'record must still be buffered')
 
 
-class PcolormeshWarningFilter(unittest.TestCase):
-  """mplwidget suppresses matplotlib's expected non-monotonic pcolormesh
-  warning -- noting it once to the log file only -- while re-emitting any
-  other warning (prompt-31 #5)."""
-
-  def setUp(self):
-    import quicknxs.mplwidget as mw
-    mw._NONMONOTONIC_NOTED=False
-
-  def _wm(self, msg, category=UserWarning):
-    import warnings
-    return warnings.WarningMessage(category(msg), category, __file__, 0)
-
-  def test_nonmonotonic_noted_once_file_only(self):
-    import quicknxs.mplwidget as mw
-    warn=self._wm(u'coordinates not monotonically increasing or decreasing')
-    with patch.object(mw._log, 'info') as info:
-      mw._note_pcolormesh_warnings([warn])
-      mw._note_pcolormesh_warnings([warn])   # second occurrence stays quiet
-    self.assertEqual(info.call_count, 1, 'breadcrumb must be emitted once per session')
-    self.assertTrue(info.call_args[1].get('extra', {}).get('no_statusbar'),
-                    'breadcrumb must be file-only (no_statusbar)')
-
-  def test_other_warnings_are_reemitted(self):
-    import warnings
-    import quicknxs.mplwidget as mw
-    with warnings.catch_warnings(record=True) as caught:
-      warnings.simplefilter('always')
-      mw._note_pcolormesh_warnings([self._wm(u'unrelated deprecation', DeprecationWarning)])
-    self.assertTrue(any(u'unrelated deprecation' in str(w.message) for w in caught),
-                    'warnings unrelated to monotonicity must be re-emitted')
-
-
 class SmoothDialogDataDrivenLimits(unittest.TestCase):
   """SmoothDialog axis limits, region box and sigma track the actual data
   extent (no longer hardcoded +/-0.035 view / +/-0.03 region / 0.0005 sigma).
@@ -2031,5 +1998,4 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(CalcReflParamsFreshFil
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(RoleDecoupling))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(WidgetDisposalSafety))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(QtHandlerStatusbarOptOut))
-suite.addTest(unittest.TestLoader().loadTestsFromTestCase(PcolormeshWarningFilter))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDialogDataDrivenLimits))

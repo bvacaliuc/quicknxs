@@ -104,20 +104,22 @@ the #1 specular issue; its known discrepancy is bin-density (see prompt-28).
 `mplwidget.py:311` emits "coordinates not monotonically increasing/decreasing"
 on off-spec. Sanitize coords / shading without changing the science.
 
-**STATUS (Session B, 2026-05-25): DONE** (suppress, *not* sanitize).
-Investigation showed the message is **matplotlib's own** `UserWarning` (no
-quicknxs `warning()`; `captureWarnings` is unset → it goes to stderr, never the
-modal-dialog path), and it is **intrinsic** to off-spec Q-space rendering
-(curved, non-rectilinear grids; amplified by legitimately overlapping un-stripped
-runs). So the original "sanitize coords/shading" idea was rejected — re-gridding
-real overlapping data would alter the science (user's call: their prerogative).
-Instead `MplWidget.pcolormesh` wraps the draw in `catch_warnings`, swallows only
-the non-monotonic warning (coords/shading untouched), re-emits all others, and
-notes it **once per session to the log file only** via a new
-`extra={'no_statusbar': True}` opt-out honored by `gui_logging.QtHandler`
-(keeps the shared status bar uncluttered — reusable for future sanitization
-diagnostics). TDD: `QtHandlerStatusbarOptOut` (2), `PcolormeshWarningFilter` (2);
-regression-checked against off-spec/display/pcolormesh draws (12). ruff clean.
+**STATUS (Session B, 2026-05-25): OBSOLETE on the current stack — reverted.**
+Empirically, **matplotlib 3.10.8 does not emit this warning at all**: the
+string is absent from its `pcolormesh` source, and both a 2D-gouraud
+non-monotonic mesh and a 1D non-monotonic mesh warn zero times. The warning was
+removed upstream; the note above was true only on the *older* matplotlib used
+before this env moved to 3.10.8. The off-spec Q-grids *are* non-monotonic
+(curved — hence gouraud), but that is moot since matplotlib no longer checks.
+
+A `catch_warnings` suppression + file-only breadcrumb was briefly added (commit
+`8215df5`) then **reverted** once the above was confirmed: inert on 3.10.8, and
+its `simplefilter('always')` risked re-surfacing normally-filtered warnings.
+**Kept:** the reusable `gui_logging.QtHandler` `extra={'no_statusbar': True}`
+file-only-logging opt-out (+ `QtHandlerStatusbarOptOut` test) for future
+sanitization diagnostics that should stay off the shared status bar. **Lesson:**
+verify a warning still fires on the *pinned* matplotlib before building
+suppression for it.
 
 ## Ops / handoff follow-ups
 - **quicknxsv1 → GitHub** (allowed): commits `0d72436` and `a1d32e6` (+ this wording
