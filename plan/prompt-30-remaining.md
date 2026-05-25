@@ -37,6 +37,13 @@ items below and interactive verification.
 
 ## What remains (Layer 2 — needs interactive smoke test)
 
+> **UPDATE (2026-05-25):** Item 1 (`get_xregion`) **done + validated** (commit
+> `81363ae`; see `prompt-31-remaining.md` §2). Item 4 (`changeRegionValues`
+> snapshot) **done** (commit `fb60888`); item 5 **covered by it** (mouse
+> handlers fire `changeRegionValues`). Items **2, 3, 6 deferred** to the v1
+> frontend/backend modularization (user decision) — structural cleanup the
+> refactor will do more cleanly. Details in `prompt-31-remaining.md` §3.
+
 ### 1. `get_xregion(data, role)` — per-file x-width auto-detect  ← AC1 blocker
 
 The three direct beams in the REF_M 11486 reference have **different**

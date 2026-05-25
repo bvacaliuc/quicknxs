@@ -75,6 +75,23 @@ Fresh-file→DB capture in `setNorm`; position-vs-policy split in
 `ExtractionRegion`; `changeRegionValues` snapshot-capture; `plotPickX/Y/XY` via
 active region; `actionAutoYLimits` per-role. Each needs a user/display smoke test.
 
+**STATUS (Session B, 2026-05-25): clean wins DONE; remainder deferred to the
+v1 frontend/backend modularization (user decision).**
+- **DONE** `changeRegionValues` snapshot-capture (commit `fb60888`): edits to a
+  classified file are recorded into `region_db`/`region_refl`, keyed on the
+  file's *actual* role (fresh files skipped, so they can't pollute a role
+  region). TDD: 2 `RoleDecoupling` tests.
+- **COVERED** `plotPickX/Y/XY`: they set the final spinbox *unguarded*, so a
+  drag fires `changeRegionValues` → the snapshot above tracks the region. The
+  visual "drag still moves the lines" check wants a display (user).
+- **DEFERRED → quicknxsv1-modularization:** (2) fresh→DB capture robustness in
+  `setNorm`/`addRefList` (touches the stored `Reflectivity`); (3) position-vs-
+  policy split of `ExtractionRegion` (architectural — a known DB should re-fit
+  position while keeping role-policy widths); (6) per-role `actionAutoYLimits`
+  (largely moot given Fix A's fresh-file Y reseed). Rationale: structural
+  concerns the frontend/backend separation will address more cleanly; doing
+  them now risks regressions on code that refactor may restructure.
+
 ## 4 — Phase 4: off-spec reproduction fidelity vs v2  (after #1)
 Re-reduce off-spec at 400 bins (background, one at a time) and compare to
 `correctReduction/*OffSpecSmooth*` and `session12/` (coverage, log-I corr,
