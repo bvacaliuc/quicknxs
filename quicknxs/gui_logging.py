@@ -183,6 +183,12 @@ class QtHandler(logging.Handler):
       self.show_error(record)
 
   def show_info(self, record):
+    # Records logged with extra={'no_statusbar': True} are still buffered above
+    # and written to the log file by the file handler, but are kept off the
+    # shared status bar so routine diagnostics don't crowd out user-facing
+    # messages (the status bar is a single, easily-overloaded channel).
+    if getattr(record, 'no_statusbar', False):
+      return
     msg=record.msg
     if record.levelno!=logging.INFO:
       msg=record.levelname+': '+msg

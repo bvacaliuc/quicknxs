@@ -104,6 +104,21 @@ the #1 specular issue; its known discrepancy is bin-density (see prompt-28).
 `mplwidget.py:311` emits "coordinates not monotonically increasing/decreasing"
 on off-spec. Sanitize coords / shading without changing the science.
 
+**STATUS (Session B, 2026-05-25): DONE** (suppress, *not* sanitize).
+Investigation showed the message is **matplotlib's own** `UserWarning` (no
+quicknxs `warning()`; `captureWarnings` is unset → it goes to stderr, never the
+modal-dialog path), and it is **intrinsic** to off-spec Q-space rendering
+(curved, non-rectilinear grids; amplified by legitimately overlapping un-stripped
+runs). So the original "sanitize coords/shading" idea was rejected — re-gridding
+real overlapping data would alter the science (user's call: their prerogative).
+Instead `MplWidget.pcolormesh` wraps the draw in `catch_warnings`, swallows only
+the non-monotonic warning (coords/shading untouched), re-emits all others, and
+notes it **once per session to the log file only** via a new
+`extra={'no_statusbar': True}` opt-out honored by `gui_logging.QtHandler`
+(keeps the shared status bar uncluttered — reusable for future sanitization
+diagnostics). TDD: `QtHandlerStatusbarOptOut` (2), `PcolormeshWarningFilter` (2);
+regression-checked against off-spec/display/pcolormesh draws (12). ruff clean.
+
 ## Ops / handoff follow-ups
 - **quicknxsv1 → GitHub** (allowed): commits `0d72436` and `a1d32e6` (+ this wording
   fix) on `feature/read-event-nexus` are unpushed (`f77204b`, `dfe52eb` already on
