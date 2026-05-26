@@ -129,6 +129,43 @@ Artifacts in `session13/`: `v1-vs-v2-offspec-compare.png`,
 `v1-vs-v2-offspec-metrics.json`,
 `REF_M_44159+44160+44161_OffSpecSmooth_Off_Off-v1-paired-tof400.dat`.
 
+**CORRECTION + On_Off extension (2026-05-26, later).** The Off_Off result above
+compared v1 **paired** DBs against a reference whose data is actually
+**single-DB**: the session13 `-correct-db-id` file is byte-identical to the buggy
+`correctReduction` Off_Off — only the header DB_ID was relabeled 1→1/2/3, the data
+was **not** re-reduced (both v2 reference headers carry DB_ID=1/1/1). So that
+comparison mixed the DB-association difference into the ratio. Re-ran **matched**
+(v1 single, all→44033) for both channels; v1-paired served as a control and
+**confirmed the references are single-DB** (paired total matched worse: On_Off
+integrated 0.53 vs single 0.91; Off_Off 0.61 vs 1.35).
+
+Clean v1-vs-v2 (both single-DB, bins=400):
+
+| metric (v1/v2) | Off_Off | On_Off |
+|---|---|---|
+| log-Pearson overall | 0.870 | 0.860 |
+| log-Pearson specular | 0.947 | 0.944 |
+| log-Pearson off-spec | 0.850 | 0.840 |
+| median ratio (overall) | 0.154 | 0.175 |
+| specular median ratio | 0.246 | 0.276 |
+| off-spec median ratio | 0.148 | 0.168 |
+| integrated ratio | 1.35 | 0.91 |
+
+**Conclusions (both channels):** (1) **structure is faithful** — log-Pearson
+0.86–0.95; On_Off behaves like Off_Off, so the non-Mantid off-spec geometry is
+sound for the spin-flip channel too. (2) **per-pixel intensity ≈ 0.15–0.28× v2**
+across the map — the same angle-dependent v1-vs-Mantid scaling as #1, now
+confirmed in **both** polarization channels (Mantid-blocked). (3) A **localized
+bright feature in v1's low-angle 44159** (raw I≈25 vs ≈3–9 for 44160/61,
+db-independent) inflates the integral (integrated 0.9–1.35 despite low median) and
+drives the peak-location metric — distinct from the broad scaling; worth a
+separate look (possible low-angle normalization artifact). σ=0.0005 cannot cause a
+scale gap.
+
+Artifacts in `session13/`: `v1-vs-v2-offspec-{Off_Off-single,On_Off-single,
+On_Off-paired}-compare.{png,json}` and
+`REF_M_..._OffSpecSmooth_{Off_Off,On_Off}-v1-{single,paired}-tof400.dat`.
+
 ## 5 — Phase 5: pcolormesh non-monotonic warning  (cosmetic, low priority)
 `mplwidget.py:311` emits "coordinates not monotonically increasing/decreasing"
 on off-spec. Sanitize coords / shading without changing the science.
