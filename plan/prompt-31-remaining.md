@@ -182,6 +182,21 @@ the guard to a relative floor, `idxs = norm.Rraw > frac*norm.Rraw.max()`
 bins already fall through to the existing `S=0` mask. Pending decision (science-
 output change; optional Mantid cross-check of the masked band).
 
+**Mantid/v2 cross-check (2026-05-26): v2 normalizes off-spec by RAW DB counts, not
+background-subtracted — so the threshold idea is wrong; the fix is to match the
+normalization quantity.** quicknxsv2 `off_specular.py:113-125` uses the *identical*
+`idxs = norm_raw > 0` guard, but `norm_raw` is the summed **raw** direct-beam
+counts (no bg subtraction) → integer-zero at no-flux λ → cleanly masked. v1
+divides by `norm.Rraw = norm.I - norm.BG` (qreduce.py:2926, 3321); at a band edge
+the DB signal ≈ its own background, so `Rraw → ~1e-15` while the raw flux
+`norm.I` is ~1e-11 → v1 blows up, v2 doesn't. v1 already exposes the raw flux as
+`norm.I` (`Iraw/(size_I/scale)`, lines 2904-2905). **v2-matched fix:** in
+`_calc_offspec` normalize by `norm.I` (+`norm.dI`) and mask `idxs = norm.I > 0`,
+not `norm.Rraw`. Bulk ≈ unchanged (I≈Rraw where flux is good); only the edge
+blow-up is removed; the broad ~0.2× deficit is unaffected (that's the MRR #1
+scaling). `_calc_reflectivity`/`_calc_fan` share the `Rraw` normalization but the
+specular path is entangled with #1 — leave for the Mantid #1 work.
+
 ## 5 — Phase 5: pcolormesh non-monotonic warning  (cosmetic, low priority)
 `mplwidget.py:311` emits "coordinates not monotonically increasing/decreasing"
 on off-spec. Sanitize coords / shading without changing the science.
