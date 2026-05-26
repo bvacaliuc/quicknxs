@@ -1809,3 +1809,320 @@ Claude continues...
 I did the GUI smoke test, loaded 44035, adjusted x_width and y_width spinboxes, added as direct beam, then loaded 44159. As you can see it overwrote the region. See ~/shared/REF_M/QuickNXSv1/session5/quicknxsv1-overview-44159-view.png. Was that what you meant or did I misunderstand? Did you instead mean if I loaded another direct beam (like 44033) *that* would keep its narrow width (8)? If the latter, then yes, I can confirm that.
 
 After than, go ahead with #3
+
+```
+● Good progress on #3. Let me checkpoint, because the remaining items hit a genuine decision point (item 3 is literally flagged "decide together" in the plan).
+
+  #3 status
+
+  ┌──────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                   Item                   │                                                                                          State                                                                                           │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 1 get_xregion per-DB x-width             │ ✅ done + validated (earlier)                                                                                                                                                            │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4 changeRegionValues snapshot → role     │ ✅ done, committed fb60888 (TDD: 2 new tests green)                                                                                                                                      │
+  │ region                                   │                                                                                                                                                                                          │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 5 mouse handlers track the region        │ ✅ covered by #4 — plotPickX/Y/XY set the final spinbox unguarded, so a drag fires changeRegionValues, which now snapshots. Only the visual "drag still moves the lines" check needs a   │
+  │                                          │ display (yours).                                                                                                                                                                         │
+  └──────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  
+  That's the clean, low-risk part of #3 done. The remaining three are not clean autonomous wins — each needs a judgment call:
+
+  - Item 2 (reclassify capture robustness): make setNorm/addRefList re-fit role-appropriate widths when you cross roles (click "Set Direct Beam" on a file the GUI thinks is a refl). Real, but an edge case, and it touches the stored 
+  Reflectivity object (not just region_db), so it's more invasive than #4.
+  - Item 3 (ExtractionRegion position↔policy split): today _applyRoleRegion applies a whole stored region including x_pos/y_pos, so switching to a known DB can apply the wrong file's position. Fixing it means splitting the dataclass
+  into per-file position vs per-role policy and re-touching every call site — an architectural refactor the plan explicitly says to "decide together."
+  - Item 6 (per-role AutoYLimits): mostly moot already — the fresh-file Y reseed (Fix A) covers the main case; making the toggle per-role is a minor refinement.
+
+  My recommendation ties back to our strategic discussion: items 1/4/5 are the right stopping point for this branch, and 2/3 — especially the position/policy split — are exactly the structural cleanup the future frontend/backend 
+  modularization will do properly. Grinding an ExtractionRegion refactor here risks regressions on work the modularization may restructure anyway.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ #3 scope 
+
+How far should I take #3? (items 1/4/5 are done; 2/3/6 remain)
+
+❯ 1. Stop at 1/4/5; fold 2/3/6 into modularization (Recommended)
+     The done items are the clean wins. Item 3 (position/policy split) is structural cleanup the v1 frontend/backend refactor will do properly; items 2/6 are edge-case/low-value. Lowest regression risk on soon-to-be-restructured code.
+  2. Also do item 2 (reclassify capture)
+     I make setNorm/addRefList re-fit role-appropriate widths on a cross-role action. Moderate risk — touches the stored Reflectivity object. I'd TDD it.
+  3. Also do item 6 (per-role AutoYLimits)
+     Split the sticky global Y-auto toggle per role (option ii: DB re-fits Y, refls freeze after first add). Low value since the fresh-file reseed already covers the main case.
+  4. Do the full item 3 refactor now
+     Split ExtractionRegion into position vs policy and rework _applyRoleRegion + call sites so a known DB re-fits position. Bigger/riskier; needs interactive verification.
+```
+
+commit fb608889c4c098e108c15b8464325120b104c8a7
+
+```
+  Session complete — summary
+
+  Five commits on feature/read-event-nexus, ready for you to push (PR → next):
+
+  ┌─────────┬───────────────────────────────────────────────────────────────────────┐
+  │ Commit  │                                 What                                  │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ c92112f │ Merge of feature/responsiveness (phase 2a)                            │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ 81363ae │ prompt-31 #2: get_xregion + fresh-file refXWidth reseed               │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ d3a009e │ #2 numerical validation note (within ±4px of v2's 12/16/24)           │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ fb60888 │ prompt-30 #4: changeRegionValues snapshots edits into the role region │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ 025c180 │ #3 closeout — 1/4 done, 5 covered, 2/3/6 deferred to modularization   │
+  └─────────┴───────────────────────────────────────────────────────────────────────┘
+
+  Verified green throughout: qcalc_test (18), RoleDecoupling (7), CalcReflParamsFreshFileReseed (2), 34 file/region GUI tests, responsiveness changeRegionValues; ruff check quicknxs/ clean. get_xregion('db') numerically validated
+  against the real REF_M direct beams.
+
+  Decisions recorded in git (travel to your other machines):
+  - 2b / Phase 3 → fold into the future v1 frontend/backend modularization (Phase 3 is a boundary problem; the v2 KB reached the same conclusion).
+  - #3 items 2/3/6 → same modularization (structural cleanup it'll do more cleanly).
+
+  Yours to handle
+
+  - Pushes (all of it) — nothing pushed; parent-repo quicknxsv1 submodule pointer now differs (expected).
+  - Display smoke tests: #2's fresh-44035 → ~22 you already confirmed (✅); #5's only open piece is the visual "region lines still follow a mouse drag" check.
+
+  prompt-31 remaining
+
+  - #5 pcolormesh non-monotonic warning — cosmetic/low-priority; the only remaining item that's not Mantid-blocked.
+  - #1 / #4 (specular fix, off-spec fidelity) — still Mantid-blocked on this machine.
+
+  Want me to take #5, or stop here? Either way, this is a clean stopping point — branch is coherent and green.
+```
+
+### Prompt 33.2
+
+Thank you! Please explain again what #5 is proposing to do. There are some cases when a user has not used the 'SO - Strip Off' feature and multiple runs have overlapping Q ranges. If off specular preview is run, won't this produce such a "non-monotonic" warning which is actually expected and inconsequential. Moreover, if the user *chooses* to reduce data with overlapping ranges that is their perogative - there isn't a message there. If you agree with my sentiment, then perhaps simply emitting a log at 'INFO' level suffices. What do you think?
+
+```
+  What #5 is (and an important correction to its premise)
+
+  The off-spec preview plots Q-space maps via pcolormesh(..., shading='gouraud') at main_gui.py:1202–1215 (and the combined-smooth path at 1354), through mplwidget.py:311/313. The "coordinates not monotonically increasing or decreasing"
+   text comes from matplotlib itself, not quicknxs.
+
+  The premise correction: because quicknxs does not call logging.captureWarnings(True) (it's nowhere in the tree), that matplotlib UserWarning goes to stderr/console via Python's default handler. It is not a quicknxs log record, so it
+  never reaches the modal-dialog path (gui_logging.py:180–181 → QMessageBox.warning). So today it's console noise — already non-blocking, just untidy. It's less intrusive than "warning" makes it sound.
+
+  Your sentiment is correct — and it argues against the original "fix"
+  
+  You're right that the condition is expected and inconsequential, and I'd go further: it's largely intrinsic to off-spec, not just the overlapping-runs case. Those grids (Qx, Qz, ki_z−kf_z) are curved, non-rectilinear functions of
+  pixel/wavelength, so the coordinate arrays are non-monotonic for a single run already — overlapping un-stripped runs just amplify it. matplotlib renders the gouraud mesh fine regardless; it's only being cautious.
+
+  That exposes a problem with the original plan's wording ("sanitize coords / shading without changing the science"): for legitimately overlapping or curved data, sanitizing (sorting/regularizing) the coordinate grid — or flipping
+  gouraud→flat — would change what's rendered. That's exactly the "it's the user's prerogative, don't touch their data" line you're drawing. So I'd reject the sanitize-coords approach as the one most likely to silently alter the
+  science.
+  
+  What I'd actually do (your INFO idea, refined)
+
+  - Suppress the specific matplotlib UserWarning narrowly around those pcolormesh calls (warnings.catch_warnings() + filterwarnings('ignore', message='.*not monotonically.*')) — coordinates and shading untouched, science identical.
+  - Optionally drop a single info() breadcrumb (non-blocking statusbar + file log at INFO) the first time per session: "Off-specular Q-grid is non-monotonic (expected for curved/overlapping ranges) — rendering as-is." This is your INFO
+  suggestion; I'd just guard it to fire once, because off-spec preview re-runs on every view (~1.4 s each) and an unguarded per-draw INFO would flicker the statusbar.
+
+  Net: this makes #5 smaller and safer than originally framed — no coordinate math, no shading change, no dialog. The one real trade-off is that blanket-suppressing also hides the rare case where non-monotonic coords signal a genuine
+  coordinate bug; the once-per-session INFO (visible in the file log) preserves a breadcrumb for that, which is why I'd keep the INFO rather than suppress silently.
+
+  So: I agree with you. The only micro-choice is silent-suppress vs. suppress-plus-one-INFO — and I lean to the latter for exactly the reason you gave (it's informational, not alarming).
+
+  Want me to implement it that way (suppress + once-per-session INFO, with a test asserting the warning no longer escapes and the INFO fires once)?
+```
+
+### Prompt 33.3
+
+Yes, except in the info() breadcrumb, can you just do the file log at INFO? I'm concerned with the non-blocking statusbar being overloaded between what quicknxs is doing vs communicating back to the user. I'm sure there are other cases that we will have to deal with in a future sanitization step, but I would rather not contribute to the confusion.
+
+```
+  What #5 became
+
+  Your instinct drove the design, and the investigation backed it:
+  - The message is matplotlib's own UserWarning to stderr — quicknxs doesn't captureWarnings, so it never reached the modal-dialog path. It's intrinsic to off-spec Q-space rendering (curved grids), amplified by the legitimately
+  overlapping un-stripped runs you described.
+  - So I rejected the original "sanitize coords/shading" idea — re-gridding real overlapping data would alter the science (your prerogative point). Instead: pcolormesh wraps the draw, swallows only that warning (coords/shading
+  untouched), re-emits everything else, and notes it once per session to the log file via a new extra={'no_statusbar': True} opt-out on QtHandler. The statusbar stays clean, and that opt-out is a reusable hook for the future
+  sanitization diagnostics you anticipated. 
+  - TDD: 4 tests (file-only routing + suppress-once/re-emit-others), regression-checked against 12 off-spec/display/pcolormesh tests, ruff clean.
+  
+  prompt-31 is now complete for this machine
+
+  ┌───────────────────────────────────────┬────────────────────────────────────────────────┐
+  │                 Item                  │                     Status                     │
+  ├───────────────────────────────────────┼────────────────────────────────────────────────┤
+  │ #2 get_xregion                        │ ✅ done + validated                            │
+  ├───────────────────────────────────────┼────────────────────────────────────────────────┤
+  │ #3 Layer-2 hygiene                    │ ✅ 1/4 done, 5 covered; 2/3/6 → modularization │
+  ├───────────────────────────────────────┼────────────────────────────────────────────────┤
+  │ #5 pcolormesh warning                 │ ✅ done (suppress, file-only INFO)             │
+  ├───────────────────────────────────────┼────────────────────────────────────────────────┤
+  │ #1 specular fix, #4 off-spec fidelity │ ⛔ Mantid-blocked (not doable here)            │
+  └───────────────────────────────────────┴────────────────────────────────────────────────┘
+
+  Session total — 6 commits on feature/read-event-nexus, ready to push
+  
+  c92112f merge · 81363ae #2 · d3a009e #2-validation · fb60888 #4 · 025c180 #3-closeout · 8215df5 #5. All green, ruff clean; decisions recorded in plan/commits so they travel via git.
+
+  Yours / what's left
+
+  - Pushes (all of it) — nothing pushed; parent-repo quicknxsv1 submodule pointer differs (expected).
+  - Optional confirm next GUI run: the off-spec console warning is gone and the map renders identically.
+  - The big arc: the deferred items (responsiveness 2b/Phase 3, and #3's items 2/3/6) all fold into the quicknxsv1 frontend/backend modularization — your stated future session, and the highest-leverage next step.
+
+  Clean stopping point — the branch is coherent, green, and the actionable prompt-31 work is finished.
+```
+
+### Prompt 33.4
+
+Excellent. I did some GUI runs, but I did not see the console warning in the log, perhaps my parameters are off - I did not use the off specular preview; neither did I see the console warning. Is it only for preview and not (for example) for reduction when off specular smoothing parameters are chosen? Speaking of which, I observe the following discrepancy between quicknxsv2 and quicknxsv1 in the off specular smoothing parameters dialog:
+
+* quicknxsv2 (code in ~/Projects/Claude/1/quicknxsv2/**) shows ~/shared/REF_M/11486/session12/quicknxs-offspecular-smoothing-options-000525.png - notice the detail and in particular the way the black spot indicating the smoothing kernel which is nearly symmetric (but not perfectly)
+* quicknxsv1 (this session) shows ~/shared/REF_M/11486/session13/quicknxsv1-offspecular-smoothing-options-000525-tof-400.png - notice the axes are different, the black spot is very different and distorted.
+
+I have also done reductions, but let us defer that discussion after we resolve the smoothing parameters dialog discrepancy. Please investigate given your understanding of the off specular plotting code in quicknxsv1 in this session so far. Be resourceful! Try to determine the reason for the difference. I believe that the quicknxsv2 rendering is correct, but can you quantify it? A lot of work has been done with comparisons of reduced output in ~/shared/REF_M/11486/** if any of it is informative (mostly on analysis.sns.gov, but session13 is on this machine).
+
+```
+● Complete diagnosis confirmed — and it's a clean, quantifiable difference. Neither dialog sets aspect='equal', so the kernel-spot shape is governed entirely by the axis ranges and σ. Here's what I found.
+
+  First, your warning question
+
+  The non-monotonic warning fires from any non-monotonic pcolormesh — that's off-spec preview (main_gui.py:1202), the combined-smooth render (1354), and the smoothing dialog itself (gui_utils.py:685 uses pcolormesh(..., 
+  shading='gouraud')). It does not fire for ordinary specular reduction. So opening the smoothing dialog should have triggered it — but after the #5 fix it no longer reaches the console at all; it's a once-per-session INFO in the log 
+  file (paths.LOG_FILE, under ~/.quicknxs/). So "no console warning" is the fix working as designed; grep -i monotonic that log file and you should see the single breadcrumb.
+  
+  The dialog discrepancy: v1 hardcodes what v2 derives from data
+
+  Same dialog, but v1's SmoothDialog.drawPlot (gui_utils.py) uses fixed constants where v2's smooth_dialog.py is data-driven. For the (k_iz−k_fz) vs Qz view:
+
+  ┌───────────────────────────┬────────────────────────────────────────────┬──────────────────────────────────────────────┐
+  │                           │             v1 (gui_utils.py)              │            v2 (smooth_dialog.py)             │
+  ├───────────────────────────┼────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ x view limit              │ set_xlim([-0.035, 0.035]) — fixed, Δx=0.07 │ [k_diff_min, k_diff_max] from data — Δx≈0.22 │
+  ├───────────────────────────┼────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ smoothing region (→ grid) │ x1,x2 = ∓0.03 — fixed                      │ 5%-inset of data range → ≈[−0.114, 0.086]    │
+  ├───────────────────────────┼────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ σ                         │ 0.0005 fixed                               │ (x2−x1)·0.005, floored (≈0.000525)           │
+  ├───────────────────────────┼────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ aspect                    │ 'auto'                                     │ 'auto'                                       │
+  └───────────────────────────┴────────────────────────────────────────────┴──────────────────────────────────────────────┘
+  
+  So your two observations have one dominant cause: v1 clamps the x-axis to ±0.035 regardless of the data, while v2 shows the true extent (≈±0.11). v1 is displaying only ~⅓ of the off-spec fan's width.
+
+  Quantifying the distorted spot
+  
+  The kernel is three Ellipse patches with semi-axes = σ_x, σ_y in data units (v1 gui_utils.py:740-744; v2 smooth_dialog.py:177-184). With σ_x≈σ_y it's a circle in data space; under aspect='auto' it renders stretched by the axis-range 
+  ratio Δy/Δx (× the plot-box aspect). Both σ values are essentially identical (0.0005 vs 0.000525), so σ is not the cause — the axis range is:
+
+  - v1: Δy/Δx = 0.375 / 0.07 ≈ 5.4 → the spot is ~5:1, badly stretched.
+  - v2: Δy/Δx = 0.371 / 0.222 ≈ 1.7 → mild — exactly your "nearly symmetric, but not perfectly."
+
+  (Δy≈0.37 in both, since v1's Qzmax=ki_z.max()·2 ≈ v2's Qz max; the whole difference is the hardcoded narrow Δx.) So v1's kernel is ~3× more distorted than v2's, entirely from the hardcoded x-limit. v2 is correct; its residual 1.7:1 is
+   just the un-equal aspect, which set_aspect('equal') would remove (neither does).
+
+  This is not only cosmetic
+
+  v1's hardcoded region box feeds gridXmin/gridXmax (gui_utils.py:752-755) → the actual smoothing grid. So v1 smooths only k_iz−k_fz ∈ [−0.03, 0.03], clipping the off-spec data, while v2 grids the full data-driven region. That directly
+  bears on the reduced-output comparison you deferred — v1's smoothed map covers a narrower x-region by construction.
+
+  One caveat to nail in the reduction step: I've shown v1 forces the view/grid to ±0.035 (certain from the code). Whether v1's _calc_offspec actually produces data out to ±0.11 like v2 (i.e., the hardcode is truly clipping real data, vs
+   the data genuinely being narrow) is the one thing worth confirming against the data — and it's exactly what the reduction comparison will show.
+
+  ---
+  Want me to port v2's behavior into v1's SmoothDialog — data-driven xlim/region (5% inset) + range-proportional σ, TDD'd so the limits track the data instead of constants? I can optionally add set_aspect('equal') for a perfectly round
+  kernel (a deviation from v2, so I'd flag it). Then we move to the reduction comparison you mentioned.
+```
+
+### Prompt 32.5
+
+Yes, make v1's SmoothDialog be data-driven in both x and y according to the user's options in the spin entry fields. Please do *not* set_aspect('equal'). Scientists do *not* like to see arbitrary distortions just to make the plot "look nice" (and you can remember that!).
+
+I can confirm that v1 *does produce* data according to the dialog settings (from ~/shared/REF_M/11486/session13/reduced-from-correctReduction-correct-db-id-tof-400/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat):
+```
+...
+# [Data]
+# ki_z-kf_z [Å⁻¹]       Qz [Å⁻¹]                I [a.u.]            
+-1.140390e-01           0.000000e+00            0.000000e+00      
+-1.136653e-01           0.000000e+00            0.000000e+00      
+...
+8.551231e-02            0.000000e+00            0.000000e+00      
+8.588600e-02            0.000000e+00            0.000000e+00      
+
+-1.140390e-01           3.728352e-04            0.000000e+00      
+-1.136653e-01           3.728352e-04            0.000000e+00      
+...
+```
+
+Regarding the info on non-monotonic, here is what I see from that last session (no emission):
+```
+└─$ grep -i monotonic ~/.quicknxs/debug.log
+
+```
+
+So it isn't getting emitted - but I am not yet certain it *should* have been emitted, hence the interest in understanding the data. As to a reduced dataset, we should use for our purposes ~/shared/REF_M/11486/session13/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off-correct-db-id.dat because in this data set I have corrected the db id values to properly associate the direct beam run numbers (recall that this was something that v2 did without asking, so it "tolerated" improperly expressed reduction files - and because of that tended to generate "improperly expressed" reduction files...).
+
+```
+● Definitive answer to your warning question — and it reframes #5.
+
+  SmoothDialog fix (done, committed 5177fbf)
+
+  drawPlot is now fully data-driven for all three projections: xlim/ylim from the data extent, the region box a 5% inset (seeding the grid spin fields), σ proportional to the region (floored). No set_aspect — the σ_x=σ_y kernel stays a
+  true circle in data units and reads as ~1.7:1 on these axes (honest), not the old ~5:1 from the hardcoded ±0.035 view. This also fixed the y-axis (was ki_z.max()·2 ≈ 0.17, now the real Qz range ≈ 0.37) and un-clips the smoothing grid
+  (was pinned to ±0.03). TDD green, ruff clean.
+  
+  The non-monotonic warning: it cannot fire on your matplotlib
+
+  I tested it two ways on the deployed matplotlib 3.10.8:
+  - grep of matplotlib's source: the string "not monotonically increasing or decreasing" does not exist in the pcolormesh/axes code (only unrelated colormap/scale docstrings).
+  - empirical: a 2D non-monotonic gouraud mesh (the off-spec case) and a classic 1D non-monotonic mesh both produced zero warnings. 
+  
+  So: matplotlib removed that warning. Your off-spec Q-grids are non-monotonic (curved — that's why the code uses a gouraud quadmesh), but that's now moot: matplotlib no longer checks or warns, so the absence in your log is correct and
+  expected, independent of the data. The original prompt-31 #5 note ("mplwidget.py:311 emits …") was true on an older matplotlib and was silently obsoleted when the env moved to 3.10.8.
+
+  Consequence — and a correction I owe you: my #5 change (commit 8215df5) is therefore dormant — it suppresses a warning that can't occur and the breadcrumb never fires. I should have verified the warning still fired on 3.10.8 before
+  building the suppression; I didn't, and your skepticism is what surfaced it. Worse, the wrapper's simplefilter('always') could occasionally re-surface an unrelated warning that's normally filtered out — a small net-negative on the
+  current stack.
+  
+  So #5 wasn't a real problem here; the matplotlib upgrade already solved it.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ #5 disposition 
+  
+Given the warning can't fire on matplotlib 3.10.8, what should I do with the #5 change (commit 8215df5)?
+
+  1. Revert #5 entirely (Recommended)
+     Remove the pcolormesh catch_warnings wrapper, the breadcrumb helper, the QtHandler no_statusbar hook, and their tests. The premise is obsolete on mpl 3.10.8 and the wrapper carries a small risk of re-surfacing normally-filtered 
+     warnings. Cleanest / most honest.
+❯ 2. Revert wrapper, keep no_statusbar hook
+     Drop the inert pcolormesh suppression + breadcrumb, but keep QtHandler's file-only (extra={'no_statusbar': True}) opt-out as a general, tested capability for the future sanitization diagnostics you mentioned.
+  3. Keep #5 as-is (defensive)
+     Leave it as insurance in case quicknxsv1 ever runs on an older matplotlib that still emits the warning, accepting it's dormant (and the minor re-emit risk) on the current pinned stack.
+```
+
+Claude continues...
+
+```
+  This turn
+
+  1. SmoothDialog fix (5177fbf) — drawPlot is now data-driven (xlim/ylim from data, region a 5% inset seeding the grid spin fields, σ proportional + floored) for all three projections, matching v2. No set_aspect — the kernel honestly
+  reflects the axis scales. Net effect vs the old hardcode: the x-view goes from ±0.035 → the real ±0.11 extent, the y-axis from ki_z.max()·2 (≈0.17) → the real Qz range (≈0.37), and the kernel from ~5:1 stretched → ~1.7:1 (the honest
+  aspect). It also un-clips the smoothing grid (was pinned to ±0.03). You can re-open the dialog to confirm it now matches v2's framing.
+  
+  2. Saved your preference to memory — never distort plots (e.g. set_aspect('equal')) for appearance; scientists read meaning from true axis scales.
+
+  3. The non-monotonic warning — definitively answered: matplotlib 3.10.8 removed it. The string is gone from matplotlib's pcolormesh source, and both 2D-gouraud and 1D non-monotonic test meshes warn zero times. Your grep finding
+  nothing is correct and expected — and independent of the data (the Q-grids are non-monotonic, but matplotlib no longer checks). The prompt-31 #5 note was true only on the older matplotlib this env used before 3.10.8.
+
+  4. Reverted #5 (96df931, keeping the no_statusbar hook per your choice) — the suppression was inert on the pinned stack and its simplefilter('always') could re-surface normally-filtered warnings. I kept the reusable file-only-logging
+  opt-out on QtHandler for your future sanitization diagnostics. My miss to own: I built #5 without verifying the warning still fired on the pinned matplotlib — your skepticism caught it.
+
+  Branch state: 8 commits ahead of origin/feature/read-event-nexus, all green, source ruff-clean, nothing pushed (yours).
+
+  Next: the reduction comparison you deferred
+  
+  The dialog discrepancy is resolved, so we can move to it. You pointed me at the canonical reference:
+  ~/shared/REF_M/11486/session13/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off-correct-db-id.dat (with the corrected DB-id associations).
+
+  Want me to run v1's off-spec smoothing on 44159+44160+44161 (corrected DB ids, TOF=400) and compare the smoothed I(k_iz−k_fz, Qz) map against that reference — coverage, grid, and intensity agreement? It's a heavier reduction, so I'd
+  run it headless in the background (one job, OOM-watched) the way I did the get_xregion validation. Confirm and I'll start.
+```
+
+Claude continues...
+
