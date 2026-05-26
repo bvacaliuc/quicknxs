@@ -100,6 +100,35 @@ median ratio); write numbers into `prompt-31-load-reduced-data.md`.
 (it normalizes only by the direct-beam `norm.Rraw`), so it is *independent* of
 the #1 specular issue; its known discrepancy is bin-density (see prompt-28).
 
+**STATUS (Session B, 2026-05-26): DONE — v1 reproduces v2's off-spec STRUCTURE;
+the intensity carries the #1 scaling gap.** Re-reduced 44159+44160+44161
+headless (`reduce_offspec_headless.py`, **corrected paired DBs**
+44159↔44033 / 44160↔44034 / 44161↔44035, bins=400) on the reference's 563×1000
+grid and compared via `plot_offspec_compare.py` to the v2 reference
+(`session13/..._peak1_OffSpecSmooth_Off_Off-correct-db-id.dat`, QuickNXS
+4.3.0rc1 / Mantid 6.12.0).
+
+- **Shape: strong agreement** — log-Pearson 0.87 overall, **0.96 on the specular
+  stripe**, 0.85 off-spec; Qz=0.05/0.15/0.30 line cuts match in shape. The
+  non-Mantid off-spec geometry is sound.
+- **Magnitude: v1 systematically lower** — median ratio (v1/v2) **0.26**
+  off-spec, **0.43** specular stripe, **0.61** integrated. v1 ≈ ¼–½ of v2,
+  region-dependent.
+- **Matches the #1 specular gap** (Off_Off v1/ref ≈ 0.38/0.31/0.19, angle-
+  correlated): specular-stripe 0.43 ≈ the low-angle 0.38, and the ratio falls
+  with Qz/angle just as #1 does. **This revises the "independent of #1" note
+  above** — the off-spec deficit is the *same* angle-dependent v1-vs-Mantid
+  scaling, not a separate bin-density effect, so it is **Mantid-blocked like #1**
+  (root cause inside `MagnetismReflectometryReduction`, not diagnosable without
+  Mantid here). Smoothing σ (0.0005, unrecorded in the ref) cannot cause a scale
+  gap (Gaussian smoothing conserves total), so σ is not the cause; peak
+  Δ=(−0.074, +0.105) is argmax noise from the relatively-suppressed specular,
+  not a geometry error.
+
+Artifacts in `session13/`: `v1-vs-v2-offspec-compare.png`,
+`v1-vs-v2-offspec-metrics.json`,
+`REF_M_44159+44160+44161_OffSpecSmooth_Off_Off-v1-paired-tof400.dat`.
+
 ## 5 — Phase 5: pcolormesh non-monotonic warning  (cosmetic, low priority)
 `mplwidget.py:311` emits "coordinates not monotonically increasing/decreasing"
 on off-spec. Sanitize coords / shading without changing the science.
