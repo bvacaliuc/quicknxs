@@ -166,6 +166,22 @@ Artifacts in `session13/`: `v1-vs-v2-offspec-{Off_Off-single,On_Off-single,
 On_Off-paired}-compare.{png,json}` and
 `REF_M_..._OffSpecSmooth_{Off_Off,On_Off}-v1-{single,paired}-tof400.dat`.
 
+**44159 bright feature — DIAGNOSED (2026-05-26): a 1/Rraw normalization artifact,
+not physical.** v1's 44159 off-spec max (I≈25.6) is a **single pixel** (x_pix=117,
+tof_bin=16, λ=2.41 Å; only 1 pixel >10 and 2 >5 of 121,600), at a wavelength in
+the **direct-beam spectrum's low-flux tail where `norm.Rraw`≈1.5e-15** (44033
+Rraw peak 6.8e-11; 21 bins <1e-13). `OffSpecular._calc_offspec`
+(`qreduce.py:3316-3321`) guards with `idxs = norm.Rraw > 0.` then
+`self.S[:, idxs] /= norm.Rraw[idxs]` — `>0.` admits tiny-positive Rraw, so a small
+off-spec count ÷ 1.5e-15 blows up (exact-zero bins are already masked to 0 at
+3322). Same `Rraw>0` guard in `_calc_reflectivity` (2938) and `_calc_fan` (3015).
+**Separate from the broad ~0.2× #1 scaling**; this is what inflates the off-spec
+integrated ratio (0.9–1.35) and drives the peak-Δ metric. **Proposed fix:** raise
+the guard to a relative floor, `idxs = norm.Rraw > frac*norm.Rraw.max()`
+(frac≈1e-3 masks the artifact at ~2e-5 of peak while keeping real data); excluded
+bins already fall through to the existing `S=0` mask. Pending decision (science-
+output change; optional Mantid cross-check of the masked band).
+
 ## 5 — Phase 5: pcolormesh non-monotonic warning  (cosmetic, low priority)
 `mplwidget.py:311` emits "coordinates not monotonically increasing/decreasing"
 on off-spec. Sanitize coords / shading without changing the science.
