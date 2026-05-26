@@ -2126,3 +2126,105 @@ Claude continues...
 
 Claude continues...
 
+```
+● Comparison complete — artifacts in session13/, result recorded and committed (598ee43), /tmp cleaned.
+
+  v1 vs v2 off-spec — the result
+
+  I re-reduced 44159+44160+44161 headless with the corrected 1:1 DB pairing (44159↔44033, 44160↔44034, 44161↔44035, bins=400) on the reference's 563×1000 grid, and compared to the v2/Mantid reference.
+
+  Structure agrees strongly; absolute intensity is systematically low:
+
+  ┌────────────────────────────────┬───────┬──────────────────────────────────────┐
+  │       Metric (v1 vs v2)        │ Value │               Reading                │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ log-Pearson (overall)          │ 0.87  │ map shape matches                    │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ log-Pearson (specular stripe)  │ 0.96  │ ridge essentially identical in shape │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ log-Pearson (off-spec)         │ 0.85  │ wings match in shape                 │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ median ratio — specular stripe │ 0.43  │ v1 ≈ 0.43× v2 there                  │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ median ratio — off-spec        │ 0.26  │ v1 ≈ ¼ of v2 there                   │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ integrated ratio               │ 0.61  │ total intensity 61% of v2            │
+  └────────────────────────────────┴───────┴──────────────────────────────────────┘
+
+  The figure confirms it: same fan/ridge/wings; the log₁₀(v1/v2) panel is uniformly blue (v1 lower); the Qz line-cuts track v2's in shape but sit below them.
+
+  What it means
+  
+  The non-Mantid off-spec geometry is sound — v1 reproduces v2/Mantid's off-spec structure (0.87–0.96 correlation). That's the reality-check win: the shape doesn't need Mantid.
+
+  The intensity deficit is the same phenomenon as the deferred #1 specular gap. prompt-31 #1 measured Off_Off v1/ref ≈ 0.38 / 0.31 / 0.19, falling with angle. Here the specular-stripe ratio (0.43) ≈ the low-angle 0.38, and the ratio
+  falls with Qz/angle the same way. So this is one angle-dependent v1-vs-Mantid scaling, manifesting across the off-spec Qz range — not a separate off-spec problem.
+
+  This revises the old #4 assumption. prompt-31 #4 assumed off-spec was independent of #1 (no footprint scale; "bin-density" discrepancy). The data says otherwise: it's the same scaling, so off-spec is Mantid-blocked like #1 — the root
+  cause lives inside Mantid's MagnetismReflectometryReduction, which isn't importable here, so the final diagnosis still needs a Mantid environment.
+
+  Two caveats I ruled out as the cause: the reference's smoothing σ isn't recorded (I used v1's 0.0005) — but Gaussian smoothing conserves total intensity, so σ can't produce a 2–4× scale gap. And the peak-location Δ=(−0.074, +0.105) is
+   argmax noise (v1's relatively-suppressed specular moves the single brightest pixel), not a geometry error — the 0.96 specular correlation rules out a real shift.
+
+  Artifacts (in session13/, out-of-session-tree writes, surfaced)
+
+  - v1-vs-v2-offspec-compare.png — the 5-panel figure
+  - v1-vs-v2-offspec-metrics.json — full metrics
+  - REF_M_44159+44160+44161_OffSpecSmooth_Off_Off-v1-paired-tof400.dat — the v1 reduction
+
+  Bottom line: v1's off-spec reduction is structurally faithful to v2; the remaining intensity gap is the known, Mantid-located #1 scaling — now shown to span the off-spec map, not just the specular line. The natural next step (whenever
+   a Mantid env is available) is to divide v2's RAW R(Q) by v1's per-run to pin that scaling term, which closes #1 and this together. Want me to leave it there, or look at anything else in the comparison?
+```
+
+I asked Claude to look at On_Off specular:
+
+```
+● Confirmed visually — On_Off shows the same story: same fan/ridge structure, v1 uniformly dimmer (blue log-ratio), dashed v1 cuts tracking the solid v2 cuts in shape but below them.
+
+  On_Off result — and a correction to the Off_Off picture
+
+  First, the DB-association catch (it reframes everything): both v2 references are single-DB (every run normalized by 44033). The headers say DB_ID=1/1/1, and your session13 "corrected" Off_Off is byte-identical in data to
+  correctReduction — only the header was relabeled, not re-reduced. So my earlier Off_Off comparison was v1-paired vs v2-single (conflated). I re-ran matched (v1 single-DB) for both channels, with v1-paired as a control — and the
+  control confirms single: the paired total matches the reference worse (On_Off integrated 0.53 vs single 0.91; Off_Off 0.61 vs single 1.35).
+  
+  Clean v1-vs-v2 (both single-DB, bins=400):
+
+  ┌─────────────────────────┬─────────┬────────┐
+  │    metric (v1 / v2)     │ Off_Off │ On_Off │
+  ├─────────────────────────┼─────────┼────────┤
+  │ log-Pearson — overall   │ 0.870   │ 0.860  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ log-Pearson — specular  │ 0.947   │ 0.944  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ log-Pearson — off-spec  │ 0.850   │ 0.840  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ median ratio — overall  │ 0.154   │ 0.175  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ median ratio — specular │ 0.246   │ 0.276  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ median ratio — off-spec │ 0.148   │ 0.168  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ integrated ratio        │ 1.35    │ 0.91   │
+  └─────────────────────────┴─────────┴────────┘
+  
+  What it means
+
+  1. Structure is faithful in both channels. log-Pearson 0.86–0.95; On_Off behaves just like Off_Off. v1's non-Mantid off-spec geometry is sound for the spin-flip channel too — the headline reality-check result holds across
+  polarizations.
+  2. Per-pixel intensity is ~0.15–0.28× v2 across the map (median 0.15–0.28, specular-stripe 0.25–0.28) — the same angle-dependent v1-vs-Mantid scaling as #1, now confirmed in both Off_Off and On_Off. So it's a global reduction-scaling
+  property, not channel- or off-spec-specific. Mantid-blocked, like #1.
+  3. A localized bright feature in v1's low-angle 44159 (raw I≈25 vs ≈3–9 for 44160/44161, and DB-independent) inflates the integral — which is why integrated runs 0.9–1.35 even though the typical pixel is ~0.2× v2 — and drives the
+  peak-location metric. This is distinct from the broad scaling and worth a separate look (smells like a low-angle normalization effect in v1's 44159). σ=0.0005 can't cause a scale gap, so it's not the smoothing.
+
+  Net: running On_Off didn't just answer the question — pairing it with the corrected Off_Off shows the v1↔Mantid intensity gap is one robust, angle-dependent scaling that spans both polarization channels, sitting on top of faithful
+  geometry. That sharpens #1: the fix is a single scaling term inside Mantid's MagnetismReflectometryReduction, and closing it would correct specular and both off-spec channels at once.
+
+  Artifacts in session13/ (figures + metric JSONs + v1 .dat for both channels × single/paired), recorded in plan/prompt-31-remaining.md §4, committed (6a99b04).
+
+  Want me to dig into the 44159 low-angle bright feature next (compare v1's per-run 44159 off-spec to v2's to see if it's a real feature or a v1 artifact), or leave the off-spec thread here?
+```
+
+### Prompt 32.6
+
+Go ahead and dig into the 44159 low-angle bright feature. You have mr_reduction available (which has a mantid environment) and I just initialized its pixi environment, updated the 'tests/mr_reduction-data' submodule and ran the test suite ('pixi run test' in mr_reduction - caveat: due to some code.ornl.gov authorization issues not all the test files were able to be downloaded, so the test was not able to run 100% clean). I would say that if you need to run scripts that use a mantid environment, mr_reduction is a good place to do it. In a future session I will ask you to do a deep dive that will include inspecting mr_reduction for the purpose of separating frontend and backend in quicknxsv1. Do you think the deep dive is needed now, before we continue with this session?
+
