@@ -197,6 +197,36 @@ blow-up is removed; the broad ~0.2× deficit is unaffected (that's the MRR #1
 scaling). `_calc_reflectivity`/`_calc_fan` share the `Rraw` normalization but the
 specular path is entangled with #1 — leave for the Mantid #1 work.
 
+**FIXED + validated (2026-05-27): crop off-spec to Mantid's 1.4-Å band** (commit
+`eefdd0e`). Re-diagnosis corrected the cross-check: at the artifact bin the DB
+has **exactly 1 count** and **BG≈0**, so `I = Rraw = 1.5e-15` — the `norm.I`
+change (`0c8779e`) was a **no-op** (kept only as a v2-aligned normalization). The
+real cause is the *band width*: v1's load band uses half-bw **1.6 Å** (matching
+quicknxsv2) → λ∈[2.15, 8.55] for 44159 (lc=5.35, 30 Hz); Mantid MRR
+(`get_tof_range`) uses **1.4** → [2.55, 8.15], excluding λ=2.41 + 25 low-flux
+edge bins. `_calc_offspec` now crops the off-spec to the 1.4 band
+(`MANTID_OFFSPEC_HALF_BANDWIDTH`, chopper-scaled); off-spec only (loading/specular
+keep 1.6). Re-validation (single-DB, both channels):
+
+| metric | Off_Off before→after | On_Off before→after |
+|---|---|---|
+| 44159 raw off-spec max I | 25.6 → **1.04** | 25.6 → **1.11** |
+| smoothed max I | 5.11 → 0.76 | 1.75 → 1.00 |
+| integrated ratio | 1.35 → **0.17** | 0.91 → **0.24** |
+| peak Δ (dx,dy) | (−0.074, 0.105) → (~0,~0) | → (~0,~0) |
+| log-Pearson overall | 0.870 → 0.861 | 0.860 → 0.856 |
+| specular log-Pearson | 0.947 → 0.964 | 0.944 → 0.968 |
+| median ratio | 0.154 → 0.144 | 0.175 → 0.164 |
+
+Spike gone; spurious peak-shift gone (v1/v2 peaks coincide); the integrated ratio
+**de-skews to match the per-pixel median**, so v1 is now a *coherent* ~0.15–0.24×
+v2 across all metrics — the same broad MRR #1 scaling as the specular, no longer
+masked. Structure preserved (specular correlation slightly improved). Matches
+Mantid MRR (autoreduce standard); tighter than the quicknxsv2 GUI reference (1.6)
+at the low-flux edges (coverage overlap unchanged, 0.79). Artifacts:
+`session13/v1-vs-v2-offspec-{Off_Off,On_Off}-bandcropped-compare.png` +
+`..._OffSpecSmooth_{Off_Off,On_Off}-v1-bandcropped-tof400.dat`.
+
 ## 5 — Phase 5: pcolormesh non-monotonic warning  (cosmetic, low priority)
 `mplwidget.py:311` emits "coordinates not monotonically increasing/decreasing"
 on off-spec. Sanitize coords / shading without changing the science.
