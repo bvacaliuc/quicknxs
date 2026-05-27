@@ -270,6 +270,25 @@ class DataReductionTests(unittest.TestCase):
     np.testing.assert_allclose(np.asarray(oS.S)[:, k], expected, rtol=1e-6, atol=1e-12)
     self.assertTrue(np.isfinite(oS.S).all())
 
+  def test_offspec_cropped_to_mantid_wavelength_band(self):
+    """prompt-31: off-spec is cropped to Mantid MRR's chopper band (half-bw
+    MANTID_OFFSPEC_HALF_BANDWIDTH, scaled by chopper speed).  Wavelengths
+    outside the band -- the low-flux edges where the direct-beam normalization
+    is a single count and 1/flux blows up (the 44159 artifact) -- are masked."""
+    d=self.data[0]
+    norm=qreduce.Reflectivity(d, x_pos=206., tth=0., dpix=206.)
+    oS=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206., normalization=norm)
+    cs=getattr(d, 'chopper_speed', None)
+    scale=qreduce.TOF_REFERENCE_FREQUENCY/float(cs) if cs else 1.
+    hb=qreduce.MANTID_OFFSPEC_HALF_BANDWIDTH*scale
+    lam=np.asarray(oS.lamda)
+    out=(lam < d.lambda_center-hb) | (lam > d.lambda_center+hb)
+    self.assertTrue(out.any(), 'fixture should have band-edge bins beyond the 1.4-A band')
+    self.assertTrue(np.all(np.asarray(oS.S)[:, out] == 0.),
+                    'out-of-band wavelengths must be masked to 0')
+    self.assertGreater(np.abs(np.asarray(oS.S)[:, ~out]).max(), 0.,
+                       'in-band off-spec must retain signal')
+
 
 class LRDatasetTests(unittest.TestCase):
   '''Tests for REF_L (Liquids Reflectometer) data loading.'''
