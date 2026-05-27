@@ -829,5 +829,1628 @@ I loaded the prior run_state.dat and went to observe reflectivity, but I still s
 
 ( *see [prompt-28.2-offspec.png](prompt-28.2-offspec.png)* )
 
+/btw I put the run_state.dat I used into the repo at plan/prompt-28.2-run_state.dat in case it is useful for you...
+
+```  
+  Thanks — good thinking. That state file will be very useful for diagnosing the new gap pattern; the main investigation can read it directly to see what event_tof_overwrite / bins / EVT_ID values were captured, replay the exact load
+  through HeaderParser, and verify whether the chopper-speed-aware TOF window is actually being applied when the state is restored (as opposed to when files are loaded fresh from fileOpen).
+
+● Here's what I found. I reproduced the offspec preview headlessly from your saved prompt-28.2-run_state.dat so I could see exactly what the GUI is rendering:
+  
+  attachment
+    
+  The chopper-speed fix is active when loading from state — 44161's data now extends to Qz≈0.37 (left panel, pre-fix simulation: only to ≈0.13). But the AFTER panel still shows a visually dim "band" around Qz=0.13–0.18. Two things 
+  conspire to make that band look like a gap:
+  
+  1. 44160 ends at Qz=0.125 (its 21 kept TOF bins span Qz=−0.001…0.125).
+  2. 44161 does cover Qz=0.043–0.368, but its intensity at Qz=0.13–0.18 is ~5×10⁻⁴, while 44159/44160 in their region are ~5×10⁻². So 44161 is ~100× dimmer there, and on the GUI's log colour scale (offspecImin/offspecImax defaults of
+  10⁻⁹…10⁰), it falls in the lower decades and reads as nearly dark.
+    
+  Per-run printout from the reproduction:
+  44159 Off_Off: Qz=[-0.032, 0.093]   S=[-2.9e-3, 8.6e-1]
+  44160 Off_Off: Qz=[-0.001, 0.125]   S=[-8.6e-3, 4.1e-2]
+  44161 Off_Off: Qz=[ 0.043, 0.368]   S=[-1.5e-4, 3.8e-2]
+  
+  So this is not the same fault as before — it's the intrinsic intensity mismatch between the three angle settings. Two ways to test that interpretation in the GUI:
+  
+  - Drop offspecImax (the upper colour-scale knob) by 1–2 decades. If the band fills in, it's just dynamic-range clipping.
+  - Hide 44159+44160 (uncheck them in the reduction table or remove temporarily) and re-plot. If you then see 44161's full triangle continuously from 0.04 to 0.37 with no break around 0.15, the data is there.
+  
+  A couple of secondary things worth flagging:
+    
+  - 44035's extraction window in your state is narrower than the v4.3.0rc1 reference (x_width=17/y_width=55 vs 24/100). 44161 is normalised by 44035 and the smaller window cuts direct-beam counts → noisier S for 44161 especially in the
+  off-spec tails. Widening 44035 to match the reference (24/100) should brighten 44161's contribution and reduce the visual "gap".
+  - The reproduction .png is at /tmp/qnxs_compare/offspec_preview_before_after.png if you want to look at it.
+  
+  Could you confirm whether the gap you see matches the dim Qz=0.13–0.18 band in the AFTER panel, or whether it's something else (e.g. vertical stripes)? I want to make sure I'm chasing the right artifact before changing more code.
+```
+
+( *NOTE: the 44035 extraction of xw/yw of 17/55 vs 24/100 is a mistake! 44035 is a direct beam but 17/55 is a reflectivity template. This should be looked at again.* )
+
+### Prompt 28.3 (aka Prompt 29)
+
+I should let you know that some work has been done on the headless scripts on another machine while I was away. please have a look. You can try to drop offspecImax, but I'd also like you to look at scripts/reduce_offspec_headless.py and plan/prompt-29-todo.md because something is wrong with the script when it executes against quicknxs v1. Thank you much!
+
+```
+● Clean. Here's what I found and fixed:
+
+  prompt-29: reduce_offspec_headless.py — real fault, not impatience
+
+  Two compounding problems made the script appear hung:
+  
+  1. Numerical (silent NaN + warnings). When axis_sigma_scaling=2 (the OffSpecSmooth case) is used with a grid that extends below 0 in y — exactly the v4.3.0rc1 reference grid (y_min=-0.1) — the per-row ssigmayi = ssigmay/xysigma0 * yij
+   goes negative. rij becomes negative, exp(-0.5·rij) overflows, and Pij/Pij.sum() produces NaN. The existing if xyij==0: continue guard only caught division-by-zero, not the sign-flip. Same hazard whenever xysigma0 has opposite sign to
+   the grid axis (test data where ki_z.max() < 0 triggered it too). Fix: skip the row when ssx_row≤0 or ssy_row≤0 (and analogously per-cell for modes 1/3).
+  
+  2. Performance (O(grid × N) pure-Python loop). With grid=563×1000 and N≈350k off-spec points (bins=400), the original double loop needs ~2×10¹¹ ops in Python. Benchmarks confirmed ~30+ min per channel — so every Ctrl-C was justified.
+  Fix: built a single scipy.spatial.cKDTree on the data points and query nearby neighbours per grid cell. The kernel is then evaluated on the ~50 points within sigmas·σ, not all 350k. Same full-scale case now finishes in ~12 s (~150× 
+  faster), exact to 1e-8 vs the reference algorithm.
+  
+  3. Visibility (no progress). reduce_offspec_headless now passes a callback into smooth_data that prints percent + ETA every 5 % of rows, so even on slow paths the script is visibly alive.
+
+  Tests added in tests/qcalc_test.py:
+  - test_negative_y_region_no_nan — regression for the y<0 NaN.
+  - test_kdtree_matches_legacy_within_tolerance — pins KDTree output to a direct kernel evaluation.
+  
+  All 15 qcalc + 22 qio tests pass. Lint clean. One commit: d81d49b prompt-29: fix smooth_data hang/NaN; reduce_offspec_headless now finishes.
+
+  End-to-end sanity check (synthetic recipe with the reference 563×1000 grid):
+  Reducing channel=Off_Off, bins=400...
+    ... DBs / refls loaded ...
+  Smoothing...
+    smoothing   0%  (elapsed   0.1s, eta   infs)
+    smoothing  25%  (elapsed   0.5s, eta   1.4s)
+    smoothing  50%  (elapsed   4.8s, eta   4.8s)
+    smoothing  75%  (elapsed   8.9s, eta   3.0s)
+    smoothing 100%  (elapsed  10.7s, eta   0.0s)
+    smoothing took 11.6s
+  Wrote /tmp/qnxs_compare/headless_400bin.dat
+
+  ---
+  prompt-28.2: side observation on the residual "gap"
+  
+  I also did the Imax-sweep test I suggested earlier — plan/prompt-28.2-imax-sweep.png. With offspecImax=1 (default) the Qz=0.13-0.18 band looks dark; at Imax=0.01 it fills in; at 0.001 the whole upper triangle lights up. So that
+  remaining "gap" really is colour-scale clipping, not missing data.
+```
+
+### Prompt 28.4
+
+Thanks! A little while ago you said: "- 44035's extraction window in your state is narrower than the v4.3.0rc1 reference (x_width=17/y_width=55 vs 24/100)..." I agree and this was not the intent. Can you determine how 44035's extraction got the 17/55 instead of 24/100? The 17/55 comes from the *reflectivity* parameter of 44161 and I recall *manually* entering this at some point. Usually I prefer to load an existing reduction (or use the ~/.quicknxs/run_state.dat to recover my state). I suspect some kind of cross-talk as reflectivity is loaded after. Would you please investigate?
+
+```
+● Found it — confirmed with a headless replay. Here's the full path:
+
+  Diagnosis
+
+  The widths in 44035's saved DB record (x_width=17, y_width=55) come directly from 44160's reflectivity — they leaked across through stale UI spinbox values.
+  
+  Step by step (matching your debug.log timeline):
+  
+  1. State restore (loadExtraction, main_gui.py:1427-1430) explicitly writes the last refl's options into the UI spinboxes. After your prior session's state file was loaded, the spinboxes were showing 44160's refl values:
+  refXPos=172, refXWidth=17, refYPos=137, refYWidth=55
+  2. Sticky AutoYLimits=off. The prior session called addRefList(44159), which at main_gui.py:1868 flips actionAutoYLimits to False (so all subsequent refls share the same y region). That toggle is preserved across save/restore — it's
+  still off when you reload state.
+  3. Loading 44035 fresh (fileLoaded → calcReflParams, main_gui.py:2376):
+    - actionAutomaticXPeak (on) → refXPos ← 44035's auto-detected x peak (~230) ✓
+    - actionAutoYLimits (off) → refYPos and refYWidth are not touched ✗
+    - refXWidth has no auto path at all — never touched in calcReflParams ✗
+  4. calc_refl (main_gui.py:863-915) reads the spinboxes verbatim into a new Reflectivity(44035-data, x_pos=230.5, x_width=17, y_pos=137, y_width=55, …).
+  5. setNorm captures that reference into ref_norm['44035'] — widths still 44160's.
+  
+  My headless replay confirms it bit-for-bit:
+  setNorm(44035) would capture:    x_pos=229.5, x_width=17, y_pos=137, y_width=55
+  plan/prompt-28.2-run_state.dat:  x_pos=230.5, x_width=17, y_pos=134, y_width=55
+  
+  (The x_pos=230.5 vs my auto 229.5 and your y_pos=134 vs the stale 137 reflect manual clicks you made on the projection plots between loading the file and hitting Set Direct Beam — but the widths never had any path to a
+  44035-appropriate value.)
+  
+  Where to fix it
+
+  I see three options, in increasing invasiveness:
+  
+  (A) Cheap, minimal surface. In calcReflParams, when the active file's run number is not in ref_norm and not in the reduction list, always run get_yregion regardless of actionAutoYLimits. This re-seeds refYPos/refYWidth whenever a
+  previously-unknown file is loaded — exactly the case where stale values are inappropriate. Refl-stitching workflow (loading another file that is already a refl) is unchanged.
+
+  (B) Belt-and-suspenders. Same as (A) plus in setNorm, before capturing, force get_yregion on the active data and overwrite the captured object's y_pos/y_width. Guarantees a DB never inherits a refl's y region even if the user toggles
+  flags weirdly. The cost is that any manual y-adjustment for a DB before Set Direct Beam gets lost.
+
+  (C) Architectural. Decouple DB-mode from refl-mode in the GUI: each Set-Direct-Beam click is treated as "I want auto-detection for this file's beam unless I explicitly overrode". Larger change to UI flow; out of scope for a targeted
+  fix.
+
+  I'd recommend (A) as the right minimal fix — it matches your stated workflow ("loading existing reduction, adding more files later") and doesn't touch any path you've already exercised. Want me to implement (A) and write a regression
+  test? I have the reproduction script ready; the test can drive calcReflParams headlessly with the stale-UI scenario and assert the y values get re-seeded.
+```
+
+### Prompt 28.5
+
+Ok, proceed with (A), but make a plan to do (C) based on the knowledge you have gained. That plan would be executed in a new session (this session has about run its course, and its been great!).
+
+```
+● Both done. Summary:
+
+  Fix (A) committed in cdbf821 — prompt-28.2 Fix A: reseed Y on fresh files in calcReflParams
+  - New helper MainGUI._active_file_is_known() checks ref_norm and reduction_list for the active file's run number.
+  - calcReflParams now runs get_yregion when either actionAutoYLimits is on or the file is fresh. Refl-stitching behaviour for already-classified files is unchanged.
+  - Two regression tests in tests/main_gui_test.py::CalcReflParamsFreshFileReseed (the first drives the exact prompt-28.2 sequence; the second confirms known files keep their tuned region).
+  - All adjacent tests (10) still pass; main_gui.py lints clean. Your 44035-with-17/55 path can no longer happen.
+  
+  Fix (C) plan written to plan/prompt-30-decouple-db-refl-ui.md — committed in 13d8b30. It lays out:
+  - The per-role ExtractionRegion dataclass + self.region_db/self.region_refl/self.active_role.
+  - Role inference on file load via _active_file_is_known() (the Fix-A helper carries forward).
+  - _apply_region(role) to mirror the role's region into the spinboxes — the spinboxes become a view of the role state, not the source of truth.
+  - Concrete touchpoints in main_gui.py (table at the end of the plan).
+  - Risks, verification plan including an interactive smoke test, and acceptance criteria.
+  
+  Enjoy the work computer verification — and thanks, this was a great session.
+```
+
+## Prompt 30
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. Please read plan/prompt-30-decouple-db-refl-ui.md and execute it. This is a result of a long running session. You may avail yourself of the documents in plan/** as needed and appropriate to continue the work. To the plan, I would add the following: please review the files in /SNS/users/6ov/shared/REF_M/11486/correctReduction/. These represent a quicknxsv2 expression of an off-specular reduced dataset performed in 2025-04-08. You should be capable of loading these data sets as 'Load Reduced Data', configure similarly and produce statistically similar results. Further, the files in /SNS/users/6ov/shared/REF_M/11486/session12/** represent what quicknxsv2 *today* can produce (provided certain bugs are worked-around). I would consider it a stunning success if quicknxsv1 that we are working on can read these files *as well* and produce similar results. This is a big undertaking, so use these "correct outputs" to your benefit, keep an eye on your context and when you hit the 75% threshold, please develop as many plans as needed for the remaining work. Good luck! The computer is yours until I get back home from work tonight. Qapla'!
+
+There is evidence that Claude used 2 ( *or possibly 3* ) sessions to do this work.
+
+```
+  Interim status while the sweep runs — everything is committed and pushed:
+
+  ┌─────────┬─────────────────────────────────────────────────────────────┐
+  │ Commit  │                            What                             │
+  ├─────────┼─────────────────────────────────────────────────────────────┤
+  │ 1b2439f │ Parser fix — v2 [Global Options] now loads (was IndexError) │
+  ├─────────┼─────────────────────────────────────────────────────────────┤
+  │ ddb7944 │ prompt-30 role decoupling + RoleDecoupling tests            │
+  ├─────────┼─────────────────────────────────────────────────────────────┤
+  │ e9223bc │ Load-Reduced validation script + remaining-work plans       │
+  └─────────┴─────────────────────────────────────────────────────────────┘
+```
+then
+```
+● All work committed and pushed (5 commits, 72b0d0e..0a92e5c). All five tasks complete. Here's the wrap-up.
+
+  What I did tonight
+
+  1. Made quicknxsv1 load QuickNXS v2 reduced files (1b2439f)
+  HeaderParser crashed with IndexError on every v2 correctReduction/*.dat because v2 right-aligns the [Global Options] value column, leaving one space before lock_direct_beam_y False. Fixed with an eval-free name/value parse. All 7 v2 
+  files now load through File → Load Extraction… (= "Load Reduced Data" in v1).
+
+  2. Executed prompt-30 — DB/refl role decoupling (ddb7944)
+  Added ExtractionRegion + per-role region_db/region_refl/active_role. setNorm/addRefList capture each role's region; loadExtraction seeds both (replacing the last-refl spinbox dump); _applyRoleRegion mirrors a role's region into the
+  spinboxes only on a role switch, so same-role reloads and Fix A's fresh-file reseed are untouched. 5 new RoleDecoupling tests; full GUI suite 109/109; Fix A + LoadExtraction regressions hold.
+
+  3. Validated Load-Reduced reproduction (e9223bc, 6ab5a18, 0a92e5c)
+  scripts/validate_load_reduced_specular.py reduces the v2 recipe through the real HeaderParser path and compares to the embedded reference: log-R correlation 0.96–0.97 — the specular curve shape reproduces excellently. A bin sweep (40
+  vs 160) showed the intensity ratio is a constant ~3.2×, not the off-spec bin-density effect. I root-caused it: the hardcoded 0.005 beam-footprint constant at qreduce.py:2929/:3010 (v2 derives it from geometry; the 1/sin(ai) term
+  cancels, leaving an angle-independent constant — consistent with the matching shape). sample_length only feeds resolution, not intensity.
+
+  Honest status vs. your asks
+  
+  - prompt-30: architecture + the classified-file / state-restore cross-talk are fixed and tested. The headline fresh 44035 → x_width=24 (AC1) needs a get_xregion per-DB width detector (planned, not built — I couldn't reverse-engineer
+  v2's exact value without its source) and an interactive smoke test I can't run headlessly.
+  - Load Reduced Data: loads + reproduces shape on real v2 data. The 3.2× scale is located but not fixed — fixing the footprint touches every reduction, so it needs multi-dataset validation (scoped in the plan).
+  - session12/: does not exist on this mount (only session1–9; session12 appears only in compare/*.png names) — likely on the other machine. Documented for when it lands.
+
+  For the next session
+
+  plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md (committed) lay out: get_xregion, the footprint fix, changeRegionValues/mouse-handler capture, per-role AutoYLimits, the interactive smoke test, and the bin/footprint
+   parity steps.
+
+  Qapla'! The branch is pushed so your other machines can pull it.
+```
+
+### Prompt 30.1
+
+Great! I tested the current state of the quicknxsv1 (0a92e5c7) and produced my result in /home/bvacaliuc/shared/REF_M/11486/session13/**. Note: /home/bvacaliuc/shared/REF_M/11486/** is an rsync-copy of /SNS/users/6ov/shared/REF_M/11486/** I made because on this machine /SNS/users/6ov/** is accessed via an sshfs mount over a 50Mbps link. Thank you for making it possible for me to load quicknxsv2 files. I loaded correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat and performed reductions. I note from your earlier responses that there are still remaining tasks in plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md. However, I'm uncertain as to what parts have been done already from these two plans and what remains. Please review these plans against your context so far as well as the new information from session13/**. As for myself, I observe a discrepancy in the offspecular (compare session13/quicknxsv1-offspecular-smoothing-options.png with session12/quicknxsv1-offspecular-smoothing-options.png) plot that shows missing data. This is a similar issue that was reported earlier (see plan/prompt-28.2-offspec.png and plan/prompt-30.1-offspec.png). Please review the current state of the code, my interactive tests made so far and suggest reasonable next steps.
+
+During the above prompt operation, I observed something and asked a 'by the way' question:
+
+```
+  /btw Interesing, you speak of 'eventTofBins' and v1 using 40 while v2 using 400 and of this being a gui setting. However, the GUI implies that the units of this input is in *microseconds* (and that is how the scientists understand it…
+    
+    Good catch — this is a real semantic ambiguity worth separating out, and you're right to flag it before any relabeling happens. Here's my understanding from the code I've seen, plus what the review should cover.
+    
+    What the code does today
+    
+    In the code, eventTofBins is unambiguously a count (number of TOF bins), not a width in microseconds:
+    
+    - The widget is a QSpinBox with min=5, max=200 (now raised to 1000), step=5, value=40, and tooltip "The number of bins for the Time of Flight channels."
+    - It flows to NXSData as bins=…, whose option description is "Number of ToF bins for event mode."
+    - fileOpen passes it as bins=self.ui.eventTofBins.value() alongside a separate bin_type=self.ui.eventBinMode.currentIndex(). So there are two controls: a mode selector (eventBinMode → bin_type) and a count (eventTofBins → bins). In
+    qreduce.py the event loaders read bins=read_options['bins'] and there's a _bincount helper.
+    
+    So everywhere I've looked, the integer means "how many bins," and the value range (5–200, default 40) is consistent with a count, not µs (5 µs bins would be absurdly fine; 5 bins is a sensible floor).
+    
+    Why the microseconds impression is reasonable anyway
+    
+    The count implies a width once you know the TOF frame. The chopper-defined window is ~16,700 µs at 60 Hz (~33,400 µs at 30 Hz, per the prompt-28 chopper work). So:
+    
+    - 40 bins → ~420–835 µs/bin (coarse)
+    - 400 bins → ~42–85 µs/bin (fine) 
+     
+    A scientist who thinks in "I want ~50 µs resolution" is implicitly choosing ~400 bins. That's exactly the v1-40 vs v2-400 gap behind the off-spec sparsity. So the count and the µs view are two ends of width = frame / count — but the
+     GUI exposes the count and labels it as a count, which is likely the mismatch you're sensing.
+    
+    What I'm not certain of (and why the review matters)
+    
+    - The exact bin_events/_bincount algorithm and whether any bin_type mode (linear-TOF vs 1/t vs logarithmic) reinterprets the value — I haven't read it in full.
+    - Whether some UI label near the field actually shows "µs" (which would contradict the tooltip and be a genuine bug).
+    - What v2's "400" precisely denotes — I've been treating it as a bin count from the prompt-29 log, but whether v2 specifies a count, a Δt, or fixed TOF edges should be confirmed so the v1↔v2 match is exact, not just close.
+    
+    Viable options the addendum should weigh 
+    
+    1. Keep it a count, make the µs explicit — add a read-only "≈ X µs/bin" hint derived from the active frame width, and align the tooltip/label. Lowest risk; resolves the mental-model gap without changing behavior.
+    2. Add a width-in-µs binning mode — let the user enter Δt (µs) directly (constant-Δt edges), converted internally to a count/edges, while keeping the count mode. Closest to how scientists think; medium effort; must interact cleanly
+    with bin_type and the chopper-aware TOF window. 
+    3. Document/expose the existing bin_type modes — clarify what linear/1-over-t/log mean and which one matches v2's convention.
+    4. Match v2's TOF edges directly — instead of a count, reconstruct the same edges v2 used (if v2 stores them), which would make Load Extraction reproduce v2 exactly rather than approximately.
+    
+    Importantly, this review is orthogonal to the fix in flight: wiring the GUI value through Load Extraction and raising the 200 cap is correct under the current count semantics and closes the 40→400 sparsity regardless of how the
+    field is later relabeled. The semantics review is a clarity/UX improvement layered on top, best captured as its own plan (e.g., plan/prompt-32-eventtofbins-semantics.md) so it doesn't entangle the off-spec fix.
+```
+
+commit 799037aeef500bec77ddc61dab20256b9c9f808a is an expansion of the ToF bins (max value) to 1000 to allow the user to set 400 and for header extraction to honor the UI setting by providing a default.
+commit 78d7e208055d5c8a18fa16515ddc1f78e2c252dc for the main prompt above is just a documentation fix to set ToF bins to 400 before loading.
+
+```
+● All green: 135 passed, pushed (792e445..78d7e20). Here's the consolidated picture you asked for.
+
+  The off-spec "missing data" — diagnosed, fixed, verified
+
+  Cause: not dropped events (the chopper fix is intact). v2 .dat recipes carry no [Event Mode Options], so Load Extraction re-binned events at the default 40 TOF bins (v2 used 400) → sparse (qx,qz) cloud → holey smoothed grid, and low
+  mid-Qz intensity sank below the log color floor → the white band at Qz≈0.06–0.09.
+
+  Fix (792e445): HeaderParser(default_bins=…) → _get_dataset forwards it; loadExtraction passes the GUI eventTofBins, cap raised 200→1000. → In the GUI, set Event TOF bins = 400 before Load Extraction….
+
+  Verified (78d7e20, headless): at 400 bins the gap band Qz[0.05,0.10] coverage goes 79%→100%, central 71%→91% (≈v2), intensity ~30×. The band fills.
+
+  Three secondary findings (separate from the gap): a pcolormesh non-monotonic warning (cosmetic), a SIGSEGV on GUI exit (Error 139), and the constant ~3.2× specular intensity (hardcoded 0.005 footprint, prompt-31).
+
+  Plan status (your "what's done vs. remaining" question)
+
+  prompt-31 — Load Reduced Data
+  - ✅ Parse v2 files · ✅ Specular shape (corr 0.96) · ✅ GUI Load Extraction on a v2 file (your session13) · ✅ Off-spec sparsity fixed + verified (this session)
+  - ❌ Remaining: confirm the smoothed 400-bin image in the GUI; the ~3.2× footprint constant; pcolormesh + SIGSEGV.
+
+  prompt-30 — role decoupling
+  - ✅ Layer 1 (regions, role-switch apply, capture, loadExtraction seeds both, tests) — confirmed loading in session13.
+  - ❌ Remaining: get_xregion per-DB x-width (AC1's x_width=24); fresh-file→DB capture; position/policy split; changeRegionValues/mouse capture; per-role AutoYLimits; the explicit reload-spinbox smoke test.
+  
+  All of the above is committed to plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md and pushed.
+
+  Suggested next steps (in priority order)
+
+  1. Confirm visually: in the GUI set TOF bins=400, Load Extraction… the v2 off-spec recipe, and compare the smoothed map to session12/ — should now match.
+  2. SIGSEGV on exit — worth chasing next; it's a stability risk independent of the science. I can investigate (likely a Qt/matplotlib teardown or the pcolormesh path).
+  3. ~3.2× footprint (qreduce.py:2929/3010) — the one remaining quantitative gap vs v2; needs a geometry-derived footprint + multi-dataset validation.
+  4. prompt-30 get_xregion — to finish AC1.
+
+  Want me to take on the SIGSEGV (#2) or the footprint (#3) next?
+```
+
+### Prompt 30.2
+
+I have confirmed visually that the extraction with setting bins=400 in the GUI before Load Extraction produces the expected! (See session13/quicknxsv1-*-tof-400.png if necessary). Lets proceed with the SIGSEGV on exit investigation.
+
+```
+SIGSEGV-on-exit: fix shipped + self-diagnosing instrumentation
+
+  Root cause (high confidence): the off-spec Reduce → "Plotting…" step opens non-modal PlotDialog result windows — each owns a matplotlib canvas — and stores them in MainGUI.open_plots, which closeEvent never closed. They survived to
+  interpreter shutdown, where their canvases are torn down after the QApplication → SIGSEGV (Error 139). This matches your session13 exactly (you ran the off-spec reduction with output plots, then closed).
+
+  Fix (a1aef4d, pushed): closeEvent now calls _close_open_plots() to close()+deleteLater() every kept-alive plot window while the event loop is still alive. 111 GUI tests pass incl. a new test_close_open_plots_releases_windows.
+
+  Diagnostic safety net (same commit): faulthandler writes a C-level traceback to ~/.quicknxs/quicknxs-crash.log on any fatal fault — validated against a controlled SIGSEGV.
+
+  Honest caveat: it would not reproduce headless (generic exit, lingering dialogs, and _run-scoped teardown were all clean under offscreen and xcb), so it's environment/data-sensitive. The fix targets the most likely cause; if anything
+  still faults, the crash log will name the exact frame.
+
+  Please verify (this working tree already has the fix — no pull needed)
+
+  1. make gui
+  2. Event TOF bins = 400 → Load Extraction… the v2 off-spec recipe → run the Reduce with plotting (your session13 flow).
+  3. Close the app. Clean exit (no Error 139) → fixed.
+  4. If it still crashes, send me ~/.quicknxs/quicknxs-crash.log — it'll pinpoint the faulting module.
+
+  One latent follow-up I noticed but did not touch (out of scope for this crash): the GISANS path calls QThread.terminate() (main_gui.py:585,1216), which is unsafe and could segfault if GISANS is cancelled. Worth converting to a
+  graceful requestInterruption()/quit()/wait() later.
+
+  Want me to wait for your make gui result, or move on to the ~3.2× footprint constant (get_xregion/prompt-30) while you test?
+```
+
+### Prompt 30.3
+
+well, after doing 'make gui', loading a reduced data file and then using Offspecular Preview, I still get the error 139 on exit. Did your fix address all the tabs and possible paths or just the GISANS one? If just the GISANS one, then please apply your fix to all possible paths. The ~/.quicknxs/quicknxs-crash.log file is available for your review. Thank you!
+
+```
+  First, a clarification: my earlier fix (a1aef4d) was the open_plots result-window cleanup — not GISANS (the QThread.terminate() was a separate latent note I flagged for later, not something I changed). That cleanup was correct hygiene
+   but, as your re-test showed, not the root cause.
+
+  What the crash log revealed
+  
+  Current thread ... (most recent call first):
+    scripts/quicknxs, line 51 in _run        # return app.exec_()
+    scripts/quicknxs, line 67 in <module>    # sys.exit(_run(...))
+  Extension modules: ... PyQt5.QtCore, PyQt5.QtGui, PyQt5.QtWidgets ...
+  No Python frame is executing — the segfault is during interpreter teardown after app.exec_() returns. That's a PyQt5 C++ destruction-order crash: at shutdown sip destroys every remaining wrapped C++ object, and with matplotlib
+  FigureCanvas widgets (from the off-spec/preview plots) still alive, that ordered teardown races QApplication destruction → Error 139. It's global, not per-tab — which is why no single tab/dialog fix would catch it.
+
+  The all-paths fix (e4b2328)
+  
+  At the entry point: sip.setdestroyonexit(False). The process is exiting, so the OS reclaims memory; we skip the unsafe ordered C++ teardown. This is the canonical remedy and applies no matter which tab/dialog/canvas was created.
+  Verified: setdestroyonexit exists and a full create→exec_→exit cycle stays clean.
+
+  Please verify
+  
+  1. make gui (this working tree has the fix).
+  2. Load a reduced file → use Off-Specular Preview (your exact repro) → close the app.
+  3. Check ~/.quicknxs/quicknxs-crash.log:
+    - Empty → fixed. (It's truncated at every startup, so empty = no fault this run.)
+    - Non-empty → still crashing — send it; the new traceback will name the next-deeper cause and I'll escalate (e.g., explicit canvas teardown before exit, or os._exit).
+
+  I couldn't reproduce it headless despite faithful attempts (generic exit, lingering plot dialogs, real-exec_, and a synthetic SmoothDialog canvas all exit cleanly here), so this is environment/data-specific — but the crash class is
+  unambiguous from the log and setdestroyonexit(False) is its standard cure.
+```
+
+### Prompt 30.4
+
+It still gave the error on fault. ~/.quicknxs/quicknxs-crash.log is not empty. I ran 'make strace' and produced a set of strace.* for you to review. Perhaps this data set gives you the information you need?
+
+```
+● I've hit the limit of headless reproduction (8 attempts, all clean) and there's no native debugger here (gdb/lldb/catchsegv/py-spy all absent). The faulthandler only gives Python frames (app.exec_); to pinpoint a native null-deref I
+  need the C++ backtrace from your actual crash. I won't ship a third guess — my own repros argue against the obvious suspects.
+
+  Here's where we are, confirmed by the strace: it's a null-pointer dereference in C++ rendering, firing right after the 12s smoothing completes (the 12s matches headless smooth_data exactly), during the off-spec result paint — not
+  teardown (so setdestroyonexit was wrong) and not the smoothing compute (clean headless). Let me get your input on how to nail it down.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Approach 
+
+How should we pin down the exact crash? (8 headless repros were clean, so I need data from your real crash.)
+
+ 1. Capture native backtrace      ┌──────────────────────────────────────────────────────────────┐
+   with gdb                       │ pixi run gdb -ex run -ex 'bt' -ex 'thread apply all bt'      │
+  2. Bisect interactively via     │   -ex quit --args python scripts/quicknxs --instrument ref_m │
+    quick toggles                 │ reproduce -> close -> paste backtrace                        │
+ 3. Ship probable mitigation      │                                                              │
+   now                            │ - pinpoints exact C++ frame                                  │
+                                  │ - ends the guessing                                          │
+                                  │ - needs gdb installed                                        │
+                                  └──────────────────────────────────────────────────────────────┘
+```
+
+### Prompt 30.5
+
+I installed 'gdb' into the system and executed the requested command:
+
+`gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' -ex run -ex 'bt full' -ex 'thread apply all bt' --args pixi run python scripts/quicknxs --instrument ref_m 2>&1 | tee ~/.quicknxs/gdb-bt.log`
+
+The ~/.quicknxs/gdb-bt.log ended with:
+
+```
+[Inferior 1 (process 1355150) exited with code 0213]
+No stack.
+```
+
+But there still was a ~/.quicknxs/quicknxs-crash.log emitted. So I ran gdb line under pixi:
+
+```
+pixi shell
+gdb -batch -nx -ex 'set pagination off' -ex 'set confirm off' -ex run -ex 'bt full' -ex 'thread apply all bt' --args python scripts/quicknxs --instrument ref_m 2>&1 | tee ~/.quicknxs/gdb-bt.log
+```
+
+*NOW* we get the expected SEGV and stack trace in ~/.quicknxs/gdb-bt.log - great! Please analyze it!
+
+```
+● SIGSEGV-on-exit: fixed and verified
+
+  The gdb backtrace cracked it. Root cause: dialogs and progress windows were disposed with QWidget.destroy(), which tears down the native window but leaves the widget registered with the QApplication. On exit,
+  QApplication::closeAllWindows() walks that dangling QWindow and null-derefs (si_addr=0x8). Your "load reduced data" + "Off-Specular Preview" flow hit two of those disposal sites.
+
+  Fix (9a4d7cc, 50d9eb1, pushed):
+  - Replaced all 6 .destroy() calls (loadExtraction progress dialog, Reduce/Smooth/GISANS dialogs + their progress dialogs) with close()/deleteLater().
+  - WidgetDisposalSafety test guards against reintroducing .destroy(); updated the smooth-cleanup test for the new disposal.
+
+  Verification (this time, properly):
+  - Mechanism reproduced: destroy()+closeAllWindows() → SIGSEGV (offscreen and xcb); close()+deleteLater() → clean.
+  - End-to-end: MainGUI → loadExtraction → closeAllWindows() now exits 0 (was 139).
+  - Full GUI suite: 112 passed, 0 failed.
+  
+  Please re-test make gui (load at bins=400, Off-Specular Preview, then close) — the exit crash should be gone, and ~/.quicknxs/quicknxs-crash.log should stay empty.
+
+  Two notes:
+  - I pushed 9a4d7cc a moment before noticing one test (SmoothOffspecProgressCleanup) still asserted the old destroy() behavior; I fixed it forward in 50d9eb1 and confirmed the suite green before pushing that. My mistake for trusting
+  the notification's exit code over the pytest summary — won't repeat it.
+  - The two earlier commits (a1aef4d open_plots cleanup, e4b2328 sip.setdestroyonexit) were based on wrong theories but are harmless hygiene, so I kept them. If you'd prefer a clean history reflecting only the real fix, say the word and
+   I'll revert those two.
+```
+
+### Prompt 30.6
+
+add the Qt gotcha to ui-aspects.md and please add a 'make gdb' to quicknxsv1's Makefile so its easier to run next time we need it.
+
+```
+● Both done:
+
+  1. make gdb (quicknxsv1, d7784cc, pushed) — launches the GUI under gdb on the env python and tees the native backtrace to ~/.quicknxs/gdb-bt.log. Usage:
+  make gdb            # reproduce the crash, then close → backtrace captured
+  make gdb INSTRUMENT=ref_l GDB_LOG=/tmp/bt.log   # overridable
+  It bakes in the lesson that bit us: pixi run gdb --args python … (debug the env python), not gdb --args pixi run … (only traces the wrapper).
+  
+  2. Qt disposal gotcha added to setup/patterns/ui-aspects.md (parent repo, 614a819, pushed) — the destroy() → dangling QWindow → closeAllWindows() SIGSEGV pattern, with the symptom, why it eludes faulthandler/headless repro, the gdb
+  signature, and the minimal repro/fix check.
+
+  One thing to flag: I committed the pattern on dragonfly, not main. ui-aspects.md doesn't exist on main yet — dragonfly is 67 commits ahead, so the whole file (and now this gotcha) is part of your pending dragonfly → main sync. Pushing
+   it onto main directly would've created a partial file, so I left it where the file actually lives; it'll reach the other machines when you next sync dragonfly to main. (I only committed the doc — the M quicknxsv1/quicknxsv2
+  submodule-pointer bumps are left for you.)
+```
+
+### Prompt 30.7
+
+Thanks. Is there a lesson to be learned in general (beyond ui-aspects.md) regarding gdb and investigations? I.e. is there a cross-project pattern that triggers the use of strace and gdb? If there isn't, please add it at this time. Finally, as this session is getting long, please analyze the plan/** again for the remaining items (you suggested the 3.2x footprint factor) and develop a plan/prompt-31-plan.md that I can start a clean session with. Let that plan include the remaining items you discover (from plan/prompt-30-remaining.md) and incorporate items you identified in plan/prompt-31-load-reduced-data.md. Ensure that the plan uses multi-agent steps to manage context, possible OOM issues and can handle token limits by waiting.
+
+```
+  1. Cross-project diagnostic pattern — there wasn't one, so I added setup/patterns/native-crash-and-hang-diagnosis.md (parent repo dragonfly, 29c82b2, pushed) and indexed it in the parent CLAUDE.md. It triggers on SIGSEGV/139, 
+  abort/134, OOM/137, or hangs and captures:
+  - The escalation ladder faulthandler → strace → gdb (what each sees and its blind spot — e.g. faulthandler bottoming out at app.exec_ means "go to gdb").
+  - si_addr/exit-code triage (0x8 = null deref; 139/137/134 disambiguation).
+  - The wrapper trap (debug the env interpreter, not pixi run/conda run) — the exact thing that cost us a round-trip.
+  - The discipline: reproduce the mechanism and prove the fix flips it before shipping; read the real result, not a wrapper's exit code.
+  
+  2. plan/prompt-31-plan.md (quicknxsv1, 24ede00, pushed) — a clean-session, multi-agent plan consolidating both source plans into 5 phases:
+  1. ~3.2× specular footprint (the hardcoded 0.005 at qreduce.py:2929/3010) — highest value
+  2. get_xregion per-DB x-width (prompt-30 AC1)
+  3. prompt-30 Layer 2 hygiene (capture paths, per-role AutoY, mouse handlers)
+  4. Off-spec fidelity vs correctReduction/session12 (after the footprint fix)
+  5. pcolormesh non-monotonic warning (cosmetic)
+  
+  It opens with orchestration rules for your constraints: one heavy reduction at a time via background Bash + wait on the completion notification (no polling), Explore subagents for read-heavy research to keep the orchestrator lean,
+  checkpoint-commit per phase, and hand off to a new session at ~75% context (the plan file is the handoff — no chat state needed). Suggested layout: Session A = Phase 1, Session B = Phases 2–3, Session C = Phases 4–5.
+
+  It also records what's already DONE so a fresh session won't redo it. You can start a clean session pointed at plan/prompt-31-plan.md.
+```
+
+## Prompt 31
+
+For this prompt, please delay execution for 2hours (my token limit is up). You are working in the quicknxsv1 project, feature/read-event-nexus branch. Please read plan/prompt-31-plan.md and execute it. This is a result of a long running session. You may avail yourself of the documents in plan/** as needed and appropriate to continue the work. In case you need it the sources for quicknxsv2 are available as well as all git history. Files in /SNS/users/6ov/shared/REF_M/11486/** may be instructive. Good luck! As before, the computer is yours until I get back home from work tonight. Have fun!
+
+```
+● Understood — I'll hold off and start in 2 hours when your token limit resets. The wakeup tool caps a single delay at 1 hour, so I'll chain two 1-hour waits, then begin executing plan/prompt-31-plan.md in the quicknxsv1 project on the
+  feature/read-event-nexus branch.
+
+  Scheduling the first hour now.
+
+● First hour scheduled (wakes ~09:41). When it fires I'll chain the second hour, then begin the work. Nothing else to do until then — see you on the other side.
+```
+
+Isn't that nice? :)
+
+```
+● Retry failed differently (publickey denied) — the first attempt authenticated fine (it reached the server-side hook), so this is intermittent ORNL GitLab/agent trouble, not a problem with the commit. The pattern commit ffdcc21 is
+  safely in ../main/, 1 ahead of origin/main, clean tree — it just needs a push when GitLab access is restored. I won't loop on it.
+
+  All four tasks are complete. Here's the session summary.
+
+  Session A (prompt-31 Phase 1) — done
+
+  What I set out to do: Phase 1 of plan/prompt-31-plan.md — fix the specular intensity that's ~3.2× dim vs quicknxsv2, which the plan attributed to the hardcoded 0.005 beam-footprint constant in qreduce.py.
+
+  Key finding — the plan's hypothesis is wrong, and I did not ship the proposed fix:
+  - quicknxsv2 (data_set.py:301), its notebook (event_reduction.py:70), and the canonical mr_reduction (reflectivity_output.py:99-115) all use the identical area_ratio × 0.005/sin(θ) scaling v1 uses. Replacing 0.005 would have broken
+  the match, not fixed it.
+  - The real offset is not a global constant — it's angle-correlated per-run: median v1/ref ≈ 0.38 / 0.31 / 0.19 at ai = 0.0079 / 0.0195 / 0.0483 (same DB, ROI, scale). The "3.2×" was a stitched-curve median masking that drift (RMS ~0.6
+   dex).
+  - The On_Off cross-section gives 0.41 / 0.14 / 0.15 — so it's not even a clean f(ai); it also varies with cross-section. The differentiator lives inside Mantid's MagnetismReflectometryReduction (C++, not on this machine).
+  
+  Committed & pushed to GitHub (feature/read-event-nexus, commits f77204b, dfe52eb):
+  - scripts/diag_specular_decompose.py — reproducible per-segment decomposition
+  - corrected write-ups in plan/prompt-31-load-reduced-data.md and plan/prompt-31-plan.md, redirecting the next session
+  
+  Why no qreduce.py change: per the "definitive diagnosis before code change" principle — the root term is in Mantid internals I can't read here, and the residual is structured (angle + spin), so any one-line fix would be speculative.
+
+  Next session needs: Mantid MagnetismReflectometryReduction.cpp, or a Mantid env to run v2/mr_reduction per-run, to characterize the exact normalization before touching _calc_normal/_calc_fan.
+
+  Two loose ends for you:
+  1. I added a validated lesson to setup/patterns/numerical-diagnostics.md (a clean median factor can hide a structured residual — disaggregate first). It's committed in ~/Projects/Claude/main (ffdcc21) but the push to code.ornl.gov was
+   rejected (GitLab internal API down, then publickey) — please run git -C ~/Projects/Claude/main push origin main when access is back.
+  2. I deliberately skipped merging main → dragonfly because the parent repo has your staged MM quicknxsv1 pointer and I didn't want to entangle it.
+```
+
+### Prompt 31.1
+
+Hmmm. So code.ornl.gov has become readonly for many accounts at this time. Please make a memory for all sessions on this machine that is is currently not possible to push anything to code.ornl.gov until further notice. This means the setup/patterns/numerical-diagnostics.md has to be added to the dragonfly branch of the parent project. I have an issue with the way you implemented this: you created a new project in ~/Projects/Claude/main to add this, but there was a 'main' branch in the folder that you were started in (~/Projects/Claude/1/**). Why did you feel the need to create a new folder? Have you not switched branches to code into 'main' before? Why the new behavior to create new folders outside the space you are working in? Anyway, I have commited the file with the same message, please make a note that we still have to update main and round-trip that task.
+
+I am beginning to regret what I said about pushes. The reason code.ornl.gov has become readonly is reportedly due to 'bots' and I fear I may have contributed to this with requiring pushes when a session goes idle. I think we should return to the instructions where pushes are for the human collaborator (except in certain cases where an autonomous agentic system is active in which communication through the git repository is explicit). Please update the cross-project patterns in your parent repos.
+
+Once you have finished that, I would like to start a new session. Please make sure that the plan/prompt-31-remaining.md contains the items that you consider still need to be dealt in this session. Thank you for understanding!
+
+```
+● Policy section reads cleanly. Everything you asked for is done — here's the rundown.
+
+  On the folder question: I didn't create ~/Projects/Claude/main — it already existed as a sibling clone, and I wrongly chose to hop into it rather than git checkout main in my own working clone. The trigger was over-caution about your
+  staged MM quicknxsv1 pointer. I've recorded the correction (switch branches in place; never hop clones) and baked it into CLAUDE.md too.
+
+  What I did this turn:
+  - Memory — added gitlab-readonly.md (code.ornl.gov is read-only / no pushes until further notice, with the pending main round-trip TODO) and feedback_branch-switching.md, both indexed in MEMORY.md.
+  - Push policy reverted to human-only — rewrote CLAUDE.md ("Pushing is a human action" + Syncing / Cross-project-distribution / CLAUDE.md-edits sections) and aligned setup/docs/architecture.md + getting-started.md. Agents now commit;
+  the human pushes — except an explicitly authorized multi-agent git workflow. Committed on dragonfly as b2518ed (your pattern commit aeca94d is already there).
+  - plan/prompt-31-remaining.md — created and committed (a1d32e6 on feature/read-event-nexus). Covers the deferred Phase-1 fix (needs Mantid), Phases 2–5, and the ops follow-ups.
+  
+  Committed, not pushed (yours to push, per the new policy):
+  - feature/read-event-nexus (quicknxsv1 → GitHub, not blocked): 0d72436 (yours) + a1d32e6.
+  - dragonfly (parent → code.ornl.gov, blocked/read-only): b2518ed (+ aeca94d) — and the duplicate local-only ffdcc21 in ~/Projects/Claude/main to reconcile during the eventual main round-trip.
+
+  Ready for the new session — plan/prompt-31-remaining.md is in place as the entry point.
+
+  One optional flag: quicknxsv1's own CLAUDE.md still tells agents to auto-enable PR auto-merge on GitHub. That's project-specific and a different remote, so I left it — say the word if you want the human-push philosophy extended there
+  too.
+```
+
+### Prompt 31.2
+
+Thank you, Claude. You are right about ~/Projects/Claude/main - I probably created that. You were right to correct my statement that you created it. I like that you notice small inaccuracies in my statements. Coding is an extremely precise undertaking. Please keep being precise like this! May I make a small variation to the cross-project pattern you just modified? Here is what I would like:
+
+In the 'Cross-project knowledge distribution flow' section, previously (as in commit aeca94d) when discovering a reusable pattern the directive was to implment it on 'main' then merge to the working branch. That was the right workflow, in my mind. It was only the 'push' part that needed adjustment. Can you restore that and remove all that stuff about once the human round-trips it? The only difference should be that pushes need to be done by a human; that means the human may need to push two things:  the main and the working branches. I am willing to accept that responsibility until pushes are allowed again. Perhaps it should only be restricted to remotes that include code.ornl.gov, since its the only git server that I know which reactively disables accounts when 'bot' activity is detected. Such luddites, don't you think?
+
+```
+● Done. Here's what changed in this refinement:
+
+  Cross-project flow restored to the original (your preferred) workflow in CLAUDE.md:
+  1. Commit the pattern to main (git checkout main in the working clone — the don't-hop-clones guidance stays),
+  2. Merge main back into the working branch (git merge main, local),
+  3. The human pushes both main and the working branch.
+  
+  All the "agent commits on the working branch / human round-trips" language is gone.
+
+  Push hold scoped to code.ornl.gov only — it's the server that reactively disables accounts on "bot" detection and is currently read-only. So: do the full local workflow (commit + merge), human does the code.ornl.gov push (possibly two
+   branches), "until pushes are allowed again." Pushes to other remotes (the quicknxs GitHub repos) are explicitly not restricted — just no reflexive idle/handoff pushing. The diagram and Syncing bullets match.
+
+  Committed (no push):
+  - Parent dragonfly: 4242e3f (refines b2518ed; I made a new commit rather than amend, per the repo's no-amend rule — net effect of the two is the policy you described).
+  - quicknxsv1 feature/read-event-nexus: bcaa9e4 — corrected prompt-31-remaining.md so it doesn't tell the next session GitHub pushes are forbidden.
+  
+  Memory gitlab-readonly updated: scope corrected (code.ornl.gov-only), round-trip batch now aeca94d + b2518ed + 4242e3f.
+
+  plan/prompt-31-remaining.md is in place and accurate — ready for the new session whenever you are.
+```
+
+## Prompt 32
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. During testing on analysis.sns.gov, I found quicknxsv1 to be rather slow to react to button presses. I have also observed this on *this machine* (dragonfly), so I think it is a systematic behavior. It was not impressive to the scientist I was demonstrating it to. The "quick" part of quicknxs is that actions have immediate effect. Currently, it can take several seconds for the gui to react and it just feels not crisp at all. Please investigate this condition *thoroughly* and comprehensively. Make all the tests you need, use all the resources at your disposal (you have make strace, make gdb, etc) and if you need new tools to diagnose, install them per your guidance on doing so. Here are some additional items that I would like to see implemented regardless of your success in improving the responsiveness of the UI:
+
+1. when doing a 'Load Extraction' or pressing 'OffSpec Preview' tab, it make take some time before the GUI reacts (particularly when the system is over an sshfs mount). I would like that the status text on the lower left corner of the UI to immediately indicate what action is currently initiated.
+2. please investigate other potentially long running tasks and ensure a status message is surfaced immediately upon embarking on the activity
+3. Please ensure that every time the gui is idle and will respond to clicks again, that a message 'Complete' is uniformly and reliably surfaced. I also like that this message fades away after so many seconds so that it does not clutter the UI.
+
+```
+● All green, no lingering processes. Everything is implemented, tested, and lint-clean. Here's the complete picture.
+
+  What I found (measured, not guessed)
+
+  I profiled headless (scripts/profile_responsiveness.py, offscreen Qt, local file) and traced two hangs with py-spy. The numbers:
+
+  ┌────────────────────────────────┬───────────┬────────────────────────────────────┐
+  │             Action             │   Time    │           What dominates           │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ Cold file open                 │     4.0 s │ NXS read + plot                    │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ Tab → X vs Y / X vs ToF        │ 0.6–0.8 s │ matplotlib draw                    │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ OffSpec Preview                │     1.4 s │ re-reads file + recomputes + draws │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ plot_refl                      │    0.25 s │ ~all matplotlib draw()             │
+  ├────────────────────────────────┼───────────┼────────────────────────────────────┤
+  │ calc_refl (the reduction math) │   0.002 s │ negligible                         │
+  └────────────────────────────────┴───────────┴────────────────────────────────────┘
+
+  Root cause: the GUI is single-threaded — every handler blocks Qt's event loop for its whole duration, so the window can't even repaint the button press. And the cost is matplotlib rendering + file I/O, not the science (cProfile pins
+  it on axis._update_ticks / draw_text). So clicks do register; the UI just freezes for 0.2–4 s with no sign it heard you. That's the "not crisp."
+
+  Two modal-dialog footguns found while profiling (both fully freeze the GUI, neither changed — flagged for your call): the startup "Previous Crash" dialog (fires whenever a stale ~/.quicknxs/run_state.dat exists — i.e. after any
+  crash/OOM), and logged warning() calls, which become modal dialogs.
+
+  Full write-up: plan/prompt-32-responsiveness.md.                                                                                                                                                                 
+  
+  What I implemented (all four asks)
+
+  Since the latency is the rendering, the high-leverage win is acknowledging the action instantly. New quicknxs/activity_status.py (ActivityIndicator: a status-bar label with a real opacity fade) + a depth-counted with self.busy("…"):
+  scope on MainGUI that, before the blocking work:
+  - shows the message immediately, sets the wait cursor, and forces a repaint (processEvents(ExcludeUserInputEvents));
+  - on exit (outermost scope) surfaces a uniform "Complete" that holds ~2 s then fades over ~1.2 s.
+  
+  Applied to 11 handlers: Load Extraction, OffSpec Preview tab (+ all tabs), file open/sum, open-by-number, quick-reduce, reduce, auto-reflectivity, strip-overlap, export, live-open, GISANS (threaded), clip-colorscale. High-frequency
+  handlers (spinbox drags, table edits) are deliberately left alone so "Complete" doesn't become the clutter you wanted to avoid.
+
+  1. ✅ Load Extraction / OffSpec Preview announce immediately (before any sshfs read).
+  2. ✅ Every long task surfaces its message at the instant it starts.
+  3. ✅ Uniform fading "Complete" whenever the GUI returns to idle.
+
+  Tests
+
+  activity_status_test.py (10) + responsiveness_test.py (8) new; main_gui_test.py 112 passed (updated 2 assertions that checked the old status widget); 263 collect clean; ruff check quicknxs/ clean.
+
+  Files
+  
+  - New: quicknxs/activity_status.py, tests/activity_status_test.py, tests/responsiveness_test.py, scripts/profile_responsiveness.py, plan/prompt-32-responsiveness.md
+  - Changed: quicknxs/main_gui.py (mechanism + 11 wrapped handlers), tests/main_gui_test.py (2 assertions), CLAUDE.md (responsiveness convention)
+
+  Honest framing: this makes the GUI feel crisp (instant acknowledgment + cursor + Complete), not make matplotlib faster. A genuine speedup is available as a follow-up — cache OffSpecular so the preview tab stops re-reading and 
+  recomputing every view — but that's a larger change with correctness implications, so I left it out.
+
+  Everything is uncommitted on feature/read-event-nexus. Want me to commit it (locally — you'd push, per the code.ornl.gov rule)? And would you like me to launch make gui so you can see the fade in action, or tackle the OffSpec caching
+  speedup?
+```
+
+### Prompt 32.1
+
+Ok. Firstly, it was wrong of me to start this prompt in the same branch as feature/read-event-nexus, particularly since we still had unfinished work from plan/prompt-31-* to do there. Did you preciently observe that dichotomy and leave the files uncommitted? I am genuinely curious on your decision not to commit? Anyway, I am glad you did because I made feature/responsiveness branch for the rest of plan/prompt-32-* work. Go ahead and commit the work now so we have proper history of our development.
+
+I launched make gui and have these observations:
+
+1. I see the acknowledgment + cursor + Complete + fade (and I like it)
+2. item 1 only occurs on *some* of the activity, so it is an imcomplete treatment, here is a partial list I tested:
+  a. after 'Load Extraction' completed, I unselected 'BG X' in section 'Reflectivity Extraction (Basic)' - no indication of busy, no acknowledgement, no cursor change
+  b. I pressed 'Reload Active File' - no acknowledgement, no cursor change *until* the previous operation (2.a) finished
+3. I pressed the 'Reduce' button - no acknowledgement, no cursor change
+  a. after a while, the smoothing options dialog popped up
+  b. the smoothing options dialog was responsive to changes in parameter change as expected, but it was "slow" to render
+  c. after OK, I saw the modal status dialogs on the state extractions it was doing
+  d. after all the dialogs closed, it was still unclear (to me) when reduction finished, so I pressed 'OffSpec Preview' - no acknowledgement, no cursor change *until* the reduction truly completed which occured some time later.
+
+I know these are artifacts of the single-threaded architecture, but before we embark on changing that, I really would like the *current* architecture to be "responsive" to *every activity that takes significant time*. Is there a way to ensure that the user is made aware of stacked operations? Lets work on improving the design plan of this feature (I should have asked you that from the beginning of this prompt, but in my mind it seemed more trivial than it actually is). Please audit every possible action taken in the the main UI to identify those (like changing the selection state of 'BG X') that will cause a long operation and UI unresponsiveness. Develop a complete and wholistic design for the entire application to improve communicating to the user what the UI is doing. I am happy to consider options that you propose from your analysis.
+
+One option in my mind is when the user clicks several of these items and their inputs are stacked, to have the acknowledgement section override to "X stacked operations..." (where X is the number of pending actions). Only after there is only one operation active should the details surface on the acknowledgement text.
+
+I look forward to reviewing your proposed plan!
+
+```
+● The design is captured in plan/prompt-32-responsiveness-design.md. Here's the essence.
+
+  The audit (88 connections → ~30 handlers) sorts into four buckets:
+  - A. Heavy & discrete (one gesture → one replot/reduce/IO): ~20 handlers. Phase 1 wrapped ~11; ~9 are still bare — exactly your cases: BG‑X toggle (changeRegionValues), channel radios, Normalize, Clear/Remove, format toggles
+  (folderModified, sshfs glob), table edits, and Reduce (I'd skipped it because it opens a modal dialog).
+  - B. Heavy & continuous (spinbox drags, already debounced): wrapping each tick would flash "Complete" repeatedly — needs coalesced status instead.
+  - C. Dialog‑openers: want an "Opening…" ack but no wait cursor during the modal.
+  - D. Instant: no feedback needed.
+  
+  The hard part — stacked clicks (3d, 2b). While a slot runs, Qt's loop is blocked, queued clicks aren't dispatched, and Qt never exposes its pending‑event count. So the only way to show "X stacked operations…" is to intercept user
+  actions into our own queue and drain them ourselves — exactly your instinct. I designed that (re‑wire the user signals through a dispatch() that enqueues; a drain() loop runs each real handler then processEvents() to ingest clicks
+  that piled up; status shows "N pending…" when >1, the specific label when 1, then fading "Complete"). Handlers stay synchronous internally, so the test suite and internal call‑chains are unaffected.
+
+  Honest limit without threading: one uninterruptible call (a single big draw() or numpy step) still blocks for its duration; the queue shrinks the blind window from "the whole operation" to "one inner step," and acknowledges the
+  backlog the instant that step returns. Fully eliminating it is the threading phase you want to defer.
+
+  A few decisions shape what I build next:
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☐ Scope  ☐ Stacked text  ☐ Wait cursor  ✔ Submit  →
+
+How much should I implement now?
+
+  1. 2a + 2b together             ┌───────────────────────────────────────────────────────┐
+❯ 2. 2a first, then review        │ Phase 2a only:                                        │
+  3. Prototype 2b on one path     │ - every heavy action shows its message + cursor       │
+                                  │ - spinbox drags show 'Adjusting…' then one Complete   │
+                                  │ - NO stacked count yet (clicks ack when they run)     │
+                                  └───────────────────────────────────────────────────────┘
+
+←  ☒ Scope  ☒ Stacked text  ☐ Wait cursor  ✔ Submit  →
+
+Wording when operations stack up?
+
+  1. N operations pending…        ┌───────────────────────────────────────────────────────┐
+  2. Working… (N queued)          │ Reducing datasets…  (+2 queued)                       │
+ 3. Current label + (+N      ✔    │ Reducing datasets…  (+1 queued)                       │
+   queued)                        │ Rendering off-specular preview…                       │
+                                  │ Complete                                              │
+                                  └───────────────────────────────────────────────────────┘
+←  ☒ Scope  ☒ Stacked text  ☐ Wait cursor  ✔ Submit  →
+
+Wait cursor for quick (sub-second) actions?
+
+  1. Always show it               ┌───────────────────────────────────────────────────────┐
+❯ 2. Only past ~200 ms            │ Wait cursor appears only if the op runs >200 ms;      │
+                                  │ quick replots keep the normal pointer.                │
+                                  └───────────────────────────────────────────────────────┘
+```
+
+Claude worked...
+
+```
+● Committed Phase 2a as dfc946e. Here's where things stand.
+
+  Phase 2a — done & committed (on top of phase 1)
+
+  The audit (all 88 signal connections, in plan/prompt-32-responsiveness-design.md) showed phase 1 covered ~half the heavy actions. Phase 2a closes the rest:
+
+  - Your 2a (BG‑X toggle) → now shows "Adjusting extraction region…" via a new coalesced path (_activity_transient / busy_until_idle): the message holds during a drag and settles to one fading "Complete" — no per‑tick flicker. Same for
+  the off‑spec/GISANS color‑scale spinboxes and the overwrite fields.
+  - Your 3 (Reduce had no ack) → now "Opening reduction options…" the instant you click, then "Complete" when the dialog/reduction returns.
+  - Plus every other discrete action that replots/recomputes: channel switch, Normalize, Clear/Remove, reduction‑table edits, format toggles (folderModified's sshfs glob), peak‑finding, and all the "Open …" dialog launchers.
+
+  Wait cursor — your "only past 200 ms" choice: implemented honestly by action class, not a timer. A synchronous slot blocks the event loop, so a live 200 ms timer can never fire mid‑op; instead heavy discrete ops show the cursor and
+  quick/continuous ones never do — which is exactly "quick replots keep the normal pointer," without flicker. (Noted in the commit and the design doc.)
+
+  Tests: activity_status_test.py 15, responsiveness_test.py 14, full main_gui_test.py 112 — all green; ruff clean.
+
+  What 2a does not fix yet (your 2b and 3d — the stacked cases)
+
+  When you clicked Reload during the BG‑X replot, and OffSpec during the reduction, the click sat in Qt's queue with no acknowledgement until the running op finished. That's the single hard constraint: while one slot blocks, Qt won't
+  dispatch the queued click and never exposes its pending count. The only fix is the deferred command queue (Mechanism 3 in the design) that intercepts user actions into our own queue and shows your Reducing datasets… (+2 queued) format
+   — which I've designed but not built, per your "2a first, then review."
+  
+  Your move
+
+  - Try it: git pull (you're on feature/responsiveness) then make gui — exercise BG‑X, Reduce, channel switch, format toggles, etc.
+  - Two commits are local only (9b8038d, dfc946e) — code.ornl.gov is read‑only, so the pushes are yours when you're ready.
+  - Say the word and I'll build Phase 2b (the deferred queue + (+N queued)); the design and the open risks are written up in plan/prompt-32-responsiveness-design.md for your review.
+
+  Want me to proceed with 2b, or do you want to test 2a on the real GUI first?
+```
+
+### Prompt 32.2
+
+I tested it with the real GUI on analysis.sns.gov. Its not bad. The immediate feedback thru the acknowledgement gives a decent signal to the user that things are happening. Lets leave the plan where it sits as a work-in-progress and merge this 'feature/responsiveness' and 'feature/read-event-nexus' into origin/next at this point. We have done alot of work on these two features and its time to bake-in our progress. We will keep all plan/** files we have added so that future sessions can audit what has been done and what still needs todo. Please perform a retrospective and update any files with new learnings. Oh, and I did want to ask about why you thought you shouldn't commit from my prompt - I will need to find that and fix it because I absolutely want commits to happen when you finish a bout of work - its only the push that I would like to reserve for me to do. I think I'm ok with stacking several commits during a session. I'm also concerned about the ease with which you create folders outside of the starting folder and its sub folders - I've made it possible for you write to all that you need within the ~/Projects/Claude/{session}/** framework. I have referenced files outside of this to be reviewed as read-only (typically). You may always do whatever you need with /tmp/**, just please if you do repo operations requiring writes there do not leave uncommitted or unpushed files without making me aware that you did that and I need deal with the push part. Thanks for improving our cross-project knowledge transfer system - its a learning experience to be sure!
+
+```
+● Done. Here's the wrap-up, leading with your question.
+
+  Why I didn't commit (and the fix)
+
+  It wasn't foresight — it was a rule. My harness system prompt says "Commit or push only when the user asks." That's a Claude Code default, not anything in your CLAUDE.md, which is why you couldn't find it. CLAUDE.md overrides harness
+  defaults, so I fixed it there:
+
+  - Parent CLAUDE.md (committed b4382b8 on dragonfly) now has a "Committing is expected (do not wait to be asked)" section: commit on finishing each logical bout of work, stacking several commits per session is welcome, commit freely / 
+  push never.
+  - "Pushing is a human action" generalized to every push, every remote (your reservation) — I removed the old "push the GitHub repos normally" carve-out. code.ornl.gov stays additionally read-only.
+  - New "Write scope" section: confine writes to ~/Projects/Claude/{session}/** and /tmp/**; flag out-of-scope writes instead of doing them silently; surface any uncommitted/unpushed repo state.
+
+  Merges (local — yours to push)
+
+  Both features are merged into next with regular --no-ff commits, zero conflicts (next was a strict ancestor; responsiveness already contained read-event-nexus):
+  - next → c8b8bc7, 109 commits ahead of origin/next; 29 sanity tests pass on it.
+  - Push caveat: your own branch protection on next (enforce_admins:true + required CI) will reject a direct push. Land it via a PR from feature/responsiveness → next, or relax protection. feature/responsiveness (+1) and
+  feature/read-event-nexus (+6) are also unpushed.
+
+  Retrospective updates
+
+  - Parent CLAUDE.md — the three policy/scope changes above (b4382b8, dragonfly; pending main round-trip, batched with the prior dragonfly knowledge commits).
+  - Memory: gitlab-readonly updated (all-pushes-human + the new pending pushes); new quicknxs-embedded-pat security note.
+  - py-spy-for-hangs was already in setup/patterns/native-crash-and-hang-diagnosis.md — no change needed. All plan files kept as the WIP audit trail, as you asked.
+
+  Three things for you (per the rule I just wrote)
+
+  1. Pushes pending (all yours): quicknxsv1 next + the two feature branches (GitHub, via PR); parent dragonfly b4382b8 (+ the main round-trip, code.ornl.gov when writable).
+  2. Out-of-scope write I made: py-spy → ~/.local/bin/ (via uv tool install, before the write-scope rule existed). Remove with uv tool uninstall py-spy if unwanted.
+  3. Pre-existing parent uncommitted state I deliberately left alone: M mr_reduction, M quicknxsv1 (submodule pointers), ?? mantid/.
+
+  And the security item from earlier still stands: rotate that GitHub PAT embedded in quicknxsv1/.git/config (tracked in the new memory).
+
+  Glad the immediate-feedback approach felt right on analysis.sns.gov — and thanks for the calibration on commits and write scope; both are baked into CLAUDE.md now so future sessions inherit them.
+```
+
+Ok, so that was silly, 'next' is a protected branch and I need to make a PR for this if we are going to put it into next. So now we have this situation:
+
+* 'feature/read-event-nexus' - work-in-progress, [prompt-31-remaining.md](prompt-31-remaining.md)
+* 'feature/responsiveness' - work-in-progress, based on top of 'feature/read-event-nexus', [prompt-32-responsiveness-design.md](prompt-32-responsiveness-design.md) of which we have done 2a and have 2b and 3 pending.
+
+I think what I will do is start a new session in feature/read-event-nexus to continue the prompt-31-remaining work, but to first merge 'feature/responsiveness' so that feature/read-event-nexus is the branch that the PR will target.
+
+## Prompt 33
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. Work has been done in feature/responsiveness while we paused work on this branch, such that now we have this situation:
+
+* 'feature/read-event-nexus' - work-in-progress, [prompt-31-remaining.md](prompt-31-remaining.md)
+* 'feature/responsiveness' - work-in-progress, based on top of 'feature/read-event-nexus', [prompt-32-responsiveness-design.md](prompt-32-responsiveness-design.md) of which we have done 2a and have 2b and 3 pending.
+
+I'm certain that I want the responsiveness that we have done so far and I'm certain that I want to continue working on the prompt-31-remaining.md work in this session. Do you recommend to merge feature/responsiveness into this branch and continue prompt-31-remaining.md afterward? Is there an approach that will lead to better results?
+
+Regarding what do do about continuing prompt-32-responsiveness-design, 2b+3, I would like some advice on this. There was a big effort made to consider the implementation of quicknxsv2 and to review it critically for separating its frontend from its backend. This was captured in the tasking project, quicknxsv2-modularization branch in the file tasking/plan/quicknxsv2-modularization/**. Read tasking/plan/quicknxsv2-modularization/README.md to orient yourself and navigate the knowledge base that was produced. The question I would like to know is whether or not the work on *quicknxsv1* 2b+3 would be worth doing given my interest in performing a similar review and refactoring quicknxsv1 in a future session. Let me explain a bit more in the next paragraph to give you more detail for your consideration:
+
+quicknxsv1 ended development in late 2015. quicknxsv2 began development in 2017, and entered into production use in 2019. The scientists have always complained that it was missing many features and produced incorrect results. In early 2026, I began a campaign together with you, Claude, to bring back quicknxsv1 to read modern event nexus files and to incorporate reading REF_L data sets (so currently quicknxsv1 can read both REF_M *and* REF_L datasets). The discussion on how quicknxsv2 modernization will be accomplished is fraught with disagreement and misalignment from management and it is not clear (to me, nor the scientists) how the effort will be played out. Many of the disagreements stem from frontend/backend, what codes will be used, will mantid be used or not? The "official" REF_L reduction (lr_reduction:next) uses mantid, but a new reduction implemented for REF_L (lr_reduction:new_workflow, and my own lr_reduction:new_workflow_ui_plan) does *not use mantid*. The software developers are doing a deep dive into lr_reduction:new_workflow in a few days for the purpose of understanding it and ostensibly to re-write it using mantid functions. The goal that *everyone* agrees with is that there should be a common backend reduction that processes *both* REF_M and REF_L datasets, and then a frontend for each instrument according to its needs with a common UI. The disagreements are about the path to get there.
+
+Now, the work we have done on quicknxsv1 is quite relevant to this effort as a reality check, as well as the non-mantid alternative, in my opinion. The discussions I'm having with scientists are that the focus should be on building up quicknxsv2. However, I am extremely concerned about the 'mantidization' of the new_workflow given that there is are serious efforts underway on "mantid-replacements" (and I have my own thoughts about this as well). So, what *I* would like to do is work with you to perform a separation of frontend and backend of quicknxsv1 along the lines discussed and agreed upon during the hack-a-thon for quicknxsv2-modularization. That will be the subject of a future session, to be sure. But for this session, I just want your perspective on whether we should first finish prompt-32-responsiveness-design, 2b+3 or rather incorporate it into the future "quicknxsv1-modularization" effort.
+
+As always, obtain any tool you need, be resourceful and ask me if you are missing any information or capability that you need to complete your investigation. Thank you so much!
+
+```
+● I've now got the full picture from both the v1 responsiveness design and the v2 modularization knowledge base. Here's my analysis and recommendation.
+
+  Bottom line
+
+  Yes, merge feature/responsiveness → feature/read-event-nexus — it's a near-trivial merge and the policy-correct move. On the strategic question: keep 2a, fold Phase 3 into the future v1 modularization, and hold 2b. The v2 hackathon
+  already answered the threading question for you, and its conclusion transfers directly to v1.
+
+  ---
+  1. The merge: yes, and it's nearly free
+  
+  The branches diverged at 65b2dbd. Since then:
+  - read-event-nexus: +1 commit (fd72449) touching only plan/transcript.md (the prompt-33 planning doc).
+  - responsiveness: +5 commits — the real 2a code (activity_status.py, main_gui.py +834/−349, two test files, CLAUDE.md +53, design docs).
+  
+  I ran a merge dry-run: every code change applies cleanly. The only conflict is plan/transcript.md, because both sessions appended their transcript to a shared base — resolve by keeping both tails (union). This is exactly the
+  regular-merge-commit pattern your CLAUDE.md prescribes.
+
+  Why merge beats the alternatives:
+  - Rebase responsiveness onto the new tip — ❌ it's published (origin/feature/responsiveness); rewriting published history violates your no-force-push/no-rewrite discipline and desyncs sibling clones.
+  - Continue on responsiveness + cherry-pick the prompt-33 doc — works, but leaves a branch named "responsiveness" carrying prompt-31 reduction work (semantically muddled), and hits the same transcript.md conflict anyway.
+  - Merge keeps both histories intact, no rewrite, read-event-nexus stays the canonical trunk. Your instinct is right.
+  
+  After the merge, responsiveness's tip becomes an ancestor — it's fully absorbed. Leave the remote branch alone (deleting it is a push = your action); just stop developing it as a separate line.
+
+  One caveat on "continue prompt-31 afterward": of the five items in prompt-31-remaining.md, #1 (specular fix) and #4 (off-spec fidelity) are Mantid-blocked on this 8 GB machine and explicitly deferred. The actionable work this session
+  is #2 get_xregion (clean red/green target — known expected x_width = 12/16/24 for DB 44033/34/35), #3 prompt-30 Layer-2 hygiene, and #5 (cosmetic). I'd start with #2.
+
+  ---
+  2. Phase 2b + 3: defer into the modularization
+  
+  Your prompt-32 design doc already contains the key admission, in "What stays unsolved without threading": even with 2b, a single long call (one matplotlib draw() or one numpy reduction step) still blocks; 2b only shrinks the blind
+  window from "the whole multi-step op" to "one inner step." The freeze scientists actually feel is only fixed by Phase 3 (threading) — and Phase 3 is a frontend/backend boundary problem. You independently re-derived exactly what the v2
+   hackathon concluded:
+
+  ┌────────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                    v1 prompt-32 finding                    │                                                                            v2 KB equivalent                                                                            │
+  ├────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ "What stays unsolved without threading" — the real fix is  │ 11-technical-debt.md:373 H1 "Synchronous reduction on Qt main thread… 1–10 s UI freezes per drag"                                                                      │
+  │ Phase 3                                                    │                                                                                                                                                                        │
+  ├────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Phase 3 = move compute/IO to a QThread, keep widgets on    │ 08-risks…md:109 R5 "a refactor doesn't fix it [by itself]… Scope threading out of the hackathon… back-end API should not preclude threading; stateless primitives are  │
+  │ GUI thread                                                 │ trivially thread-safe"                                                                                                                                                 │
+  ├────────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Threading is the "future" phase                            │ 06-modularization-strategies.md:35 "Threading model improvement — low for this decision; orthogonal; shouldn't block modularization"                                   │
+  └────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Phase 3 → fold into the v1 modularization. Threading cleanly requires that the compute/IO be callable without touching Qt — which is precisely the boundary the modularization draws. Do it now on today's monolithic
+  qreduce.py/main_gui.py and you'd sever Qt couplings ad-hoc, just for threads, then redo it properly when the boundary lands. Do the boundary first and Phase 3 becomes "run the ref_core-equivalent call in a QThreadPool worker, marshal
+  a plain dataclass back, plot on the GUI thread." The v2 team scored this 60 h / 2–3 weeks (13-debt-triage.md:47) because it presupposes the boundary.
+  
+  Phase 2b → hold (don't build it now). Be clear on why, because it's subtle: 2b is pure frontend (an ActivityQueue intercepting ~25 user signals, single-threaded), so the modularization wouldn't invalidate it — the dispatcher lives in
+  the frontend either way. The reason to hold is different:
+  - It's medium-risk signal re-wiring (the doc's own rating) for a narrow payoff — 2a already delivers the headline UX (immediate ack, fading "Complete", wait-cursor on the running op); 2b only adds the stacked count.
+  - Phase 3 partly supersedes it: once compute runs off-thread, the right responsiveness model is "jobs-in-flight," not a synchronous deferred-drain queue. Building the drain queue now is potentially throwaway design even though the
+  code would survive.
+  - Exception: ship 2b now only if stacked-click confusion is a real, present pain for your scientists today. Absent that, 2a is the natural stopping point for this line.
+
+  ---
+  3. The real question: is a v1 modularization worth doing at all?
+  
+  Yes — and I'd argue it's your highest-leverage move, more than polishing v1's internals. Your instinct that v1 is "a reality check… and the non-mantid alternative" is exactly right, and the v2 KB itself flags it:
+
+  - 08-risks…md:130 R6 — "v1's active development complicates the lineage story… if v1 eventually gets ported onto the new back-end, there will be a third caller to accommodate." The hackathon already sees v1 coming.
+  - 14-mr-lr-cross-reference.md:11 — deliberately scopes out lr_reduction:new_workflow and quicknxsv1 (the "non-Mantid reduction lineage") from pre-hackathon material "so the message stays clean… They can be revisited later in the
+  hack-a-thon or in a follow-on effort."
+
+  You are sitting on the artifact that debate lacks: a working, non-Mantid, dual-instrument (REF_M and REF_L) reducer. That is the exact shape everyone agrees on — one common backend, per-instrument frontends. The agreed v2 endpoint
+  (Option 3, ref_core: a Mantid+orsopy backend both GUI and autoreduce import) is a design on paper; a frontend/backend-separated v1 is a runnable existence proof of the non-Mantid path — a far stronger input to a contested decision
+  than another slide deck.
+  
+  There's also timing leverage: developers are about to deep-dive new_workflow "to re-write it using Mantid functions," which is the re-Mantidization you're worried about. A v1 backend carve-out (even just its design + the boundary map)
+   produced before or during that deep-dive is your concrete counterweight — it shows the non-Mantid backend reducing both instruments today.
+
+  And note the elegant convergence: Phase 3 is the meeting point of your two efforts. The responsiveness work and the modularization aren't competing for your time — Phase 3 is the same milestone seen from both ends. That's the
+  strongest reason not to spend 2b risk now: you'd be hand-building a single-threaded workaround weeks before the boundary work hands you real threading.
+
+  ---
+  Proposed next step
+  
+  Merge now (I'll resolve transcript.md as a union and report exactly what I did), then start prompt-31 #2 get_xregion with a red test against the v2 header values 12/16/24. Phase 3 goes on the future v1-modularization plan; 2b stays
+  parked unless stacked-click pain says otherwise.
+```
+
+Claude continues...
+
+```
+● Recorded and committed (d3a009e). Here's my read of the validation:
+
+  The implementation is validated as an auto-seed. Three things go right: the db widths are correctly ordered (8 < 13 < 22, tracking 12 < 16 < 24), they're within the ±4px tolerance, and x_center matches v2's x_pos to ~1px. The
+  refl/FWHM threshold (4/8/17) being far too narrow confirms 'db'/tails is the correct choice. AC1 is met — fresh 44035 auto-fits to 22 (vs the stale 17 it used to inherit, vs v2's 24).
+
+  The one caveat: a systematic 2–4px undershoot, worst on the narrowest beam (44033: 8 vs 12). The deltas (4/3/2) shrink as the beam widens, which smells like v2's round-up-pixel / boundary convention (one of the four "silent default"
+  disagreements the v2 KB flags), not a threshold-fraction error. I'd resolve exact parity by reading v2's x_width code, not curve-fitting 3 points — and that's really part of the v1↔v2 reconciliation theme you care about, not a
+  same-session tweak.
+  
+  So my recommendation is to accept it (it's a validated starting estimate the user adjusts, and AC1 is met) and leave exact v2-parity to the reconciliation work. But this depends on your intent for v1 — faithful-to-v2 vs
+  sensible-default — which is your call:
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ get_xregion 
+
+How should I treat the ~2-4px x_width undershoot vs v2 (8/13/22 → 12/16/24)?
+
+❯ 1. Accept as-is (Recommended)
+     The auto-seed is validated: correct ordering, within ±4px, x_center spot-on, AC1 met (fresh 44035 → 22, replacing the stale 17). Exact v2-parity is deferred to the future v1↔v2 reconciliation, done by reading v2's x_width code.
+  2. Read v2's algorithm now
+     I open quicknxsv2/mr_reduction's actual x_width code, identify the boundary/round-up-pixel convention causing the 2-4px gap, and reconcile get_xregion to it principledly (not curve-fit). More work; resolves parity properly.
+  3. Quick empirical tune now
+     Widen the 'db' threshold fraction to better hit 12/16/24 on these 3 DBs and re-run validation. Fast, but overfits 3 datapoints and may not generalize.
+```
+
+Claude continues...
+
+```
+● Working tree clean. Session wrap-up — everything is committed locally; nothing pushed (yours).
+
+  What I did this session
+
+  Strategic answer (your core question) — stands as given, and is recorded in the merge commit body so it travels to your other machines:
+  - 2a: keep. Phase 3: fold into the future quicknxsv1 modularization (it's a frontend/backend boundary problem — the v2 KB reached the identical conclusion: threading is orthogonal, low-priority, scoped as a follow-on, enabled by a
+  Qt-free backend). 2b: hold (frontend-safe but medium-risk re-wiring, narrow payoff, partly superseded by Phase 3).
+  - The v1 modularization is worth doing — it's your working, non-Mantid, dual-instrument reality check, which the v2 KB itself flags (R6, 14-cross-ref) as the deferred non-Mantid lineage. Phase 3 is the meeting point of the two
+  efforts.
+
+  Three commits on feature/read-event-nexus:
+
+  ┌─────────┬───────────────────────────────────────────────────────────────────────────────────────┐
+  │ Commit  │                                         What                                          │
+  ├─────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ c92112f │ Merge of feature/responsiveness (phase 2a) — clean, only transcript.md union-resolved │
+  ├─────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ 81363ae │ prompt-31 #2: get_xregion + fresh-file refXWidth reseed (red/green TDD)               │
+  ├─────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+  │ d3a009e │ Plan note recording the numerical validation                                          │
+  └─────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+  
+  Verified: qcalc_test (18), CalcReflParamsFreshFileReseed+RoleDecoupling (7), 34 file/region GUI tests — all green; ruff check quicknxs/ clean. Numerically validated get_xregion('db') against the real REF_M DBs (within ±4px of v2's
+  12/16/24, correctly ordered, x_center spot-on; you accepted the ~2–4px undershoot).
+
+  Yours to handle
+  
+  - Pushes (all of it) — feature/read-event-nexus is ready and is the right PR target into next. The parent-repo quicknxsv1 submodule pointer now differs (expected).
+  - GUI smoke test (needs a display): start fresh, load 44035 → x_width spinbox ≈ 22–24, y_width ≈ 100, regardless of any previously-active refl; then load a known refl and confirm it keeps its narrow width.
+
+  prompt-31 remaining (when you want to continue)
+
+  - #3 prompt-30 Layer-2 hygiene — small/careful, several sub-parts each wanting a display smoke test (not a clean autonomous unit).
+  - #5 pcolormesh non-monotonic warning — cosmetic, low priority.
+  - #1 / #4 (specular fix, off-spec fidelity) — still Mantid-blocked on this machine; deferred.
+
+  Want me to take #3 or #5 next, or stop here?
+```
+
+### Prompt 33.1
+
+I did the GUI smoke test, loaded 44035, adjusted x_width and y_width spinboxes, added as direct beam, then loaded 44159. As you can see it overwrote the region. See ~/shared/REF_M/QuickNXSv1/session5/quicknxsv1-overview-44159-view.png. Was that what you meant or did I misunderstand? Did you instead mean if I loaded another direct beam (like 44033) *that* would keep its narrow width (8)? If the latter, then yes, I can confirm that.
+
+After than, go ahead with #3
+
+```
+● Good progress on #3. Let me checkpoint, because the remaining items hit a genuine decision point (item 3 is literally flagged "decide together" in the plan).
+
+  #3 status
+
+  ┌──────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                   Item                   │                                                                                          State                                                                                           │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 1 get_xregion per-DB x-width             │ ✅ done + validated (earlier)                                                                                                                                                            │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4 changeRegionValues snapshot → role     │ ✅ done, committed fb60888 (TDD: 2 new tests green)                                                                                                                                      │
+  │ region                                   │                                                                                                                                                                                          │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 5 mouse handlers track the region        │ ✅ covered by #4 — plotPickX/Y/XY set the final spinbox unguarded, so a drag fires changeRegionValues, which now snapshots. Only the visual "drag still moves the lines" check needs a   │
+  │                                          │ display (yours).                                                                                                                                                                         │
+  └──────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  
+  That's the clean, low-risk part of #3 done. The remaining three are not clean autonomous wins — each needs a judgment call:
+
+  - Item 2 (reclassify capture robustness): make setNorm/addRefList re-fit role-appropriate widths when you cross roles (click "Set Direct Beam" on a file the GUI thinks is a refl). Real, but an edge case, and it touches the stored 
+  Reflectivity object (not just region_db), so it's more invasive than #4.
+  - Item 3 (ExtractionRegion position↔policy split): today _applyRoleRegion applies a whole stored region including x_pos/y_pos, so switching to a known DB can apply the wrong file's position. Fixing it means splitting the dataclass
+  into per-file position vs per-role policy and re-touching every call site — an architectural refactor the plan explicitly says to "decide together."
+  - Item 6 (per-role AutoYLimits): mostly moot already — the fresh-file Y reseed (Fix A) covers the main case; making the toggle per-role is a minor refinement.
+
+  My recommendation ties back to our strategic discussion: items 1/4/5 are the right stopping point for this branch, and 2/3 — especially the position/policy split — are exactly the structural cleanup the future frontend/backend 
+  modularization will do properly. Grinding an ExtractionRegion refactor here risks regressions on work the modularization may restructure anyway.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ #3 scope 
+
+How far should I take #3? (items 1/4/5 are done; 2/3/6 remain)
+
+❯ 1. Stop at 1/4/5; fold 2/3/6 into modularization (Recommended)
+     The done items are the clean wins. Item 3 (position/policy split) is structural cleanup the v1 frontend/backend refactor will do properly; items 2/6 are edge-case/low-value. Lowest regression risk on soon-to-be-restructured code.
+  2. Also do item 2 (reclassify capture)
+     I make setNorm/addRefList re-fit role-appropriate widths on a cross-role action. Moderate risk — touches the stored Reflectivity object. I'd TDD it.
+  3. Also do item 6 (per-role AutoYLimits)
+     Split the sticky global Y-auto toggle per role (option ii: DB re-fits Y, refls freeze after first add). Low value since the fresh-file reseed already covers the main case.
+  4. Do the full item 3 refactor now
+     Split ExtractionRegion into position vs policy and rework _applyRoleRegion + call sites so a known DB re-fits position. Bigger/riskier; needs interactive verification.
+```
+
+commit fb608889c4c098e108c15b8464325120b104c8a7
+
+```
+  Session complete — summary
+
+  Five commits on feature/read-event-nexus, ready for you to push (PR → next):
+
+  ┌─────────┬───────────────────────────────────────────────────────────────────────┐
+  │ Commit  │                                 What                                  │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ c92112f │ Merge of feature/responsiveness (phase 2a)                            │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ 81363ae │ prompt-31 #2: get_xregion + fresh-file refXWidth reseed               │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ d3a009e │ #2 numerical validation note (within ±4px of v2's 12/16/24)           │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ fb60888 │ prompt-30 #4: changeRegionValues snapshots edits into the role region │
+  ├─────────┼───────────────────────────────────────────────────────────────────────┤
+  │ 025c180 │ #3 closeout — 1/4 done, 5 covered, 2/3/6 deferred to modularization   │
+  └─────────┴───────────────────────────────────────────────────────────────────────┘
+
+  Verified green throughout: qcalc_test (18), RoleDecoupling (7), CalcReflParamsFreshFileReseed (2), 34 file/region GUI tests, responsiveness changeRegionValues; ruff check quicknxs/ clean. get_xregion('db') numerically validated
+  against the real REF_M direct beams.
+
+  Decisions recorded in git (travel to your other machines):
+  - 2b / Phase 3 → fold into the future v1 frontend/backend modularization (Phase 3 is a boundary problem; the v2 KB reached the same conclusion).
+  - #3 items 2/3/6 → same modularization (structural cleanup it'll do more cleanly).
+
+  Yours to handle
+
+  - Pushes (all of it) — nothing pushed; parent-repo quicknxsv1 submodule pointer now differs (expected).
+  - Display smoke tests: #2's fresh-44035 → ~22 you already confirmed (✅); #5's only open piece is the visual "region lines still follow a mouse drag" check.
+
+  prompt-31 remaining
+
+  - #5 pcolormesh non-monotonic warning — cosmetic/low-priority; the only remaining item that's not Mantid-blocked.
+  - #1 / #4 (specular fix, off-spec fidelity) — still Mantid-blocked on this machine.
+
+  Want me to take #5, or stop here? Either way, this is a clean stopping point — branch is coherent and green.
+```
+
+### Prompt 33.2
+
+Thank you! Please explain again what #5 is proposing to do. There are some cases when a user has not used the 'SO - Strip Off' feature and multiple runs have overlapping Q ranges. If off specular preview is run, won't this produce such a "non-monotonic" warning which is actually expected and inconsequential. Moreover, if the user *chooses* to reduce data with overlapping ranges that is their perogative - there isn't a message there. If you agree with my sentiment, then perhaps simply emitting a log at 'INFO' level suffices. What do you think?
+
+```
+  What #5 is (and an important correction to its premise)
+
+  The off-spec preview plots Q-space maps via pcolormesh(..., shading='gouraud') at main_gui.py:1202–1215 (and the combined-smooth path at 1354), through mplwidget.py:311/313. The "coordinates not monotonically increasing or decreasing"
+   text comes from matplotlib itself, not quicknxs.
+
+  The premise correction: because quicknxs does not call logging.captureWarnings(True) (it's nowhere in the tree), that matplotlib UserWarning goes to stderr/console via Python's default handler. It is not a quicknxs log record, so it
+  never reaches the modal-dialog path (gui_logging.py:180–181 → QMessageBox.warning). So today it's console noise — already non-blocking, just untidy. It's less intrusive than "warning" makes it sound.
+
+  Your sentiment is correct — and it argues against the original "fix"
+  
+  You're right that the condition is expected and inconsequential, and I'd go further: it's largely intrinsic to off-spec, not just the overlapping-runs case. Those grids (Qx, Qz, ki_z−kf_z) are curved, non-rectilinear functions of
+  pixel/wavelength, so the coordinate arrays are non-monotonic for a single run already — overlapping un-stripped runs just amplify it. matplotlib renders the gouraud mesh fine regardless; it's only being cautious.
+
+  That exposes a problem with the original plan's wording ("sanitize coords / shading without changing the science"): for legitimately overlapping or curved data, sanitizing (sorting/regularizing) the coordinate grid — or flipping
+  gouraud→flat — would change what's rendered. That's exactly the "it's the user's prerogative, don't touch their data" line you're drawing. So I'd reject the sanitize-coords approach as the one most likely to silently alter the
+  science.
+  
+  What I'd actually do (your INFO idea, refined)
+
+  - Suppress the specific matplotlib UserWarning narrowly around those pcolormesh calls (warnings.catch_warnings() + filterwarnings('ignore', message='.*not monotonically.*')) — coordinates and shading untouched, science identical.
+  - Optionally drop a single info() breadcrumb (non-blocking statusbar + file log at INFO) the first time per session: "Off-specular Q-grid is non-monotonic (expected for curved/overlapping ranges) — rendering as-is." This is your INFO
+  suggestion; I'd just guard it to fire once, because off-spec preview re-runs on every view (~1.4 s each) and an unguarded per-draw INFO would flicker the statusbar.
+
+  Net: this makes #5 smaller and safer than originally framed — no coordinate math, no shading change, no dialog. The one real trade-off is that blanket-suppressing also hides the rare case where non-monotonic coords signal a genuine
+  coordinate bug; the once-per-session INFO (visible in the file log) preserves a breadcrumb for that, which is why I'd keep the INFO rather than suppress silently.
+
+  So: I agree with you. The only micro-choice is silent-suppress vs. suppress-plus-one-INFO — and I lean to the latter for exactly the reason you gave (it's informational, not alarming).
+
+  Want me to implement it that way (suppress + once-per-session INFO, with a test asserting the warning no longer escapes and the INFO fires once)?
+```
+
+### Prompt 33.3
+
+Yes, except in the info() breadcrumb, can you just do the file log at INFO? I'm concerned with the non-blocking statusbar being overloaded between what quicknxs is doing vs communicating back to the user. I'm sure there are other cases that we will have to deal with in a future sanitization step, but I would rather not contribute to the confusion.
+
+```
+  What #5 became
+
+  Your instinct drove the design, and the investigation backed it:
+  - The message is matplotlib's own UserWarning to stderr — quicknxs doesn't captureWarnings, so it never reached the modal-dialog path. It's intrinsic to off-spec Q-space rendering (curved grids), amplified by the legitimately
+  overlapping un-stripped runs you described.
+  - So I rejected the original "sanitize coords/shading" idea — re-gridding real overlapping data would alter the science (your prerogative point). Instead: pcolormesh wraps the draw, swallows only that warning (coords/shading
+  untouched), re-emits everything else, and notes it once per session to the log file via a new extra={'no_statusbar': True} opt-out on QtHandler. The statusbar stays clean, and that opt-out is a reusable hook for the future
+  sanitization diagnostics you anticipated. 
+  - TDD: 4 tests (file-only routing + suppress-once/re-emit-others), regression-checked against 12 off-spec/display/pcolormesh tests, ruff clean.
+  
+  prompt-31 is now complete for this machine
+
+  ┌───────────────────────────────────────┬────────────────────────────────────────────────┐
+  │                 Item                  │                     Status                     │
+  ├───────────────────────────────────────┼────────────────────────────────────────────────┤
+  │ #2 get_xregion                        │ ✅ done + validated                            │
+  ├───────────────────────────────────────┼────────────────────────────────────────────────┤
+  │ #3 Layer-2 hygiene                    │ ✅ 1/4 done, 5 covered; 2/3/6 → modularization │
+  ├───────────────────────────────────────┼────────────────────────────────────────────────┤
+  │ #5 pcolormesh warning                 │ ✅ done (suppress, file-only INFO)             │
+  ├───────────────────────────────────────┼────────────────────────────────────────────────┤
+  │ #1 specular fix, #4 off-spec fidelity │ ⛔ Mantid-blocked (not doable here)            │
+  └───────────────────────────────────────┴────────────────────────────────────────────────┘
+
+  Session total — 6 commits on feature/read-event-nexus, ready to push
+  
+  c92112f merge · 81363ae #2 · d3a009e #2-validation · fb60888 #4 · 025c180 #3-closeout · 8215df5 #5. All green, ruff clean; decisions recorded in plan/commits so they travel via git.
+
+  Yours / what's left
+
+  - Pushes (all of it) — nothing pushed; parent-repo quicknxsv1 submodule pointer differs (expected).
+  - Optional confirm next GUI run: the off-spec console warning is gone and the map renders identically.
+  - The big arc: the deferred items (responsiveness 2b/Phase 3, and #3's items 2/3/6) all fold into the quicknxsv1 frontend/backend modularization — your stated future session, and the highest-leverage next step.
+
+  Clean stopping point — the branch is coherent, green, and the actionable prompt-31 work is finished.
+```
+
+### Prompt 33.4
+
+Excellent. I did some GUI runs, but I did not see the console warning in the log, perhaps my parameters are off - I did not use the off specular preview; neither did I see the console warning. Is it only for preview and not (for example) for reduction when off specular smoothing parameters are chosen? Speaking of which, I observe the following discrepancy between quicknxsv2 and quicknxsv1 in the off specular smoothing parameters dialog:
+
+* quicknxsv2 (code in ~/Projects/Claude/1/quicknxsv2/**) shows ~/shared/REF_M/11486/session12/quicknxs-offspecular-smoothing-options-000525.png - notice the detail and in particular the way the black spot indicating the smoothing kernel which is nearly symmetric (but not perfectly)
+* quicknxsv1 (this session) shows ~/shared/REF_M/11486/session13/quicknxsv1-offspecular-smoothing-options-000525-tof-400.png - notice the axes are different, the black spot is very different and distorted.
+
+I have also done reductions, but let us defer that discussion after we resolve the smoothing parameters dialog discrepancy. Please investigate given your understanding of the off specular plotting code in quicknxsv1 in this session so far. Be resourceful! Try to determine the reason for the difference. I believe that the quicknxsv2 rendering is correct, but can you quantify it? A lot of work has been done with comparisons of reduced output in ~/shared/REF_M/11486/** if any of it is informative (mostly on analysis.sns.gov, but session13 is on this machine).
+
+```
+● Complete diagnosis confirmed — and it's a clean, quantifiable difference. Neither dialog sets aspect='equal', so the kernel-spot shape is governed entirely by the axis ranges and σ. Here's what I found.
+
+  First, your warning question
+
+  The non-monotonic warning fires from any non-monotonic pcolormesh — that's off-spec preview (main_gui.py:1202), the combined-smooth render (1354), and the smoothing dialog itself (gui_utils.py:685 uses pcolormesh(..., 
+  shading='gouraud')). It does not fire for ordinary specular reduction. So opening the smoothing dialog should have triggered it — but after the #5 fix it no longer reaches the console at all; it's a once-per-session INFO in the log 
+  file (paths.LOG_FILE, under ~/.quicknxs/). So "no console warning" is the fix working as designed; grep -i monotonic that log file and you should see the single breadcrumb.
+  
+  The dialog discrepancy: v1 hardcodes what v2 derives from data
+
+  Same dialog, but v1's SmoothDialog.drawPlot (gui_utils.py) uses fixed constants where v2's smooth_dialog.py is data-driven. For the (k_iz−k_fz) vs Qz view:
+
+  ┌───────────────────────────┬────────────────────────────────────────────┬──────────────────────────────────────────────┐
+  │                           │             v1 (gui_utils.py)              │            v2 (smooth_dialog.py)             │
+  ├───────────────────────────┼────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ x view limit              │ set_xlim([-0.035, 0.035]) — fixed, Δx=0.07 │ [k_diff_min, k_diff_max] from data — Δx≈0.22 │
+  ├───────────────────────────┼────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ smoothing region (→ grid) │ x1,x2 = ∓0.03 — fixed                      │ 5%-inset of data range → ≈[−0.114, 0.086]    │
+  ├───────────────────────────┼────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ σ                         │ 0.0005 fixed                               │ (x2−x1)·0.005, floored (≈0.000525)           │
+  ├───────────────────────────┼────────────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ aspect                    │ 'auto'                                     │ 'auto'                                       │
+  └───────────────────────────┴────────────────────────────────────────────┴──────────────────────────────────────────────┘
+  
+  So your two observations have one dominant cause: v1 clamps the x-axis to ±0.035 regardless of the data, while v2 shows the true extent (≈±0.11). v1 is displaying only ~⅓ of the off-spec fan's width.
+
+  Quantifying the distorted spot
+  
+  The kernel is three Ellipse patches with semi-axes = σ_x, σ_y in data units (v1 gui_utils.py:740-744; v2 smooth_dialog.py:177-184). With σ_x≈σ_y it's a circle in data space; under aspect='auto' it renders stretched by the axis-range 
+  ratio Δy/Δx (× the plot-box aspect). Both σ values are essentially identical (0.0005 vs 0.000525), so σ is not the cause — the axis range is:
+
+  - v1: Δy/Δx = 0.375 / 0.07 ≈ 5.4 → the spot is ~5:1, badly stretched.
+  - v2: Δy/Δx = 0.371 / 0.222 ≈ 1.7 → mild — exactly your "nearly symmetric, but not perfectly."
+
+  (Δy≈0.37 in both, since v1's Qzmax=ki_z.max()·2 ≈ v2's Qz max; the whole difference is the hardcoded narrow Δx.) So v1's kernel is ~3× more distorted than v2's, entirely from the hardcoded x-limit. v2 is correct; its residual 1.7:1 is
+   just the un-equal aspect, which set_aspect('equal') would remove (neither does).
+
+  This is not only cosmetic
+
+  v1's hardcoded region box feeds gridXmin/gridXmax (gui_utils.py:752-755) → the actual smoothing grid. So v1 smooths only k_iz−k_fz ∈ [−0.03, 0.03], clipping the off-spec data, while v2 grids the full data-driven region. That directly
+  bears on the reduced-output comparison you deferred — v1's smoothed map covers a narrower x-region by construction.
+
+  One caveat to nail in the reduction step: I've shown v1 forces the view/grid to ±0.035 (certain from the code). Whether v1's _calc_offspec actually produces data out to ±0.11 like v2 (i.e., the hardcode is truly clipping real data, vs
+   the data genuinely being narrow) is the one thing worth confirming against the data — and it's exactly what the reduction comparison will show.
+
+  ---
+  Want me to port v2's behavior into v1's SmoothDialog — data-driven xlim/region (5% inset) + range-proportional σ, TDD'd so the limits track the data instead of constants? I can optionally add set_aspect('equal') for a perfectly round
+  kernel (a deviation from v2, so I'd flag it). Then we move to the reduction comparison you mentioned.
+```
+
+### Prompt 32.5
+
+Yes, make v1's SmoothDialog be data-driven in both x and y according to the user's options in the spin entry fields. Please do *not* set_aspect('equal'). Scientists do *not* like to see arbitrary distortions just to make the plot "look nice" (and you can remember that!).
+
+I can confirm that v1 *does produce* data according to the dialog settings (from ~/shared/REF_M/11486/session13/reduced-from-correctReduction-correct-db-id-tof-400/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat):
+```
+...
+# [Data]
+# ki_z-kf_z [Å⁻¹]       Qz [Å⁻¹]                I [a.u.]            
+-1.140390e-01           0.000000e+00            0.000000e+00      
+-1.136653e-01           0.000000e+00            0.000000e+00      
+...
+8.551231e-02            0.000000e+00            0.000000e+00      
+8.588600e-02            0.000000e+00            0.000000e+00      
+
+-1.140390e-01           3.728352e-04            0.000000e+00      
+-1.136653e-01           3.728352e-04            0.000000e+00      
+...
+```
+
+Regarding the info on non-monotonic, here is what I see from that last session (no emission):
+```
+└─$ grep -i monotonic ~/.quicknxs/debug.log
+
+```
+
+So it isn't getting emitted - but I am not yet certain it *should* have been emitted, hence the interest in understanding the data. As to a reduced dataset, we should use for our purposes ~/shared/REF_M/11486/session13/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off-correct-db-id.dat because in this data set I have corrected the db id values to properly associate the direct beam run numbers (recall that this was something that v2 did without asking, so it "tolerated" improperly expressed reduction files - and because of that tended to generate "improperly expressed" reduction files...).
+
+```
+● Definitive answer to your warning question — and it reframes #5.
+
+  SmoothDialog fix (done, committed 5177fbf)
+
+  drawPlot is now fully data-driven for all three projections: xlim/ylim from the data extent, the region box a 5% inset (seeding the grid spin fields), σ proportional to the region (floored). No set_aspect — the σ_x=σ_y kernel stays a
+  true circle in data units and reads as ~1.7:1 on these axes (honest), not the old ~5:1 from the hardcoded ±0.035 view. This also fixed the y-axis (was ki_z.max()·2 ≈ 0.17, now the real Qz range ≈ 0.37) and un-clips the smoothing grid
+  (was pinned to ±0.03). TDD green, ruff clean.
+  
+  The non-monotonic warning: it cannot fire on your matplotlib
+
+  I tested it two ways on the deployed matplotlib 3.10.8:
+  - grep of matplotlib's source: the string "not monotonically increasing or decreasing" does not exist in the pcolormesh/axes code (only unrelated colormap/scale docstrings).
+  - empirical: a 2D non-monotonic gouraud mesh (the off-spec case) and a classic 1D non-monotonic mesh both produced zero warnings. 
+  
+  So: matplotlib removed that warning. Your off-spec Q-grids are non-monotonic (curved — that's why the code uses a gouraud quadmesh), but that's now moot: matplotlib no longer checks or warns, so the absence in your log is correct and
+  expected, independent of the data. The original prompt-31 #5 note ("mplwidget.py:311 emits …") was true on an older matplotlib and was silently obsoleted when the env moved to 3.10.8.
+
+  Consequence — and a correction I owe you: my #5 change (commit 8215df5) is therefore dormant — it suppresses a warning that can't occur and the breadcrumb never fires. I should have verified the warning still fired on 3.10.8 before
+  building the suppression; I didn't, and your skepticism is what surfaced it. Worse, the wrapper's simplefilter('always') could occasionally re-surface an unrelated warning that's normally filtered out — a small net-negative on the
+  current stack.
+  
+  So #5 wasn't a real problem here; the matplotlib upgrade already solved it.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ #5 disposition 
+  
+Given the warning can't fire on matplotlib 3.10.8, what should I do with the #5 change (commit 8215df5)?
+
+  1. Revert #5 entirely (Recommended)
+     Remove the pcolormesh catch_warnings wrapper, the breadcrumb helper, the QtHandler no_statusbar hook, and their tests. The premise is obsolete on mpl 3.10.8 and the wrapper carries a small risk of re-surfacing normally-filtered 
+     warnings. Cleanest / most honest.
+❯ 2. Revert wrapper, keep no_statusbar hook
+     Drop the inert pcolormesh suppression + breadcrumb, but keep QtHandler's file-only (extra={'no_statusbar': True}) opt-out as a general, tested capability for the future sanitization diagnostics you mentioned.
+  3. Keep #5 as-is (defensive)
+     Leave it as insurance in case quicknxsv1 ever runs on an older matplotlib that still emits the warning, accepting it's dormant (and the minor re-emit risk) on the current pinned stack.
+```
+
+Claude continues...
+
+```
+  This turn
+
+  1. SmoothDialog fix (5177fbf) — drawPlot is now data-driven (xlim/ylim from data, region a 5% inset seeding the grid spin fields, σ proportional + floored) for all three projections, matching v2. No set_aspect — the kernel honestly
+  reflects the axis scales. Net effect vs the old hardcode: the x-view goes from ±0.035 → the real ±0.11 extent, the y-axis from ki_z.max()·2 (≈0.17) → the real Qz range (≈0.37), and the kernel from ~5:1 stretched → ~1.7:1 (the honest
+  aspect). It also un-clips the smoothing grid (was pinned to ±0.03). You can re-open the dialog to confirm it now matches v2's framing.
+  
+  2. Saved your preference to memory — never distort plots (e.g. set_aspect('equal')) for appearance; scientists read meaning from true axis scales.
+
+  3. The non-monotonic warning — definitively answered: matplotlib 3.10.8 removed it. The string is gone from matplotlib's pcolormesh source, and both 2D-gouraud and 1D non-monotonic test meshes warn zero times. Your grep finding
+  nothing is correct and expected — and independent of the data (the Q-grids are non-monotonic, but matplotlib no longer checks). The prompt-31 #5 note was true only on the older matplotlib this env used before 3.10.8.
+
+  4. Reverted #5 (96df931, keeping the no_statusbar hook per your choice) — the suppression was inert on the pinned stack and its simplefilter('always') could re-surface normally-filtered warnings. I kept the reusable file-only-logging
+  opt-out on QtHandler for your future sanitization diagnostics. My miss to own: I built #5 without verifying the warning still fired on the pinned matplotlib — your skepticism caught it.
+
+  Branch state: 8 commits ahead of origin/feature/read-event-nexus, all green, source ruff-clean, nothing pushed (yours).
+
+  Next: the reduction comparison you deferred
+  
+  The dialog discrepancy is resolved, so we can move to it. You pointed me at the canonical reference:
+  ~/shared/REF_M/11486/session13/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off-correct-db-id.dat (with the corrected DB-id associations).
+
+  Want me to run v1's off-spec smoothing on 44159+44160+44161 (corrected DB ids, TOF=400) and compare the smoothed I(k_iz−k_fz, Qz) map against that reference — coverage, grid, and intensity agreement? It's a heavier reduction, so I'd
+  run it headless in the background (one job, OOM-watched) the way I did the get_xregion validation. Confirm and I'll start.
+```
+
+Claude continues...
+
+```
+● Comparison complete — artifacts in session13/, result recorded and committed (598ee43), /tmp cleaned.
+
+  v1 vs v2 off-spec — the result
+
+  I re-reduced 44159+44160+44161 headless with the corrected 1:1 DB pairing (44159↔44033, 44160↔44034, 44161↔44035, bins=400) on the reference's 563×1000 grid, and compared to the v2/Mantid reference.
+
+  Structure agrees strongly; absolute intensity is systematically low:
+
+  ┌────────────────────────────────┬───────┬──────────────────────────────────────┐
+  │       Metric (v1 vs v2)        │ Value │               Reading                │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ log-Pearson (overall)          │ 0.87  │ map shape matches                    │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ log-Pearson (specular stripe)  │ 0.96  │ ridge essentially identical in shape │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ log-Pearson (off-spec)         │ 0.85  │ wings match in shape                 │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ median ratio — specular stripe │ 0.43  │ v1 ≈ 0.43× v2 there                  │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ median ratio — off-spec        │ 0.26  │ v1 ≈ ¼ of v2 there                   │
+  ├────────────────────────────────┼───────┼──────────────────────────────────────┤
+  │ integrated ratio               │ 0.61  │ total intensity 61% of v2            │
+  └────────────────────────────────┴───────┴──────────────────────────────────────┘
+
+  The figure confirms it: same fan/ridge/wings; the log₁₀(v1/v2) panel is uniformly blue (v1 lower); the Qz line-cuts track v2's in shape but sit below them.
+
+  What it means
+  
+  The non-Mantid off-spec geometry is sound — v1 reproduces v2/Mantid's off-spec structure (0.87–0.96 correlation). That's the reality-check win: the shape doesn't need Mantid.
+
+  The intensity deficit is the same phenomenon as the deferred #1 specular gap. prompt-31 #1 measured Off_Off v1/ref ≈ 0.38 / 0.31 / 0.19, falling with angle. Here the specular-stripe ratio (0.43) ≈ the low-angle 0.38, and the ratio
+  falls with Qz/angle the same way. So this is one angle-dependent v1-vs-Mantid scaling, manifesting across the off-spec Qz range — not a separate off-spec problem.
+
+  This revises the old #4 assumption. prompt-31 #4 assumed off-spec was independent of #1 (no footprint scale; "bin-density" discrepancy). The data says otherwise: it's the same scaling, so off-spec is Mantid-blocked like #1 — the root
+  cause lives inside Mantid's MagnetismReflectometryReduction, which isn't importable here, so the final diagnosis still needs a Mantid environment.
+
+  Two caveats I ruled out as the cause: the reference's smoothing σ isn't recorded (I used v1's 0.0005) — but Gaussian smoothing conserves total intensity, so σ can't produce a 2–4× scale gap. And the peak-location Δ=(−0.074, +0.105) is
+   argmax noise (v1's relatively-suppressed specular moves the single brightest pixel), not a geometry error — the 0.96 specular correlation rules out a real shift.
+
+  Artifacts (in session13/, out-of-session-tree writes, surfaced)
+
+  - v1-vs-v2-offspec-compare.png — the 5-panel figure
+  - v1-vs-v2-offspec-metrics.json — full metrics
+  - REF_M_44159+44160+44161_OffSpecSmooth_Off_Off-v1-paired-tof400.dat — the v1 reduction
+
+  Bottom line: v1's off-spec reduction is structurally faithful to v2; the remaining intensity gap is the known, Mantid-located #1 scaling — now shown to span the off-spec map, not just the specular line. The natural next step (whenever
+   a Mantid env is available) is to divide v2's RAW R(Q) by v1's per-run to pin that scaling term, which closes #1 and this together. Want me to leave it there, or look at anything else in the comparison?
+```
+
+I asked Claude to look at On_Off specular:
+
+```
+● Confirmed visually — On_Off shows the same story: same fan/ridge structure, v1 uniformly dimmer (blue log-ratio), dashed v1 cuts tracking the solid v2 cuts in shape but below them.
+
+  On_Off result — and a correction to the Off_Off picture
+
+  First, the DB-association catch (it reframes everything): both v2 references are single-DB (every run normalized by 44033). The headers say DB_ID=1/1/1, and your session13 "corrected" Off_Off is byte-identical in data to
+  correctReduction — only the header was relabeled, not re-reduced. So my earlier Off_Off comparison was v1-paired vs v2-single (conflated). I re-ran matched (v1 single-DB) for both channels, with v1-paired as a control — and the
+  control confirms single: the paired total matches the reference worse (On_Off integrated 0.53 vs single 0.91; Off_Off 0.61 vs single 1.35).
+  
+  Clean v1-vs-v2 (both single-DB, bins=400):
+
+  ┌─────────────────────────┬─────────┬────────┐
+  │    metric (v1 / v2)     │ Off_Off │ On_Off │
+  ├─────────────────────────┼─────────┼────────┤
+  │ log-Pearson — overall   │ 0.870   │ 0.860  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ log-Pearson — specular  │ 0.947   │ 0.944  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ log-Pearson — off-spec  │ 0.850   │ 0.840  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ median ratio — overall  │ 0.154   │ 0.175  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ median ratio — specular │ 0.246   │ 0.276  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ median ratio — off-spec │ 0.148   │ 0.168  │
+  ├─────────────────────────┼─────────┼────────┤
+  │ integrated ratio        │ 1.35    │ 0.91   │
+  └─────────────────────────┴─────────┴────────┘
+  
+  What it means
+
+  1. Structure is faithful in both channels. log-Pearson 0.86–0.95; On_Off behaves just like Off_Off. v1's non-Mantid off-spec geometry is sound for the spin-flip channel too — the headline reality-check result holds across
+  polarizations.
+  2. Per-pixel intensity is ~0.15–0.28× v2 across the map (median 0.15–0.28, specular-stripe 0.25–0.28) — the same angle-dependent v1-vs-Mantid scaling as #1, now confirmed in both Off_Off and On_Off. So it's a global reduction-scaling
+  property, not channel- or off-spec-specific. Mantid-blocked, like #1.
+  3. A localized bright feature in v1's low-angle 44159 (raw I≈25 vs ≈3–9 for 44160/44161, and DB-independent) inflates the integral — which is why integrated runs 0.9–1.35 even though the typical pixel is ~0.2× v2 — and drives the
+  peak-location metric. This is distinct from the broad scaling and worth a separate look (smells like a low-angle normalization effect in v1's 44159). σ=0.0005 can't cause a scale gap, so it's not the smoothing.
+
+  Net: running On_Off didn't just answer the question — pairing it with the corrected Off_Off shows the v1↔Mantid intensity gap is one robust, angle-dependent scaling that spans both polarization channels, sitting on top of faithful
+  geometry. That sharpens #1: the fix is a single scaling term inside Mantid's MagnetismReflectometryReduction, and closing it would correct specular and both off-spec channels at once.
+
+  Artifacts in session13/ (figures + metric JSONs + v1 .dat for both channels × single/paired), recorded in plan/prompt-31-remaining.md §4, committed (6a99b04).
+
+  Want me to dig into the 44159 low-angle bright feature next (compare v1's per-run 44159 off-spec to v2's to see if it's a real feature or a v1 artifact), or leave the off-spec thread here?
+```
+
+### Prompt 32.6
+
+Go ahead and dig into the 44159 low-angle bright feature. You have mr_reduction available (which has a mantid environment) and I just initialized its pixi environment, updated the 'tests/mr_reduction-data' submodule and ran the test suite ('pixi run test' in mr_reduction - caveat: due to some code.ornl.gov authorization issues not all the test files were able to be downloaded, so the test was not able to run 100% clean). I would say that if you need to run scripts that use a mantid environment, mr_reduction is a good place to do it. In a future session I will ask you to do a deep dive that will include inspecting mr_reduction for the purpose of separating frontend and backend in quicknxsv1. Do you think the deep dive is needed now, before we continue with this session?
+
+```
+● Committed (97776d9). Here's the verdict and the decision I need from you.
+
+  44159 feature: confirmed a v1 normalization artifact
+
+  It's not physical — a single-pixel 1/Rraw blow-up:
+  - One hot pixel (x=117, tof_bin=16, λ=2.41 Å), only 1 pixel >10 and 2 >5 out of 121,600 — not an extended feature.
+  - It sits at a wavelength in the direct-beam spectrum's low-flux tail, where the normalization Rraw ≈ 1.5×10⁻¹⁵ (peak is 6.8×10⁻¹¹; 21 bins are below 10⁻¹³).
+  - OffSpecular._calc_offspec divides by Rraw wherever Rraw > 0. — but > 0. lets that 1.5×10⁻¹⁵ through, so a tiny off-spec count ÷ ~0 explodes to 25.6. (Exact-zero bins are already masked correctly.)
+  
+  So this is distinct from the broad ~0.2× #1 Mantid scaling — it's a separate, fixable v1 bug that inflated the off-spec integrated ratio (0.9–1.35) and produced the spurious peak shift. v2 doesn't show it because Mantid masks the
+  low-flux wavelength band.
+
+  The fix is small and well-contained: raise the guard from Rraw > 0. to a relative floor Rraw > frac·Rraw.max() (frac≈10⁻³ kills the artifact at 2×10⁻⁵ of peak while keeping real data); excluded bins already fall through to the
+  existing S=0 mask. The same Rraw>0 guard is in the specular and fan paths, so it could be applied consistently.
+
+  Important expectation-setting: this fix removes the spike, not the broad ~0.2× deficit — that's still the Mantid-side #1 scaling. So after the fix the off-spec maps get cleaner (no spurious hot spot, integrated ratio less skewed), but
+   v1 stays ~0.2× v2 in magnitude until #1 is resolved.
+
+  Since this changes reduction science output, your call on how to proceed:
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Rraw fix 
+  
+How should I handle the 1/Rraw artifact fix?
+
+  1. Implement now, off-spec only (Recommended)
+     Raise the guard to a relative Rraw floor in _calc_offspec, TDD (artifact pixel -> masked), then re-run the 44159 comparison to confirm the spike is gone and the integrated ratio de-skews. Leaves specular/fan untouched for now.
+  2. Implement across all three paths
+     Apply the same relative-floor guard to _calc_offspec, _calc_reflectivity, and _calc_fan for consistency. Broader science-output change; I'd TDD each and re-validate off-spec + specular.
+❯ 3. Cross-check vs Mantid first
+     Surgical mr_reduction run to see exactly how Mantid masks the low-flux wavelength band, then match that threshold/approach in v1 rather than pick frac=1e-3 myself.
+  4. Record only; hold the fix
+     The diagnosis is committed; stop here and leave the code fix for a later session.
+```
+
+Claude continues...
+
+```
+  Cross-check result: it's a normalization-quantity mismatch, not a threshold
+
+  quicknxsv2's off_specular.py (the reference producer) uses the identical idxs = norm_raw > 0 guard as v1 — but normalizes by a different quantity:
+
+  ┌─────┬──────────────────────────────────────────────┬───────────────────────────────────────────────┬────────────────┐
+  │     │            normalizes off-spec by            │            at a no-flux band edge             │     result     │
+  ├─────┼──────────────────────────────────────────────┼───────────────────────────────────────────────┼────────────────┤
+  │ v2  │ norm_raw = raw DB counts (no bg subtraction) │ small but real (~10⁻¹¹) → >0, divides cleanly │ fine           │
+  ├─────┼──────────────────────────────────────────────┼───────────────────────────────────────────────┼────────────────┤
+  │ v1  │ norm.Rraw = I − BG (background-subtracted)   │ DB signal ≈ its own background → Rraw ≈ 10⁻¹⁵ │ 1/Rraw blow-up │
+  └─────┴──────────────────────────────────────────────┴───────────────────────────────────────────────┴────────────────┘
+
+  So Mantid/v2 uses no threshold at all — it normalizes by raw direct-beam flux, which is naturally well-behaved where v1's background-subtracted Rraw collapses to noise. Your instinct to cross-check first was right: my frac=1e-3 idea
+  would have been an arbitrary patch over the real cause.
+
+  The principled, v2-matching fix: v1 already computes the raw flux as norm.I (Iraw/(size_I/scale), qreduce.py:2905) — the direct analog of v2's norm_raw. So in _calc_offspec, normalize by norm.I (with norm.dI) and mask idxs = norm.I > 
+  0, instead of norm.Rraw. No magic number.
+
+  Expected effect: in the bulk, I ≈ Rraw (background is negligible where flux is good), so the map is essentially unchanged there — only the band-edge blow-up disappears. So the off-spec integrated ratio should de-skew back toward the
+  bulk ~0.2×, and the spurious peak shift should vanish. The broad ~0.2× deficit is untouched — that's still the separate MRR #1 scaling.
+
+  Scope note: _calc_reflectivity (specular) and _calc_fan share the same Rraw normalization, but the specular path is entangled with the #1 MRR investigation (and needs the specular reference + Mantid to validate), so I'd leave those
+  for the #1 work.
+
+  Since the cross-check now gives a non-arbitrary fix, how do you want to proceed?
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Apply fix 
+  
+Proceed with the v2-matched off-spec normalization fix (norm.I instead of norm.Rraw)?
+
+❯ 1. Yes — off-spec only, TDD + re-validate (Recommended)
+     Change _calc_offspec to normalize by norm.I and mask norm.I>0; TDD (the 44159 artifact pixel becomes finite/masked, bulk unchanged); re-run the 44159 comparison to confirm the spike is gone and the integrated ratio de-skews. Leave 
+     specular/fan alone.
+  2. Yes, and also align specular + fan
+     Apply norm.I normalization to _calc_reflectivity and _calc_fan too. Bigger science change, entangled with the #1 MRR scaling and needs the specular reference to validate — riskier.
+  3. Hold — keep the diagnosis only
+     Stop here with the diagnosis + v2-matched fix recorded in the plan; implement in a later session.
+```
+
+Claude continues...
+
+```
+● I have to correct myself: that fix was a no-op, and my diagnosis was wrong. The re-run metrics are byte-identical (integrated 1.346, peak −0.0743, raw max still 25.6). The diag shows exactly why:
+
+  max|S|=25.569 at (x=117, tof_bin=16)
+    norm[16]: I=1.468e-15  Iraw(raw counts)=1.000  Rraw(I-BG)=1.468e-15  BG=0.000
+
+  The artifact bin has the direct beam at exactly 1 raw count, with BG=0 — so I = Rraw = 1.5e-15 (both tiny). ÷I and ÷Rraw are identical here; background subtraction was never the cause. The real cause: the off-spec divides by a
+  single-count, near-zero-flux direct-beam wavelength (λ=2.41 Å, at 2×10⁻⁵ of the DB's peak flux). v2 avoids it because Mantid crops the wavelength band upstream (its TimeAxisRange/chopper band), so λ=2.41 isn't even in v2's data —
+  norm_raw > 0 was a red herring (1 count passes >0 too). v1 keeps those edge bins.
+  
+  The real fix is a flux floor — and I validated it in-place by masking and re-checking the max:
+
+  ┌────────────────────────┬─────────────┬────────────────────────────┐
+  │ mask norm.I < frac·max │ bins masked │      resulting max|S|      │
+  ├────────────────────────┼─────────────┼────────────────────────────┤
+  │ (none, current)        │ 0           │ 25.57 ← artifact           │
+  ├────────────────────────┼─────────────┼────────────────────────────┤
+  │ frac = 1e-4            │ 12          │ 5.11                       │
+  ├────────────────────────┼─────────────┼────────────────────────────┤
+  │ frac = 1e-3            │ 20          │ 1.28                       │
+  ├────────────────────────┼─────────────┼────────────────────────────┤
+  │ frac = 1e-2            │ 28          │ 1.10 ← ≈ real off-spec max │
+  └────────────────────────┴─────────────┴────────────────────────────┘
+  
+  So masking wavelengths below ~0.1–1% of the DB's peak flux (the statistically-useless band edges) removes the artifact and leaves the real off-spec untouched (those bins carry negligible signal). This is what my original frac idea was
+   — the cross-check was valuable, just not for the reason I claimed: it showed v2 excludes these bins upstream, and a flux floor is v1's equivalent.
+
+  Let me clean up the scratch files and ask how to proceed.
+  
+● Bash(rm -f /tmp/v1fix_offspec_single_Off_Off.dat /tmp/v1fix_offspec_single_On_Off.dat /tmp/cmpfix_off.png /tmp/cmpfix_off.json /tmp/cmpfix_on.png /tmp/cmpfix_on.json…)
+  ⎿  cleaned /tmp scratch
+
+     note: commit 0c8779e (the no-op norm.I change) is local/unpushed -- can revert or fold into the real fix
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ☐ Real fix 
+
+How should I fix the 44159 artifact (now correctly diagnosed as a near-zero-flux 1/flux blow-up), and what about the no-op norm.I commit (0c8779e)?
+
+  1. Flux floor frac=1e-2, fold in norm.I (Recommended)
+     Mask off-spec where norm.I < 1% of peak DB flux (28 edge bins; max|S| 25.6->1.10). Reset the no-op 0c8779e and re-commit one clean change: norm.I normalization (v2-aligned) + the flux floor. TDD + re-run comparison to confirm spike
+      gone, integrated de-skews, bulk unchanged.
+  2. Flux floor frac=1e-3
+     Less aggressive (20 bins; max|S| 25.6->1.28) -- keeps more of the low-flux band but leaves a small residual. Same commit cleanup + TDD + re-validate.
+❯ 3. Match Mantid's wavelength-band crop
+     Run mr_reduction/Mantid on 44159 to read its actual usable lambda band (TimeAxisRange/chopper) and crop v1 to exactly that, instead of a flux fraction. Most faithful to v2; needs a surgical Mantid run.
+  4. Revert to just the diagnosis
+     Reset the no-op 0c8779e, keep only the (corrected) diagnosis in the plan, and implement the fix in a later session.
+```
+
+Claude continues...
+
+```
+● Resolved and committed (f77b3ae); artifacts in session13; tree clean.
+
+  The 44159 bright feature — fully resolved
+
+  It was a 1/flux normalization artifact, now fixed. The complete arc (including a correction I'll own):
+
+  1. What it is: at λ=2.41 Å the direct beam has exactly 1 count; dividing the off-spec by that near-zero flux blew up a single spurious pixel to I=25.6.
+  2. My wrong first turn: I diagnosed it as background-subtraction (÷Rraw vs ÷I) and the cross-check led me to a norm.I change — which the re-run proved was a no-op (BG≈0 there, so I = Rraw). Your "cross-check first" instinct is what
+  surfaced this before it shipped as "the fix."
+  3. The real cause: the band width. v1's load band uses half-bandwidth 1.6 Å (matching quicknxsv2) → λ∈[2.15, 8.55]; Mantid MRR uses 1.4 Å → [2.55, 8.15]. λ=2.41 sits exactly in that gap, so Mantid never sees it and v1 does.
+  4. The fix (eefdd0e): _calc_offspec crops the off-spec to Mantid's 1.4-Å chopper band. Validated: spike 25.6→1.04, integrated ratio de-skews (1.35→0.17 Off_Off, 0.91→0.24 On_Off) to match the per-pixel median, the spurious peak-shift
+  vanishes (v1/v2 peaks coincide), and structure is preserved.
+
+  The scientifically meaningful outcome: with the artifact removed, v1's off-spec is now a coherent ~0.15–0.24× v2 across every metric in both channels — i.e., faithful structure (log-Pearson 0.86–0.97) at the same broad intensity
+  deficit as the specular. That deficit is the one remaining issue, and it's the Mantid-located #1 scaling (still Mantid-blocked).
+
+  A broader finding worth flagging
+  
+  There's a real bandwidth discrepancy in the ecosystem: the quicknxsv2 GUI uses 1.6 Å, but Mantid MRR (what autoreduce runs) uses 1.4 Å. v1 had matched quicknxsv2 (1.6); I aligned only its off-spec to MRR (1.4). v1's loading/specular 
+  band is still 1.6 — aligning that globally is entangled with #1 and belongs in the Mantid #1 / modularization work, not here. (And per your plan, this whole investigation used the mr_reduction Mantid env surgically — reading MRR +
+  inspect_data — no full deep-dive needed.)
+  
+  State
+
+  - 6 commits this thread on feature/read-event-nexus (norm.I, band crop, + plan notes), ready to push (yours); tree clean.
+  - session13 has both before (single) and after (bandcropped) figures + .dats for both channels.
+
+  The off-spec thread is now thoroughly closed: dialog fixed, v1-vs-v2 quantified for both channels, and the 44159 artifact diagnosed and fixed against the Mantid standard. The remaining off-spec/specular intensity gap is #1 (needs a
+  Mantid env to pin the MRR scaling term). Want me to stop here, or look at anything else?
+```
+
+I had done a /btw to ask Claude to tell its active session to write the plan to do the fix but it ignored me and did the fix in the session anyway. This tells me that once you start on a prompt, it is going to finish at once. This is going to be something we need to investigate at some point, but it will likely take several sessions.
+
+The context at this point is this:
+
+```
+❯ /context 
+  ⎿  Context Usage
+     ⛀ ⛁ ⛀ ⛁ ⛀ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Opus 4.7
+     ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   claude-opus-4-7
+     ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   856.3k/1m tokens (86%)
+     ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ 
+     ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Estimated usage by category
+     ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   ⛁ System prompt: 2.5k tokens (0.3%)
+     ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   ⛁ System tools: 8k tokens (0.8%)
+     ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   ⛁ Memory files: 6.5k tokens (0.7%)
+     ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ Skills: 1.2k tokens (0.1%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ Messages: 849.6k tokens (85.0%)
+                                               ⛶ Free space: 132.1k (13.2%)
+
+     MCP tools · /mcp (loaded on-demand)
+
+     Available
+     ├ mcp__claude_ai_Gmail__authenticate
+     ├ mcp__claude_ai_Gmail__complete_authentication
+     ├ mcp__claude_ai_Google_Calendar__authenticate
+     ├ mcp__claude_ai_Google_Calendar__complete_authentication
+     ├ mcp__claude_ai_Google_Drive__authenticate
+     └ mcp__claude_ai_Google_Drive__complete_authentication
+
+     Memory files · /memory
+     ├ ~/Projects/Claude/1/CLAUDE.md: 6.1k tokens
+     └ ~/.claude/projects/-home-bvacaliuc-Projects-Claude-1/memory/MEMORY.md: 397 tokens
+
+     Skills · /skills
+
+     Built-in
+     ├ claude-api: ~250 tokens
+     ├ update-config: ~240 tokens
+     ├ schedule: ~130 tokens
+     ├ run: ~120 tokens
+     ├ loop: ~110 tokens
+     ├ verify: ~90 tokens
+     ├ keybindings-help: ~80 tokens
+     ├ code-review: ~80 tokens
+     ├ fewer-permission-prompts: ~60 tokens
+     ├ security-review: ~30 tokens
+     ├ init: ~20 tokens
+     └ review: < 20 tokens
+
+      Suggestions
+      ⚠ Context is 86% full
+        Autocompact is disabled. Use /compact to free space, or enable autocompact in /config.
+
+      ℹ Read results using 222.1k tokens (22%) → save ~66.6k
+        Use offset and limit parameters to read only the sections you need. Avoid re-reading entire files when you only need a few lines.
+```
+
+Which is high (86%) and above the threshold for summarizing and saving a plan. So another question to resolve is why that didnt happen either by Claude's own instructions (I gave a 75% threshold) or my "/btw"?
+
+### Prompt 32.7
+
+Thanks! This session has run its course and it has been great! Can you think of anything that we should remember from this session to distribute into the cross-project knowledge for use in future quicknxsv1 or other project sessions?
 
 

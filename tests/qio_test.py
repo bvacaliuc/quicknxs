@@ -3,6 +3,7 @@
 import os, sys
 import unittest
 import tempfile
+from unittest.mock import patch
 
 from numpy import float64, float32, loadtxt, array, testing
 from quicknxs.qreduce import NXSData, MRDataset, Reflectivity, GISANS
@@ -368,6 +369,63 @@ class ExportAndReloadTest(FakeData, unittest.TestCase):
     finally:
       import shutil
       shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class V2GlobalOptionsParseTest(unittest.TestCase):
+  """QuickNXS v2 (4.3.0rc1) writes [Global Options] with a long key name
+  (lock_direct_beam_y) that leaves only a single space before its value.
+  The 2-space column split must not choke on that (regression: IndexError).
+  """
+
+  V2_HEADER='\n'.join([
+    '# Datafile created by QuickNXS 4.3.0rc1',
+    '# Datafile created using Mantid 6.12.0',
+    '# Date: 2025-04-08 16:09:48',
+    '# Type: Specular',
+    '# Input file indices: 44159,44160,44161',
+    '# Extracted states: +',
+    '#',
+    '# [Global Options]',
+    '# name               value',
+    '# sample_length      10.0',
+    '# lock_direct_beam_y False',
+    '#',
+  ])
+
+  def test_v2_global_options_single_space(self):
+    parser=HeaderParser(self.V2_HEADER, parse_meta=True)
+    gopts=parser.section_data['Global Options']
+    self.assertEqual(gopts['sample_length'], 10.0)
+    # long key / single-space value must still parse as a real bool
+    self.assertIn('lock_direct_beam_y', gopts)
+    self.assertIs(gopts['lock_direct_beam_y'], False)
+
+
+class HeaderParserDefaultBinsTest(unittest.TestCase):
+  """Load Extraction must honor a caller-supplied TOF bin count for v2
+  recipes that carry no [Event Mode Options] section.  Without it, reads
+  default to 40 bins, producing a sparse off-specular point cloud and the
+  "missing data" smoothing artifact (see plan/prompt-31-load-reduced-data.md)."""
+
+  MINI='# comment line 1\n# comment line 2'
+
+  def test_default_bins_forwarded_to_reader(self):
+    parser=HeaderParser(self.MINI, parse_meta=False, default_bins=400)
+    self.assertEqual(parser.default_bins, 400)
+    with patch('quicknxs.qio.NXSData') as mock_nxs:
+      mock_nxs.DEFAULT_OPTIONS=dict(NXSData.DEFAULT_OPTIONS)
+      parser._get_dataset({'File': 'foo.nxs.h5', 'EVT_ID': None})
+      self.assertEqual(mock_nxs.call_args.kwargs.get('bins'), 400,
+                       'default_bins must be forwarded to NXSData')
+
+  def test_without_default_bins_uses_builtin_40(self):
+    parser=HeaderParser(self.MINI, parse_meta=False)
+    self.assertIsNone(parser.default_bins)
+    with patch('quicknxs.qio.NXSData') as mock_nxs:
+      mock_nxs.DEFAULT_OPTIONS=dict(NXSData.DEFAULT_OPTIONS)
+      parser._get_dataset({'File': 'foo.nxs.h5', 'EVT_ID': None})
+      self.assertEqual(mock_nxs.call_args.kwargs.get('bins'), 40,
+                       'unset default_bins must keep the built-in 40')
 
 
 suite=unittest.TestLoader().loadTestsFromTestCase(HeaderTest)

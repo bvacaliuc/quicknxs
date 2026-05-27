@@ -78,7 +78,7 @@ class Ui_MainWindow(object):
     self.horizontalLayout_10.addWidget(self.label_27)
     self.eventTofBins = QtWidgets.QSpinBox(self.eventModeEntries)
     self.eventTofBins.setMinimum(5)
-    self.eventTofBins.setMaximum(200)
+    self.eventTofBins.setMaximum(1000)
     self.eventTofBins.setSingleStep(5)
     self.eventTofBins.setProperty("value", 40)
     self.eventTofBins.setObjectName("eventTofBins")

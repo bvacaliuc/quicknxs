@@ -250,6 +250,45 @@ class DataReductionTests(unittest.TestCase):
     self.assertTrue(isinstance(res2, qreduce.GISANS))
     repr(res2)
 
+  def test_offspec_normalizes_by_raw_flux_not_rraw(self):
+    """prompt-31: off-spec normalizes by the direct beam's RAW flux (norm.I),
+    not the background-subtracted norm.Rraw (= I - BG).  Matches quicknxsv2
+    off_specular.py and avoids the 1/Rraw blow-up at band edges where the DB
+    signal approaches its own background (so Rraw collapses while I is fine)."""
+    d=self.data[0]
+    raw=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206.)          # unnormalized S
+    norm=qreduce.Reflectivity(d, x_pos=206., tth=0., dpix=206.)
+    # a wavelength bin that actually carries off-spec signal
+    k=int(np.abs(np.asarray(raw.S)).sum(axis=0).argmax())
+    self.assertGreater(norm.I[k], 0., 'DB raw flux must be positive at this bin')
+    self.assertGreater(np.abs(np.asarray(raw.S)[:, k]).max(), 0., 'bin must carry signal')
+    # Background is non-zero here, so norm.Rraw[k] (= I - BG) differs from the
+    # raw flux norm.I[k]; only normalizing by norm.I matches v2 (and the old
+    # code, dividing by Rraw, gives a different/masked result here).
+    oS=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206., normalization=norm)
+    expected=np.asarray(raw.S)[:, k]/norm.I[k]
+    np.testing.assert_allclose(np.asarray(oS.S)[:, k], expected, rtol=1e-6, atol=1e-12)
+    self.assertTrue(np.isfinite(oS.S).all())
+
+  def test_offspec_cropped_to_mantid_wavelength_band(self):
+    """prompt-31: off-spec is cropped to Mantid MRR's chopper band (half-bw
+    MANTID_OFFSPEC_HALF_BANDWIDTH, scaled by chopper speed).  Wavelengths
+    outside the band -- the low-flux edges where the direct-beam normalization
+    is a single count and 1/flux blows up (the 44159 artifact) -- are masked."""
+    d=self.data[0]
+    norm=qreduce.Reflectivity(d, x_pos=206., tth=0., dpix=206.)
+    oS=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206., normalization=norm)
+    cs=getattr(d, 'chopper_speed', None)
+    scale=qreduce.TOF_REFERENCE_FREQUENCY/float(cs) if cs else 1.
+    hb=qreduce.MANTID_OFFSPEC_HALF_BANDWIDTH*scale
+    lam=np.asarray(oS.lamda)
+    out=(lam < d.lambda_center-hb) | (lam > d.lambda_center+hb)
+    self.assertTrue(out.any(), 'fixture should have band-edge bins beyond the 1.4-A band')
+    self.assertTrue(np.all(np.asarray(oS.S)[:, out] == 0.),
+                    'out-of-band wavelengths must be masked to 0')
+    self.assertGreater(np.abs(np.asarray(oS.S)[:, ~out]).max(), 0.,
+                       'in-band off-spec must retain signal')
+
 
 class LRDatasetTests(unittest.TestCase):
   '''Tests for REF_L (Liquids Reflectometer) data loading.'''

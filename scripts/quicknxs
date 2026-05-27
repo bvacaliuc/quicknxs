@@ -13,6 +13,22 @@ import argparse
 import matplotlib
 matplotlib.use("QtAgg")
 
+# Prevent a C++ destruction-order SIGSEGV on exit ("Error 139").  By default
+# sip destroys all remaining wrapped C++ objects at interpreter shutdown; with
+# matplotlib FigureCanvas widgets still alive (off-spec/preview plots), that
+# ordered teardown races QApplication destruction and crashes.  The process is
+# exiting, so let the OS reclaim memory instead.  This is the canonical,
+# all-paths fix and applies regardless of which tab/dialog was used.
+try:
+  from PyQt5 import sip as _sip
+  _sip.setdestroyonexit(False)
+except Exception:
+  try:
+    import sip as _sip
+    _sip.setdestroyonexit(False)
+  except Exception:
+    pass
+
 # if script was run from commandline
 try:
   if os.path.abspath(__file__).endswith('scripts/quicknxs'):

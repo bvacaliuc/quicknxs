@@ -1,4 +1,4 @@
-.PHONY: gui install test test-core test-gui test-db test-h5 lint clean reduce-headless strace strace-full strace-reduce load-test batch-load-test
+.PHONY: gui install test test-core test-gui test-db test-h5 lint clean reduce-headless strace strace-full strace-reduce gdb load-test batch-load-test
 
 INSTRUMENT ?= ref_m
 
@@ -75,6 +75,26 @@ strace-full: install
 	echo "=== strace complete (exit $$?) ==="; \
 	echo "Output files:"; \
 	ls -lhS strace.* 2>/dev/null || echo "  (no output files found)"
+
+# Capture a native (C++) backtrace of a crash in the GUI app with gdb.
+# Launches the GUI under gdb; reproduce the crash, then let it die — gdb prints
+# the faulting stack and tees it to $(GDB_LOG).  Requires gdb on PATH
+# (`pixi global install gdb` or the system package).
+#
+# gdb MUST debug the *env* python, not the `pixi run` wrapper, or it only traces
+# the wrapper (exits 0213, "No stack").  Hence `pixi run gdb --args python ...`
+# (gdb runs inside the activated env, on the env python) rather than
+# `gdb --args pixi run python ...`.  gdb catches SIGSEGV before faulthandler, so
+# the backtrace points at the real faulting frame.
+GDB_LOG ?= $(HOME)/.quicknxs/gdb-bt.log
+
+gdb: install
+	pixi run gdb -batch -nx \
+	  -ex 'set pagination off' -ex 'set confirm off' \
+	  -ex run -ex 'bt full' -ex 'thread apply all bt' \
+	  --args python scripts/quicknxs --instrument $(INSTRUMENT) 2>&1 | tee $(GDB_LOG); \
+	echo ""; \
+	echo "=== gdb backtrace written to $(GDB_LOG) ==="
 
 load-test: install
 	@test -n "$(FILE)" || (echo "Usage: make load-test FILE=/path/to/file.nxs"; exit 1)

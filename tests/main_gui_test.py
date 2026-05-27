@@ -3,12 +3,13 @@
 import os
 import unittest
 from time import time
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import patch, MagicMock
 from qtpy.QtWidgets import QApplication, QMainWindow, QMessageBox
 from qtpy.QtTest import QTest
 from qtpy.QtCore import QLocale#, Qt
 
-from quicknxs.main_gui import MainGUI
+from quicknxs.main_gui import MainGUI, ExtractionRegion
 from quicknxs.qreduce import NXSData, Reflectivity
 
 # Create a single QApplication instance for all tests
@@ -86,6 +87,25 @@ class MainGUIGeneral(unittest.TestCase):
     self.assertNotEqual(xstart, self.gui.ui.refXPos.value(), 'x-fitting')
     self.assertNotEqual(ystart, self.gui.ui.refYPos.value(), 'y-fitting')
     self.assertNotEqual(ywstart, self.gui.ui.refYWidth.value(), 'yw-fitting')
+
+  def test_eventTofBins_max_supports_v2_resolution(self):
+    # v2 reduces off-spec at 400 TOF bins; Load Extraction reads at this
+    # spinbox value, so the cap must allow >=400 (prompt-30.1).
+    self.assertGreaterEqual(self.gui.ui.eventTofBins.maximum(), 400)
+    self.gui.ui.eventTofBins.setValue(400)
+    self.assertEqual(self.gui.ui.eventTofBins.value(), 400)
+
+  def test_close_open_plots_releases_windows(self):
+    # Non-modal plot windows must be closed on exit, not left for interpreter
+    # shutdown (matplotlib canvas torn down after QApplication -> SIGSEGV).
+    d1, d2 = MagicMock(), MagicMock()
+    self.gui.open_plots.append(d1)
+    self.gui.open_plots.append(d2)
+    self.gui._close_open_plots()
+    d1.close.assert_called_once()
+    d2.close.assert_called_once()
+    self.assertEqual(len(self.gui.open_plots), 0,
+                     'open_plots must be emptied so no canvas survives to shutdown')
 
 
 class MainGUIActions(unittest.TestCase):
@@ -617,7 +637,11 @@ class FileLoadingFixes(unittest.TestCase):
     self.assertFalse(result)
 
   def test_open_by_number_not_found_shows_statusbar(self):
-    """openByNumber() shows a status bar message when run is not found."""
+    """openByNumber() surfaces a message when run is not found.
+
+    Status now flows through the uniform activity indicator (the lower-left
+    status channel) rather than QStatusBar.showMessage directly.
+    """
     from quicknxs.config import instrument
     orig = instrument.data_base
     try:
@@ -625,7 +649,7 @@ class FileLoadingFixes(unittest.TestCase):
       self.gui.openByNumber('888888')
     finally:
       instrument.data_base = orig
-    self.assertIn('888888', self.gui.ui.statusbar.currentMessage())
+    self.assertIn('888888', self.gui.activity_indicator.text())
 
   @unittest.skipUnless(hasattr(__import__('signal'), 'SIGALRM'), 'SIGALRM not available')
   def test_open_by_number_sigalrm_timeout(self):
@@ -633,7 +657,7 @@ class FileLoadingFixes(unittest.TestCase):
     with patch('quicknxs.main_gui.locate_file', side_effect=TimeoutError('sshfs stall')):
       result = self.gui.openByNumber('40205')
     self.assertFalse(result)
-    self.assertIn('timed out', self.gui.ui.statusbar.currentMessage().lower())
+    self.assertIn('timed out', self.gui.activity_indicator.text().lower())
 
   # ── fileOpenDialog / fileOpenSumDialog ────────────────────
 
@@ -1159,10 +1183,13 @@ class SmoothDialogDrawPlotFix(unittest.TestCase):
 
 
 class SmoothOffspecProgressCleanup(unittest.TestCase):
-  """Verify ProgressDialog is destroyed even if smooth_offspec raises."""
+  """Verify the ProgressDialog is disposed even if smooth_offspec raises."""
 
-  def test_progress_destroyed_on_error(self):
-    """pb.destroy() should be called even when exporter.smooth_offspec raises."""
+  def test_progress_disposed_on_error(self):
+    """pb.deleteLater() should be called even when exporter.smooth_offspec
+    raises.  Disposal goes through close()/deleteLater(), not destroy():
+    a destroy()'d dialog left in the window list crashes
+    QApplication::closeAllWindows() on exit (Error 139)."""
     from quicknxs.gui_utils import Reducer, ProgressDialog
     from quicknxs.qreduce import NXSData, Reflectivity
     from qtpy.QtWidgets import QWidget
@@ -1188,13 +1215,14 @@ class SmoothOffspecProgressCleanup(unittest.TestCase):
       }
       # Patch exporter.smooth_offspec to raise
       with patch.object(reducer.exporter, 'smooth_offspec', side_effect=RuntimeError('test')):
-        with patch.object(ProgressDialog, 'destroy') as mock_destroy:
-          with patch.object(ProgressDialog, 'show'):
-            try:
-              reducer.smooth_offspec()
-            except RuntimeError:
-              pass
-            mock_destroy.assert_called_once()
+        with patch.object(ProgressDialog, 'deleteLater') as mock_delete:
+          with patch.object(ProgressDialog, 'close'):
+            with patch.object(ProgressDialog, 'show'):
+              try:
+                reducer.smooth_offspec()
+              except RuntimeError:
+                pass
+              mock_delete.assert_called_once()
     parent.deleteLater()
 
 
@@ -1535,6 +1563,398 @@ class LoadExtractionRoundTrip(unittest.TestCase):
                        'reduction_list should be populated from pending header')
 
 
+class CalcReflParamsFreshFileReseed(unittest.TestCase):
+  """Regression for prompt-28.2: 44035 captured 44160's widths.
+
+  When a user loads a new (never-classified) file after addRefList has
+  flipped actionAutoYLimits to False, the spinboxes for y_pos/y_width
+  used to retain whatever was last on screen — typically the previous
+  refl's narrow extraction region.  setNorm would then capture a
+  Reflectivity built from those stale widths.
+
+  Fix: in calcReflParams, treat "fresh" files (not yet in ref_norm and
+  not yet in reduction_list) as if AutoYLimits were on, regardless of
+  the toggle, so they always get file-appropriate y_pos/y_width.
+  """
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning',
+                                    return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def _set_stale_ui(self, *, x_pos, x_width, y_pos, y_width):
+    """Force the spinboxes to specific values (simulating loadExtraction
+    having written a refl's options to the UI).  ``auto_change_active``
+    is set so signal handlers don't recompute or move things around."""
+    self.gui.auto_change_active=True
+    self.gui.ui.refXPos.setValue(x_pos)
+    self.gui.ui.refXWidth.setValue(x_width)
+    self.gui.ui.refYPos.setValue(y_pos)
+    self.gui.ui.refYWidth.setValue(y_width)
+    self.gui.auto_change_active=False
+
+  def test_fresh_file_reseeds_y_even_with_AutoYLimits_off(self):
+    # Mirror the moment after addRefList in the real GUI: AutoYLimits
+    # has been flipped off because the user added a refl, and the UI
+    # spinboxes are showing that refl's (narrow) extraction region.
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.setNorm()
+    self.gui.addRefList(do_plot=False)
+    self.assertFalse(self.gui.ui.actionAutoYLimits.isChecked(),
+                     'addRefList should disable AutoYLimits')
+
+    # Simulate state-restore having written a refl's narrow widths
+    # into the spinboxes (this is what loadExtraction does at lines
+    # 1427-1430 of main_gui.py).
+    stale_y_pos=137.0
+    stale_y_width=55.0
+    self._set_stale_ui(x_pos=172.0, x_width=17.0,
+                       y_pos=stale_y_pos, y_width=stale_y_width)
+
+    # Now load a fresh file.  The test fixtures share a run number so
+    # we make the GUI think it's a different file by directly emptying
+    # the classification stores, then driving calcReflParams.
+    self.gui.reduction_list=[]
+    self.gui.ref_norm={}
+    self.gui.fileOpen(TEST_EVENT, do_plot=True)
+    self.assertFalse(self.gui._active_file_is_known(),
+                     'cleared classification → fresh file')
+
+    # Y should have been reseeded from the actual data via get_yregion,
+    # not left at the stale 137/55 from the previous refl.
+    self.assertNotEqual(self.gui.ui.refYPos.value(), stale_y_pos,
+                        'refYPos must be reseeded from the fresh file, '
+                        'not left at the stale refl value')
+    self.assertNotEqual(self.gui.ui.refYWidth.value(), stale_y_width,
+                        'refYWidth must be reseeded from the fresh file, '
+                        'not left at the stale refl value')
+
+    # And the captured self.refl must have those fresh values, so a
+    # subsequent setNorm() would record the file's own extraction
+    # region — not a stale one.
+    self.assertEqual(self.gui.refl.options['y_pos'],
+                     self.gui.ui.refYPos.value())
+    self.assertEqual(self.gui.refl.options['y_width'],
+                     self.gui.ui.refYWidth.value())
+
+    # X width must likewise be reseeded from the fresh file (prompt-30 AC1):
+    # a fresh file picks up its own stripe via get_xregion, not the stale
+    # refl x_width=17, and self.refl captures the fresh value.
+    self.assertNotEqual(self.gui.ui.refXWidth.value(), 17.0,
+                        'refXWidth must be reseeded from the fresh file, '
+                        'not left at the stale refl value')
+    self.assertEqual(self.gui.refl.options['x_width'],
+                     self.gui.ui.refXWidth.value())
+
+  def test_known_file_preserves_user_y_values(self):
+    """When the active file is a refl already in reduction_list, its
+    y_pos/y_width must NOT be silently re-seeded — that would clobber a
+    user-tuned region for refl stitching."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.setNorm()
+    self.gui.addRefList(do_plot=False)
+    self.assertFalse(self.gui.ui.actionAutoYLimits.isChecked())
+    self.assertTrue(self.gui._active_file_is_known(),
+                    'TEST_DATASET is now in reduction_list')
+
+    # Manually adjust y to a non-auto value the user might pick for
+    # refl-stitching uniformity.
+    custom_y_pos=145.0
+    custom_y_width=70.0
+    self._set_stale_ui(x_pos=self.gui.ui.refXPos.value(),
+                       x_width=self.gui.ui.refXWidth.value(),
+                       y_pos=custom_y_pos, y_width=custom_y_width)
+
+    # Drive calcReflParams directly (the same code path fileOpen would
+    # trigger via fileLoaded → calcReflParams).  Since the file is
+    # known, Y must not be re-seeded.
+    self.gui.calcReflParams()
+    self.assertEqual(self.gui.ui.refYPos.value(), custom_y_pos,
+                     'known files must keep the user-set y_pos')
+    self.assertEqual(self.gui.ui.refYWidth.value(), custom_y_width,
+                     'known files must keep the user-set y_width')
+
+
+class RoleDecoupling(unittest.TestCase):
+  """prompt-30: the direct-beam role and reflectivity role keep separate
+  extraction regions, so loading a file of one role can no longer leave
+  the other role's stale widths in the spinboxes.
+
+  The GUI infers a file's role from ref_norm / reduction_list and, on a
+  role *switch*, mirrors that role's stored ExtractionRegion into the
+  spinboxes.  setNorm / addRefList capture each role's region from the
+  stored object's options.
+  """
+
+  # Distinctive regions modelled on the real REF_M 11486 reduction:
+  # the direct beam 44035 has a wide stripe (x_width 24 / y_width 100)
+  # while the refl 44161 has a narrow one (x_width 17 / y_width 55).
+  DB_REGION=ExtractionRegion(x_pos=230.5, x_width=24., y_pos=134., y_width=100.,
+                             bg_pos=30., bg_width=20., scale=1.0)
+  REFL_REGION=ExtractionRegion(x_pos=172.3, x_width=17., y_pos=137., y_width=55.,
+                               bg_pos=30., bg_width=20., scale=2.0)
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning',
+                                    return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_db_after_refl_uses_db_region(self):
+    """A refl is active; loading a known direct beam must mirror the DB
+    region into the spinboxes, not the refl's narrow widths."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_db=self.DB_REGION
+    self.gui.region_refl=self.REFL_REGION
+    # Spinboxes currently show the refl region (the cross-talk setup).
+    self.gui.active_role='refl'
+    self.gui._apply_region_to_ui(self.REFL_REGION)
+    self.assertEqual(self.gui.ui.refYWidth.value(), 55.)
+
+    # Classify the active file as a direct beam, then drive the same hook
+    # fileLoaded fires.
+    number=self.gui._active_file_number()
+    self.gui.ref_norm={number: self.gui.refl}
+    self.gui.reduction_list=[]
+    self.gui._applyRoleRegion()
+
+    self.assertEqual(self.gui.active_role, 'db')
+    self.assertEqual(self.gui.ui.refXWidth.value(), 24.,
+                     'DB load must mirror the DB x_width, not the refl 17')
+    self.assertEqual(self.gui.ui.refYWidth.value(), 100.,
+                     'DB load must mirror the DB y_width, not the refl 55')
+    self.assertEqual(self.gui.ui.refXPos.value(), 230.5)
+
+  def test_refl_after_db_uses_refl_region(self):
+    """A DB is active; loading a known reflectivity must mirror the refl
+    region, not the DB's wide widths."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_db=self.DB_REGION
+    self.gui.region_refl=self.REFL_REGION
+    self.gui.active_role='db'
+    self.gui._apply_region_to_ui(self.DB_REGION)
+    self.assertEqual(self.gui.ui.refYWidth.value(), 100.)
+
+    number=self.gui._active_file_number()
+    self.gui.ref_norm={}
+    self.gui.reduction_list=[SimpleNamespace(options={'number': number})]
+    self.gui._applyRoleRegion()
+
+    self.assertEqual(self.gui.active_role, 'refl')
+    self.assertEqual(self.gui.ui.refXWidth.value(), 17.,
+                     'refl load must mirror the refl x_width, not the DB 24')
+    self.assertEqual(self.gui.ui.refYWidth.value(), 55.,
+                     'refl load must mirror the refl y_width, not the DB 100')
+
+  def test_same_role_reload_preserves_region(self):
+    """Reloading a file of the *same* role must not re-seed the spinboxes,
+    so user-tuned / auto-fit values survive (no refl-stitching regression)."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_refl=self.REFL_REGION
+    self.gui.active_role='refl'
+    # User tunes y to a value that differs from region_refl.
+    self.gui.auto_change_active=True
+    self.gui.ui.refYWidth.setValue(70.)
+    self.gui.auto_change_active=False
+
+    number=self.gui._active_file_number()
+    self.gui.ref_norm={}
+    self.gui.reduction_list=[SimpleNamespace(options={'number': number})]
+    self.gui._applyRoleRegion()
+
+    self.assertEqual(self.gui.active_role, 'refl')
+    self.assertEqual(self.gui.ui.refYWidth.value(), 70.,
+                     'same-role reload must not clobber the on-screen region')
+
+  def test_setNorm_and_addRefList_capture_role_regions(self):
+    """setNorm captures region_db and addRefList captures region_refl, each
+    byte-for-byte from the stored object's options."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.setNorm()
+    self.assertEqual(self.gui.active_role, 'db')
+    self.assertEqual(self.gui.region_db,
+                     ExtractionRegion.from_options(self.gui.refl.options),
+                     'setNorm must capture the DB region from refl.options')
+
+    self.gui.addRefList(do_plot=False)
+    self.assertEqual(self.gui.active_role, 'refl')
+    self.assertEqual(self.gui.region_refl,
+                     ExtractionRegion.from_options(self.gui.refl.options),
+                     'addRefList must capture the refl region from refl.options')
+
+  def test_fresh_file_keeps_active_role(self):
+    """An unclassified (fresh) file does not switch roles or re-seed the
+    spinboxes — calcReflParams' auto-fit (Fix A) owns that case."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_db=self.DB_REGION
+    self.gui.region_refl=self.REFL_REGION
+    self.gui.active_role='db'
+    self.gui._apply_region_to_ui(self.DB_REGION)
+    self.gui.ref_norm={}
+    self.gui.reduction_list=[]
+    self.assertIsNone(self.gui._active_file_role())
+
+    self.gui._applyRoleRegion()
+    self.assertEqual(self.gui.active_role, 'db',
+                     'fresh file must not change the active role')
+    self.assertEqual(self.gui.ui.refYWidth.value(), 100.,
+                     'fresh file must not re-seed the spinboxes')
+
+  def test_changeRegionValues_snapshots_active_role(self):
+    """prompt-30 item 4: a user edit to a classified file's region is
+    snapshotted into that role's stored region, so it survives a later
+    switch-away/switch-back (not merely kept on screen)."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.setNorm()                       # classify active file as a DB
+    self.assertEqual(self.gui.active_role, 'db')
+    # Simulate the user widening the DB x stripe; guard the programmatic set
+    # so only the explicit changeRegionValues() performs the snapshot.
+    self.gui.auto_change_active=True
+    self.gui.ui.refXWidth.setValue(40.)
+    self.gui.auto_change_active=False
+    self.gui.changeRegionValues()
+    self.assertEqual(self.gui.region_db.x_width, 40.,
+                     'changeRegionValues must snapshot the edit into region_db')
+
+  def test_changeRegionValues_fresh_file_does_not_pollute_role_region(self):
+    """A fresh (unclassified) file's edits must NOT be written into a role
+    region (calcReflParams' auto-fit owns fresh files)."""
+    self.gui.fileOpen(TEST_DATASET, do_plot=True)
+    self.gui.region_refl=self.REFL_REGION    # a known refl region is on record
+    self.gui.region_db=self.DB_REGION
+    self.gui.active_role='refl'
+    self.gui.ref_norm={}                     # active file is fresh
+    self.gui.reduction_list=[]
+    self.gui.auto_change_active=True
+    self.gui.ui.refXWidth.setValue(99.)
+    self.gui.auto_change_active=False
+    self.gui.changeRegionValues()
+    self.assertEqual(self.gui.region_refl.x_width, 17.,
+                     'a fresh-file edit must not overwrite region_refl')
+    self.assertEqual(self.gui.region_db.x_width, 24.,
+                     'a fresh-file edit must not overwrite region_db')
+
+
+class WidgetDisposalSafety(unittest.TestCase):
+  """Dialogs / progress windows must be disposed with close()/deleteLater(),
+  never QWidget.destroy().
+
+  A destroy()'d widget tears down its native window but stays registered with
+  the QApplication, so QApplication::closeAllWindows() on exit dereferences a
+  dangling QWindow and segfaults (Error 139).  Root-caused via gdb on the
+  off-spec preview flow; reproduced as destroy()+closeAllWindows() -> SIGSEGV
+  while close()+deleteLater()+closeAllWindows() is clean.
+  """
+
+  def test_no_widget_destroy_calls(self):
+    import quicknxs.main_gui as mg
+    import quicknxs.gui_utils as gu
+    for mod in (mg, gu):
+      with open(mod.__file__, encoding='utf8') as fh:
+        src=fh.read()
+      self.assertNotIn('.destroy()', src,
+                       '%s disposes a widget with .destroy(); use '
+                       'close()/deleteLater() instead — destroy() leaves a '
+                       'dangling QWindow that crashes closeAllWindows() on exit'
+                       % os.path.basename(mod.__file__))
+
+
+class QtHandlerStatusbarOptOut(unittest.TestCase):
+  """gui_logging.QtHandler honors extra={'no_statusbar': True}: such INFO
+  records are still buffered (and written by the file handler) but are kept
+  off the shared status bar (prompt-31 #5)."""
+
+  def _handler(self):
+    from quicknxs.gui_logging import QtHandler
+    mw=MagicMock()
+    return QtHandler(mw), mw
+
+  def _info_record(self, **extra):
+    import logging
+    rec=logging.LogRecord('quicknxs', logging.INFO, __file__, 0, u'msg', None, None)
+    for k, v in extra.items():
+      setattr(rec, k, v)
+    return rec
+
+  def test_plain_info_reaches_statusbar(self):
+    h, mw=self._handler()
+    h.emit(self._info_record())
+    mw.ui.statusbar.showMessage.assert_called()
+
+  def test_no_statusbar_info_kept_off_statusbar_but_buffered(self):
+    h, mw=self._handler()
+    h.emit(self._info_record(no_statusbar=True))
+    mw.ui.statusbar.showMessage.assert_not_called()
+    self.assertEqual(len(h.logged_items), 1, 'record must still be buffered')
+
+
+class SmoothDialogDataDrivenLimits(unittest.TestCase):
+  """SmoothDialog axis limits, region box and sigma track the actual data
+  extent (no longer hardcoded +/-0.035 view / +/-0.03 region / 0.0005 sigma).
+  No set_aspect is applied -- the kernel honestly reflects the axis scales."""
+
+  def _dialog(self, kdiff_min, kdiff_max, qz_max):
+    import numpy as np
+    from quicknxs.gui_utils import SmoothDialog
+    ny, nx=6, 20
+    item=np.zeros((ny, nx, 6))
+    item[:, :, 2]=np.linspace(kdiff_min, kdiff_max, nx)   # ki_z (kf_z=0 -> ki_z-kf_z spans data)
+    item[:, :, 1]=np.linspace(0.0, qz_max, ny)[:, None]   # Qz spans [0, qz_max]
+    item[:, :, 5]=1.0                                      # I>0 everywhere
+    parent=QMainWindow()
+    dia=SmoothDialog(parent, [item])
+    dia.ui.kizmkfzVSqz.setChecked(True)
+    dia.drawPlot()
+    return dia, parent
+
+  def test_xlim_tracks_data_not_hardcoded(self):
+    dia, parent=self._dialog(kdiff_min=-0.11, kdiff_max=0.086, qz_max=0.37)
+    xlo, xhi=dia.ui.plot.canvas.ax.get_xlim()
+    self.assertAlmostEqual(xlo, -0.11, places=3,
+                           msg='x lower limit must track the data, not the old -0.035')
+    self.assertAlmostEqual(xhi, 0.086, places=3,
+                           msg='x upper limit must track the data, not the old +0.035')
+    # region box (grid spin fields) sits inside the data extent, not at +/-0.03
+    self.assertLess(dia.ui.gridXmin.value(), -0.05,
+                    'gridXmin must be data-driven (~ -0.10), not the old -0.03')
+    self.assertGreater(dia.ui.gridXmax.value(), 0.05)
+    dia.destroy()
+    parent.deleteLater()
+
+  def test_ylim_tracks_qz_data(self):
+    dia, parent=self._dialog(kdiff_min=-0.11, kdiff_max=0.086, qz_max=0.37)
+    ylo, yhi=dia.ui.plot.canvas.ax.get_ylim()
+    self.assertAlmostEqual(yhi, 0.37, places=2,
+                           msg='y upper limit must track the Qz data extent')
+    dia.destroy()
+    parent.deleteLater()
+
+
 # ──────────────────────────────────────────────────────────────
 #  Test suite registration
 # ──────────────────────────────────────────────────────────────
@@ -1574,3 +1994,8 @@ suite.addTest(unittest.TestLoader().loadTestsFromTestCase(QFileDialogTupleFix))
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(NavigationToolbarLabelAction))
 # Load Extraction round-trip tests
 suite.addTest(unittest.TestLoader().loadTestsFromTestCase(LoadExtractionRoundTrip))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(CalcReflParamsFreshFileReseed))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(RoleDecoupling))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(WidgetDisposalSafety))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(QtHandlerStatusbarOptOut))
+suite.addTest(unittest.TestLoader().loadTestsFromTestCase(SmoothDialogDataDrivenLimits))

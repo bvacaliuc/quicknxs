@@ -46,6 +46,12 @@ TOF_REFERENCE_FREQUENCY=60.0
 # Default half-bandwidth (Å) around the central wavelength at the reference
 # chopper speed.  Matches quicknxsv2's ``wl_bandwidth = 3.2 → half_width = 1.6``.
 TOF_HALF_BANDWIDTH_60HZ=1.6
+# Mantid's MagnetismReflectometryReduction (``get_tof_range``) crops to a
+# *narrower* half-bandwidth (1.4 Å at 60 Hz) than v1's load band (1.6).  The
+# off-spec normalization is cropped to this tighter, Mantid-matching band so the
+# poorly-illuminated band edges -- where a single-count direct beam makes the
+# 1/flux normalization blow up a spurious off-spec pixel -- are excluded.
+MANTID_OFFSPEC_HALF_BANDWIDTH=1.4
 
 
 def _compute_tof_range_us(dist_mod_det, lambda_center, chopper_speed=None,
@@ -3313,14 +3319,33 @@ class OffSpecular(Reflectivity):
     if self.options['normalization']:
       norm=self.options['normalization']
       debug("Performing normalization from %s"%norm)
-      idxs=norm.Rraw>0.
+      # Normalize by the direct beam's RAW flux (norm.I), not the
+      # background-subtracted norm.Rraw (= I - BG).  At a band edge the DB
+      # signal approaches its own background, so Rraw collapses toward zero (a
+      # tiny positive residual) and 1/Rraw blows up a spurious off-spec pixel,
+      # while the raw flux I stays well-behaved.  Matches quicknxsv2
+      # off_specular.py, which normalizes off-spec by raw direct-beam counts.
+      idxs=norm.I>0.
       self.dS[:, idxs]=sqrt(
-                   (self.dS[:, idxs]/norm.Rraw[idxs][newaxis, :])**2+
-                   (self.S[:, idxs]/norm.Rraw[idxs][newaxis, :]**2*norm.dRraw[idxs][newaxis, :])**2
+                   (self.dS[:, idxs]/norm.I[idxs][newaxis, :])**2+
+                   (self.S[:, idxs]/norm.I[idxs][newaxis, :]**2*norm.dI[idxs][newaxis, :])**2
                    )
-      self.S[:, idxs]/=norm.Rraw[idxs][newaxis, :]
+      self.S[:, idxs]/=norm.I[idxs][newaxis, :]
       self.S[:, logical_not(idxs)]=0.
       self.dS[:, logical_not(idxs)]=0.
+
+    # Crop to Mantid MRR's usable wavelength band (get_tof_range): the chopper
+    # half-bandwidth is MANTID_OFFSPEC_HALF_BANDWIDTH at the reference speed and
+    # widens inversely with chopper speed.  v1's load band is wider (1.6), so its
+    # low-flux edges -- where the direct-beam normalization is a single count and
+    # 1/flux blows up a spurious off-spec pixel (the 44159 artifact) -- are
+    # trimmed here for the off-spec, matching Mantid.
+    cs=getattr(dataset, 'chopper_speed', None)
+    scale=TOF_REFERENCE_FREQUENCY/float(cs) if cs else 1.
+    hb=MANTID_OFFSPEC_HALF_BANDWIDTH*scale
+    out_of_band=(self.lamda<dataset.lambda_center-hb)|(self.lamda>dataset.lambda_center+hb)
+    self.S[:, out_of_band]=0.
+    self.dS[:, out_of_band]=0.
 
 class GISANS(Reflectivity):
   '''

@@ -96,6 +96,25 @@ def check_runstate():
   else:
     return False
 
+_faulthandler_log=None
+
+def _enable_faulthandler():
+  '''Enable a C-level fault traceback on SIGSEGV/SIGABRT/etc.
+
+  Crashes during Qt/matplotlib teardown on exit produce only an opaque
+  ``Error 139`` (SIGSEGV); faulthandler prints the offending stack so the
+  fault can be located.  The traceback goes to a persistent ``*-crash.log``
+  beside the debug log (shareable like debug.log), or stderr if that fails.
+  '''
+  global _faulthandler_log
+  import faulthandler
+  try:
+    crash_path=os.path.join(os.path.dirname(paths.LOG_FILE), 'quicknxs-crash.log')
+    _faulthandler_log=open(crash_path, 'w')  # kept open for the process lifetime
+    faulthandler.enable(file=_faulthandler_log, all_threads=True)
+  except Exception:
+    faulthandler.enable()  # fall back to stderr
+
 def setup_system():
   logger=logging.getLogger()#logging.getLogger('quicknxs')
   logger.setLevel(min(FILE_LEVEL, CONSOLE_LEVEL, GUI_LEVEL))
@@ -112,6 +131,11 @@ def setup_system():
   logfile.setFormatter(formatter)
   logfile.setLevel(FILE_LEVEL)
   logger.addHandler(logfile)
+
+  # Dump a C-level traceback on a fatal fault (e.g. a Qt/matplotlib teardown
+  # SIGSEGV on exit — "Error 139").  Written to a persistent crash log next to
+  # the debug log so it can be shared like debug.log; falls back to stderr.
+  _enable_faulthandler()
 
   logging.info('*** QuickNXS %s Logging started ***'%str_version)
 
@@ -159,6 +183,12 @@ class QtHandler(logging.Handler):
       self.show_error(record)
 
   def show_info(self, record):
+    # Records logged with extra={'no_statusbar': True} are still buffered above
+    # and written to the log file by the file handler, but are kept off the
+    # shared status bar so routine diagnostics don't crowd out user-facing
+    # messages (the status bar is a single, easily-overloaded channel).
+    if getattr(record, 'no_statusbar', False):
+      return
     msg=record.msg
     if record.levelno!=logging.INFO:
       msg=record.levelname+': '+msg

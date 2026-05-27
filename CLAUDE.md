@@ -82,6 +82,59 @@ or touching pcolormesh gouraud-shaded off-specular surfaces — **load the
 parent repo's `setup/patterns/ui-aspects.md`** for the storage conventions
 and round-trip pitfalls.
 
+## GUI Responsiveness (single-threaded; status feedback convention)
+
+The whole GUI runs **on one thread** — every slot blocks the Qt event loop for
+its full duration, so the window cannot even repaint a button press while a
+handler runs.  Profiling (`scripts/profile_responsiveness.py`, `--cprofile`)
+shows the cost is **matplotlib `draw()` (tick/text rendering) and file I/O**,
+*not* the reduction math: `calc_refl()` is ~2 ms, while a cold `fileOpen` is
+~4 s, tab switches 0.5–0.8 s, and the OffSpec Preview ~1.4 s (it re-reads each
+reduction-list file and re-runs `OffSpecular` per channel on every view). See
+`plan/prompt-32-responsiveness.md` for the full diagnosis.
+
+Because the draws are inherently the cost, perceived crispness comes from
+**acknowledging the action instantly**, not from speeding the draw.  Use the
+centralized mechanism (`quicknxs/activity_status.py` + `MainGUI`):
+
+```python
+with self.busy(u'Rendering off-specular preview...'):
+    ...slow work...
+# -> shows the message + wait cursor + processEvents(ExcludeUserInputEvents)
+#    immediately, and a fading "Complete" when the outermost scope exits.
+```
+
+**Conventions for new handlers:**
+- **Discrete heavy action** (button/menu/tab/checkbox → one replot/reduce/IO):
+  wrap in `with self.busy("…"):`. Scopes are depth-counted, so nested calls
+  (`fileOpen` → `plotActiveTab`) fire "Complete" exactly once.
+- **High-frequency / continuous input** (spinbox `valueChanged`, region drags,
+  color-scale tweaks, folder rescans): call `self._activity_transient("…")`
+  instead. It shows the message immediately and *coalesces* — surfacing one
+  fading "Complete" only after the input settles, never a flash per tick. Never
+  opens a busy scope, so it is safe in rapid slots.
+- **Dialog opener**: `with self.busy("Opening …", show_cursor=False):` (the modal
+  is interactive — no wait cursor; release it before any `exec_`).
+- **Threaded work** (GISANS): set the message in the start method; surface
+  "Complete" in the finish slot.
+
+**Wait cursor is gated by action class, not a timer.** The event loop is blocked
+during a synchronous slot, so a runtime "only after 200 ms" timer can never fire
+mid-op. `busy(..., show_cursor=True)` (default) is for genuinely heavy discrete
+ops; quick/continuous actions pass `show_cursor=False` or use
+`_activity_transient` (no cursor) so fast replots don't flicker the pointer.
+
+See `plan/prompt-32-responsiveness-design.md` for the full action audit and the
+deferred-queue design (Phase 2b) that will add "N operations pending…" for
+*stacked* clicks — not yet implemented; clicks during a blocking op are still
+acknowledged only when that op yields/returns.
+
+**Two modal-dialog footguns that fully freeze the GUI** (keep in mind, not yet
+changed): the startup "Previous Crash" `QMessageBox` (`readSettings`, fires
+whenever a stale `~/.quicknxs/run_state.dat` exists — i.e. after any crash/OOM),
+and logged `warning()` calls, which `gui_logging.show_warning` turns into modal
+dialogs. `info()` is non-blocking (routes to `statusbar.showMessage(msg, 5000)`).
+
 ## CI/CD
 
 ### Branching model
