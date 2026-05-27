@@ -3313,12 +3313,18 @@ class OffSpecular(Reflectivity):
     if self.options['normalization']:
       norm=self.options['normalization']
       debug("Performing normalization from %s"%norm)
-      idxs=norm.Rraw>0.
+      # Normalize by the direct beam's RAW flux (norm.I), not the
+      # background-subtracted norm.Rraw (= I - BG).  At a band edge the DB
+      # signal approaches its own background, so Rraw collapses toward zero (a
+      # tiny positive residual) and 1/Rraw blows up a spurious off-spec pixel,
+      # while the raw flux I stays well-behaved.  Matches quicknxsv2
+      # off_specular.py, which normalizes off-spec by raw direct-beam counts.
+      idxs=norm.I>0.
       self.dS[:, idxs]=sqrt(
-                   (self.dS[:, idxs]/norm.Rraw[idxs][newaxis, :])**2+
-                   (self.S[:, idxs]/norm.Rraw[idxs][newaxis, :]**2*norm.dRraw[idxs][newaxis, :])**2
+                   (self.dS[:, idxs]/norm.I[idxs][newaxis, :])**2+
+                   (self.S[:, idxs]/norm.I[idxs][newaxis, :]**2*norm.dI[idxs][newaxis, :])**2
                    )
-      self.S[:, idxs]/=norm.Rraw[idxs][newaxis, :]
+      self.S[:, idxs]/=norm.I[idxs][newaxis, :]
       self.S[:, logical_not(idxs)]=0.
       self.dS[:, logical_not(idxs)]=0.
 
