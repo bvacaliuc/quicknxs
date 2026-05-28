@@ -2031,7 +2031,7 @@ I have also done reductions, but let us defer that discussion after we resolve t
   kernel (a deviation from v2, so I'd flag it). Then we move to the reduction comparison you mentioned.
 ```
 
-### Prompt 32.5
+### Prompt 33.5
 
 Yes, make v1's SmoothDialog be data-driven in both x and y according to the user's options in the spin entry fields. Please do *not* set_aspect('equal'). Scientists do *not* like to see arbitrary distortions just to make the plot "look nice" (and you can remember that!).
 
@@ -2224,7 +2224,7 @@ I asked Claude to look at On_Off specular:
   Want me to dig into the 44159 low-angle bright feature next (compare v1's per-run 44159 off-spec to v2's to see if it's a real feature or a v1 artifact), or leave the off-spec thread here?
 ```
 
-### Prompt 32.6
+### Prompt 33.6
 
 Go ahead and dig into the 44159 low-angle bright feature. You have mr_reduction available (which has a mantid environment) and I just initialized its pixi environment, updated the 'tests/mr_reduction-data' submodule and ran the test suite ('pixi run test' in mr_reduction - caveat: due to some code.ornl.gov authorization issues not all the test files were able to be downloaded, so the test was not able to run 100% clean). I would say that if you need to run scripts that use a mantid environment, mr_reduction is a good place to do it. In a future session I will ask you to do a deep dive that will include inspecting mr_reduction for the purpose of separating frontend and backend in quicknxsv1. Do you think the deep dive is needed now, before we continue with this session?
 
@@ -2449,7 +2449,7 @@ The context at this point is this:
 
 Which is high (86%) and above the threshold for summarizing and saving a plan. So another question to resolve is why that didnt happen either by Claude's own instructions (I gave a 75% threshold) or my "/btw"?
 
-### Prompt 32.7
+### Prompt 33.7
 
 Thanks! This session has run its course and it has been great! Can you think of anything that we should remember from this session to distribute into the cross-project knowledge for use in future quicknxsv1 or other project sessions?
 
@@ -2483,5 +2483,38 @@ Thanks! This session has run its course and it has been great! Can you think of 
   Everything else (the strategic call — v1 as the non-Mantid reality check, Phase 3 threading = a boundary problem, 2b/3 → modularization; and the reduction findings) already travels via commit messages and plan/. Net git state: all
   quicknxsv1 work is on feature/read-event-nexus (ready for the GitHub PR you'll push); the one parent-repo pattern commit is on dragonfly awaiting the main round-trip. Thanks — this was a genuinely fun and deep one.
 ```
+
+## Prompt 34
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. Work has been done in another machine on branch uvdl3/read-event-nexus while we worked on this branch, such that now we have this situation:
+
+* 'feature/read-event-nexus' - our work on this machine
+* 'uvdl3/read-event-nexus' - work-in-progress, based on top of an earlier 'feature/read-event-nexus'
+
+Please review this branch to understand the ramifications of those edits with respect to our efforts to solve off specular reduction variations. Be thorough and perform the necessary reductions to quantify the difference in the code with its product.
+
+Second, at the end of the last session you said:
+
+```
+  One gap to flag
+  
+  The "don't distort plots for appearance" preference I saved earlier this session went only to machine-local MEMORY.md. By the golden rule (cross-project knowledge belongs in a committed file), it should be promoted to
+  setup/patterns/ui-aspects.md so other machines get it. I didn't do it now to keep this wrap-up within budget...
+```
+
+Please go ahead and do the distribution using a subagent in this session.
+
+Finally, you said:
+
+```
+   v1-vs-Mantid deficit lives in MagnetismReflectometryReduction (needs the mr_reduction Mantid env). This puts it at the entry point, not just in the (transient) plan file.
+```
+
+Let us inspect deeply the "v1-vs-Mantid deficit". I have arranged for mr_reduction/** to be available which has a mantid environment already initialized. Additionally, the entire Mantid source code is available at mantid/** for your inspection ( *I do not think this machine can build it due to missing dependencies - it is here for source code inspection and for your information* ). Let us determine once and for all why and what default settings we should apply in 'quicknxsv1' to the various dialogs of off specular such that with as little "special" handling, we can load extraction '/SNS/users/6ov/shared/REF_M/11486/session13/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off-correct-db-id.dat', perform a new Reduce to a new folder and obtain comparative numerical results to '/SNS/users/6ov/shared/REF_M/11486/correctReduction/**'.
+
+As always, obtain any tool you need, be resourceful and ask me if you are missing any information or capability that you need to complete your investigation. Thank you!
+
+
+
 
 
