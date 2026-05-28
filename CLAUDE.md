@@ -238,12 +238,25 @@ details + before/after numbers in `plan/prompt-31-remaining.md` §4.
   direct beam makes 1/flux blow up a spurious pixel (the "44159 bright feature").
   Loading + specular still use 1.6 — aligning them globally is entangled with the
   specular-scaling item below.
-- **The broad v1-vs-Mantid intensity deficit (~0.2× v2; off-spec AND specular,
-  angle-correlated) lives inside Mantid's `MagnetismReflectometryReduction`** and
-  is **not diagnosable without a Mantid env** — use the `mr_reduction` pixi env
-  (`~/Projects/Claude/1/mr_reduction`) for that. v1 reproduces v2's *structure*
-  faithfully (log-Pearson 0.86–0.97); only the magnitude is open
-  (`plan/prompt-31-remaining.md` §1).
+- **The broad v1-vs-Mantid intensity "deficit" was a v1 bug, now fixed (2026-05-28):
+  v1 did not split proton charge per polarization channel.** `from_event_h5_filtered`
+  gave every channel the FULL-run charge; v2/Mantid `MRFilterCrossSections` normalizes
+  each cross-section by the charge accrued while its SF-state was active. With single-
+  channel direct beams (polarizer out, 100% Off_Off), v1's polarized reflectivity came
+  out low by ≈ the data run's beam-time fraction in that channel (~0.46–0.54 for
+  44159/60/61) — uniform per channel, hence *per-run* and only *apparently* angle-
+  correlated. **NOT a Mantid-side scaling** (the off-spec reference is v2's pure-numpy
+  `off_specular.py`, whose extraction is identical to v1's; the loaded histograms are
+  byte-identical). Fix: `_filter_events_by_polarization` now integrates the
+  `proton_charge` log over each channel's pulses and returns it; the loader sets it on
+  each `MRDataset`. Verified == Mantid's split (44159: Off_Off 142.70, On_Off 155.26
+  µAh). Full diagnosis: `plan/v1-vs-mantid-deficit-rootcause.md`.
+- **`correctReduction` was made with BG-X OFF and single-DB.** v1's `OffSpecular`
+  always subtracts BG (`qreduce.py:3314`, no toggle) and the v4.3.0rc1 reference did
+  not (Valeria 2025-04-08). To match it, BG must be off — a `subtract_background`
+  option still needs adding to v1 (v2 has `Configuration.subtract_background`). Also
+  reduce **single-DB** (all runs → 44033): `correctReduction` is DB_ID=1/1/1 even
+  though `session13/...-correct-db-id.dat` relabels the header to 1/2/3.
 
 ## buzhug Database — Read-Only Mode
 

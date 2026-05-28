@@ -563,9 +563,10 @@ class TestPolarizationFiltering:
             channels = _filter_events_by_polarization(f['entry'])
         assert channels is not None
         assert len(channels) >= 2
-        for name, (ids, tofs) in channels.items():
+        for name, (ids, tofs, pc) in channels.items():
             assert len(ids) > 0
             assert len(ids) == len(tofs)
+            assert pc is not None and pc > 0
 
     def test_filter_function_returns_none_without_sf1(self):
         """When SF1 is missing, should return None"""
@@ -584,9 +585,30 @@ class TestPolarizationFiltering:
             raw_count = len(f['entry/bank1_events/event_id'][()])
             channels = _filter_events_by_polarization(f['entry'])
         assert channels is not None
-        total = sum(len(ids) for ids, _ in channels.values())
+        total = sum(len(ids) for ids, _, _ in channels.values())
         assert total < raw_count  # some events removed by veto/state filtering
         assert total > raw_count * 0.9  # but not too many lost
+
+    def test_per_channel_proton_charge_splits(self):
+        """Each channel must carry its OWN integrated proton charge (the charge
+        accrued while its SF-state was active), not the full-run charge — this
+        is what makes polarized normalization match Mantid (the v1-vs-Mantid
+        'deficit'). See plan/v1-vs-mantid-deficit-rootcause.md."""
+        import h5py
+        import numpy as np
+        from quicknxs.qreduce import _filter_events_by_polarization
+        with h5py.File(H5_REF_M_POLARIZED, 'r') as f:
+            entry = f['entry']
+            full_pc = float(np.asarray(entry['DASlogs/proton_charge/value'][()]).sum())
+            channels = _filter_events_by_polarization(entry)
+        pcs = [pc for _, (_, _, pc) in channels.items()]
+        assert all(pc is not None and pc > 0 for pc in pcs)
+        # Channels partition the run, so they sum to ~the full-run charge
+        # (only the small veto-transition charge is dropped).
+        assert abs(sum(pcs) - full_pc) < 0.02 * full_pc
+        # For a multi-channel run no single channel carries the whole run.
+        if len(pcs) >= 2:
+            assert max(pcs) < 0.98 * full_pc
 
 
 # ── Chopper-speed-aware TOF bandwidth (prompt-28 Fault 1) ─────────────

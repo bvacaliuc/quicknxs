@@ -806,7 +806,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
 
     i=1
     empty_channels_list=[]
-    for name, (ids, tofs) in sorted(channels.items()):
+    for name, (ids, tofs, chan_pc) in sorted(channels.items()):
       data=MRDataset.from_event_h5_filtered(
         entry, ids, tofs, self._options,
         callback=self._options['callback'],
@@ -816,6 +816,10 @@ class NXSData(object, metaclass=OptionsDocMeta):
       if data is None:
         empty_channels_list.append(name)
         continue
+      # Override the full-run charge set during load with this channel's
+      # integrated charge so polarized normalization matches Mantid.
+      if chan_pc is not None:
+        data.proton_charge=chan_pc
       self._channel_data.append(data)
       self._channel_names.append(name)
       self._channel_origin.append(entry_keys[0])
@@ -2389,7 +2393,9 @@ def _filter_events_by_polarization(data):
   SF2 (analyzer) time-series logs from DASlogs.
 
   :param h5py._hl.group.Group data: HDF5 entry group
-  :returns: dict {cross_section_name: (event_ids, event_tofs)} or None
+  :returns: dict {cross_section_name: (event_ids, event_tofs, proton_charge)}
+            or None. ``proton_charge`` is the charge integrated over that
+            channel's pulses (None if the proton_charge log is unavailable).
   '''
   # Guard: SF1 must exist for polarization filtering
   if 'DASlogs/SF1' not in data:
@@ -2460,6 +2466,22 @@ def _filter_events_by_polarization(data):
     else:
       debug('%s not present — no veto filtering for this flipper'%veto_key)
 
+  # Per-channel proton charge: integrate the proton_charge log over each
+  # channel's pulses, matching Mantid MRFilterCrossSections which normalizes
+  # every cross-section by the charge accrued while its SF-state was active.
+  # Without this, each channel inherits the FULL-run charge and polarized
+  # reflectivity comes out low by the channel's beam-time fraction (the long-
+  # standing "v1-vs-Mantid deficit"; see plan/v1-vs-mantid-deficit-rootcause.md).
+  pulse_pc=None
+  try:
+    pc_values=data['DASlogs/proton_charge/value'][()]
+    pc_times=data['DASlogs/proton_charge/time'][()]
+    pc_pidx=clip(searchsorted(pc_times, event_tz, side='right')-1, 0, len(pc_values)-1)
+    pulse_pc=pc_values[pc_pidx]
+  except KeyError:
+    warn('DASlogs/proton_charge missing — per-channel charge unavailable; '
+         'channels will inherit the full-run charge')
+
   # Combine SF1 and SF2 into cross-section labels
   state_names={(0, 0): 'Off_Off', (1, 0): 'On_Off',
                (0, 1): 'Off_On',  (1, 1): 'On_On'}
@@ -2470,6 +2492,8 @@ def _filter_events_by_polarization(data):
     state_pulses=where(mask)[0]
     if len(state_pulses)==0:
       continue
+    # Charge integrated over this state's pulses (None -> caller keeps full run)
+    chan_pc=float(pulse_pc[state_pulses].sum()) if pulse_pc is not None else None
     event_masks=[]
     for pi in state_pulses:
       ev_start=event_idx[pi]
@@ -2478,7 +2502,7 @@ def _filter_events_by_polarization(data):
         event_masks.append(arange(ev_start, ev_end))
     if event_masks:
       all_idx=concatenate(event_masks)
-      channels[name]=(event_id[all_idx], event_tof[all_idx])
+      channels[name]=(event_id[all_idx], event_tof[all_idx], chan_pc)
 
   if len(channels)==0:
     warn('Polarization filtering produced no channels — '
