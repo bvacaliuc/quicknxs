@@ -221,6 +221,30 @@ Files in `/SNS/REF_M/` and `/SNS/REF_L/` are accessed via sshfs mounts. See the
 parent project's `CLAUDE.md` for network mount handling rules. Key test files are
 cataloged in the plan with expected values for validation.
 
+## Off-specular reduction conventions (REF_M, learned 2026-05)
+
+Validated against the v2/Mantid reference (REF_M 11486, runs 44159/60/61);
+details + before/after numbers in `plan/prompt-31-remaining.md` §4.
+
+- **Off-spec normalizes by the direct beam's RAW flux** (`norm.I`), not the
+  background-subtracted `norm.Rraw` (= I−BG), in `OffSpecular._calc_offspec` —
+  matching quicknxsv2's `off_specular.py` (`norm_raw`). (Numerically ≈ identical
+  when the DB background is ~0, but the v2-faithful quantity.)
+- **Off-spec is cropped to Mantid's wavelength band.** v1's *load* band uses
+  `TOF_HALF_BANDWIDTH_60HZ = 1.6` Å (matching the quicknxsv2 GUI), but Mantid
+  `MagnetismReflectometryReduction.get_tof_range` (what autoreduce runs) uses
+  **1.4**. The off-spec is cropped to `MANTID_OFFSPEC_HALF_BANDWIDTH = 1.4`
+  (chopper-scaled) to drop the poorly-illuminated band edges where a one-count
+  direct beam makes 1/flux blow up a spurious pixel (the "44159 bright feature").
+  Loading + specular still use 1.6 — aligning them globally is entangled with the
+  specular-scaling item below.
+- **The broad v1-vs-Mantid intensity deficit (~0.2× v2; off-spec AND specular,
+  angle-correlated) lives inside Mantid's `MagnetismReflectometryReduction`** and
+  is **not diagnosable without a Mantid env** — use the `mr_reduction` pixi env
+  (`~/Projects/Claude/1/mr_reduction`) for that. v1 reproduces v2's *structure*
+  faithfully (log-Pearson 0.86–0.97); only the magnitude is open
+  (`plan/prompt-31-remaining.md` §1).
+
 ## buzhug Database — Read-Only Mode
 
 The embedded buzhug database (`quicknxs/buzhug/`) was originally designed as read-write
