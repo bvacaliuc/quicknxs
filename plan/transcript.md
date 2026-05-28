@@ -2453,4 +2453,35 @@ Which is high (86%) and above the threshold for summarizing and saving a plan. S
 
 Thanks! This session has run its course and it has been great! Can you think of anything that we should remember from this session to distribute into the cross-project knowledge for use in future quicknxsv1 or other project sessions?
 
+```
+● Both distributions are committed. Here's the wrap-up of what's worth remembering and where it now lives.
+
+  Cross-project knowledge (the reusable lessons)
+
+  Added a "Validating against a reference dataset" section to setup/patterns/numerical-diagnostics.md (the natural home — it's quantitative-model debugging). Four lessons, each generalized from this session:
+
+  1. Match how the reference was produced, not its labels. A header that says "corrected" may have been relabeled, not re-run — diff the data body, match the real inputs (associations, binning, upstream crop). (The session13 DB_ID was 
+  relabeled 1→1/2/3 but the data was unchanged; my first comparison conflated the DB-association difference.)
+  2. Confirm the symptom still reproduces on the pinned toolchain before fixing it. (I built a suppression for a matplotlib warning that matplotlib had already removed.)
+  3. A no-op fix = an unverified hypothesis — byte-identical output after the change means you changed the wrong thing; re-diagnose. (I−BG→I did nothing because BG≈0; the real cause was a 1.6 vs 1.4 constant.)
+  4. A single hot pixel / 1-over-x blow-up → a near-zero denominator (a normalization band edge); a clean constant ratio between two pipelines → a parameter/convention mismatch — and the same algorithm can ship different defaults in a 
+  GUI vs an autoreduce backend.
+
+  Committed as 57f99ad on the parent repo's dragonfly branch (I left the dirty M quicknxsv1/m mr_reduction submodule pointers untouched). It needs the pending dragonfly→main round-trip (batch it with the others) so sibling machines pick
+   it up.
+
+  Project-specific (future quicknxsv1 sessions)
+  
+  Added an "Off-specular reduction conventions" section to quicknxsv1/CLAUDE.md (838fe63, on feature/read-event-nexus): normalize off-spec by raw DB flux (norm.I); crop to Mantid's 1.4-Å band vs v1's 1.6-Å load band; and the broad ~0.2×
+   v1-vs-Mantid deficit lives in MagnetismReflectometryReduction (needs the mr_reduction Mantid env). This puts it at the entry point, not just in the (transient) plan file.
+
+  One gap to flag
+  
+  The "don't distort plots for appearance" preference I saved earlier this session went only to machine-local MEMORY.md. By the golden rule (cross-project knowledge belongs in a committed file), it should be promoted to
+  setup/patterns/ui-aspects.md so other machines get it. I didn't do it now to keep this wrap-up within budget — want me to promote it, or leave it for a quick follow-up?
+
+  Everything else (the strategic call — v1 as the non-Mantid reality check, Phase 3 threading = a boundary problem, 2b/3 → modularization; and the reduction findings) already travels via commit messages and plan/. Net git state: all
+  quicknxsv1 work is on feature/read-event-nexus (ready for the GitHub PR you'll push); the one parent-repo pattern commit is on dragonfly awaiting the main round-trip. Thanks — this was a genuinely fun and deep one.
+```
+
 
