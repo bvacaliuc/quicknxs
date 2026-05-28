@@ -611,6 +611,37 @@ class TestPolarizationFiltering:
             assert max(pcs) < 0.98 * full_pc
 
 
+_H5_44159 = '/SNS/REF_M/IPTS-34473/nexus/REF_M_44159.nxs.h5'
+
+
+@pytest.mark.skipif(not os.path.exists(_H5_44159), reason='No access to SNS data')
+class TestOffSpecBackgroundToggle:
+    """The `subtract_background` option (v2/QuickNXS-4.x "BG X") must gate the
+    background-vs-TOF subtraction in OffSpecular so a reference reduced with
+    BG X off (e.g. correctReduction) can be matched."""
+
+    def _offspec(self, subtract_background):
+        from quicknxs.qreduce import NXSData, OffSpecular
+        nxs = NXSData(_H5_44159, use_caching=False, bins=200)
+        ch = nxs['Off_Off']
+        # Real REF_M 11486 run-44159 header regions (definite signal + background).
+        opts = dict(x_pos=172.3, x_width=17, y_pos=137, y_width=55,
+                    bg_pos=30, bg_width=20, dpix=168, tth=0.975739, normalization=None)
+        return OffSpecular(ch, subtract_background=subtract_background, **opts).S
+
+    def test_bg_off_keeps_more_intensity_than_bg_on(self):
+        import numpy as np
+        s_on = self._offspec(True)
+        s_off = self._offspec(False)
+        assert s_off.shape == s_on.shape
+        # subtracting a non-negative background can only raise (never lower) the
+        # kept intensity element-wise
+        assert np.all(s_off >= s_on - 1e-9)
+        # for a real run the in-band background is non-zero, so BG-off strictly
+        # increases the total — proving the toggle actually gates the subtraction
+        assert np.nansum(s_off) > np.nansum(s_on)
+
+
 # ── Chopper-speed-aware TOF bandwidth (prompt-28 Fault 1) ─────────────
 
 class TestTofBandwidthChopperScaling:

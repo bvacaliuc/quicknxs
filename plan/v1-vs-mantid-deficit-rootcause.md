@@ -91,9 +91,37 @@ Direct raw-S run, 44159 Off_Off / DB 44033 / BG-off, both engines:
   mismatch — an artifact of this probe, ~1.0 with identically-set regions.)
 - So the *physics* deficit is the **pc-split 0.479**; everything else is bookkeeping.
 
+## End-to-end result (2026-05-28) — fix committed `99baaa3`, BG toggle added
+
+Loaded the session13 extraction, Reduced **single-DB + `--no-subtract-bg`** (pc-fix
+active), bins=400, compared to `correctReduction` via `plot_offspec_compare.py`:
+
+| metric (v1/correctReduction) | pre-fix BG-on | **post-fix + BG-off** |
+|---|---|---|
+| Off_Off median ratio | 0.154 | **0.605** |
+| Off_Off spec / offspec | 0.246 / 0.148 | **0.602 / 0.605** |
+| On_Off median ratio | 0.175 | **0.604** |
+| On_Off spec / offspec | 0.276 / 0.168 | **0.591 / 0.604** |
+| log-Pearson (spec) | 0.947 | **0.967–0.969** |
+| peak Δ(dx,dy) | (−0.074, 0.105) | **(~0, ~0)** |
+
+- **Asymmetry eliminated** (spec ≈ offspec) → BG-X-off confirmed as the asymmetry cause.
+- **~4× magnitude jump** → the pc-split fix.
+- **Remaining: a single uniform ~0.6× (≈1.65×)** — identical for both channels and for
+  spec vs offspec, so a global scale, NOT the per-channel normalization (the controlled
+  single-run raw-S test matches v2 to ~1.0). Candidate causes: off-spec smoothing-kernel
+  params (headless `xysigma0≈Qzmax/3≈0.04` vs v2 GUI 0.06 → v1 over-smooths) or
+  `correctReduction`'s unrecorded bins/scale. **Definitive next step:** generate a
+  controlled v2 off-spec end-to-end (single-DB, BG-off, bins=400) and compare — expect ~1.0.
+  Outputs: `/tmp/v1_rematch/{v1_pcfix_bgoff_single_*.dat,cmp_*.png,cmp_*.json}`.
+
 ## Remaining to do
 
 - [x] Confirm with a direct raw-S run (DONE: ratio 0.5142 = 0.479 pc × 1.075 region).
+- [x] Implement per-channel proton-charge split (DONE, commit 99baaa3).
+- [x] Add `subtract_background` option + `--no-subtract-bg` (DONE).
+- [x] End-to-end vs correctReduction (DONE: 0.15 → 0.60 uniform, asymmetry gone).
+- [ ] Pin the residual ~0.6× with a controlled v2 end-to-end (smoothing-param vs scale).
 - [ ] Implement per-channel proton-charge split in `from_event_h5` (TDD).
 - [ ] Add `subtract_background` option to v1 `OffSpecular`/`Reflectivity` (default
       preserve current behavior; expose in GUI off-spec dialog).

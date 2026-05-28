@@ -2737,6 +2737,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
        scale=1.,
        sample_length=10.,
        extract_fan=False,
+       subtract_background=True,
        normalization=None,
        bg_tof_constant=False,
        bg_poly_regions=None,
@@ -2762,6 +2763,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
        scale='Scaling factor for the reflectivity',
        sample_length='Length of the sample in mm, used to calculate the Q-resolution',
        extract_fan='Treat every x-pixel separately and join the data afterwards',
+       subtract_background='Subtract the background-vs-TOF from the intensity (the v2/QuickNXS-4.x "BG X" toggle; default True). Set False to match a reference reduced with BG X off.',
        normalization='another Reflectivity object used for normalization',
        bg_tof_constant='treat background to be independent of wavelength for better statistics',
        bg_poly_regions='use polygon regions in x/λ to determine which points to use for the background',
@@ -2953,7 +2955,10 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
                       (cos(self.ai)*dai/self.lamda)**2)
     debug("Q=%s"%repr(self.Q))
     # finally scale reflectivity by the given factor and beam width
-    self.Rraw=(self.I-self.BG) # used for normalization files
+    if self.options['subtract_background']:
+      self.Rraw=(self.I-self.BG) # used for normalization files
+    else:
+      self.Rraw=array(self.I) # BG X off: keep raw intensity
     self.dRraw=sqrt(self.dI**2+self.dBG**2)
     if self.ai>0.0002:
       sin_scale=0.005/sin(self.ai) # scale by beam-footprint
@@ -3335,7 +3340,10 @@ class OffSpecular(Reflectivity):
                                         self.options['scale']*scale/(reg[3]-reg[2])))
     self.I=self.Iraw/(reg[3]-reg[2])*scale
     self.dI=self.dIraw/(reg[3]-reg[2])*scale
-    self.S=self.I-self.BG[newaxis, :]
+    if self.options['subtract_background']:
+      self.S=self.I-self.BG[newaxis, :]
+    else:
+      self.S=array(self.I)  # BG X off: keep raw intensity (matches v2 subtract_background=False)
     self.dS=sqrt(self.dI**2+(self.dBG**2)[newaxis, :])
     self.S*=self.options['scale']
     self.dS*=self.options['scale']

@@ -251,12 +251,22 @@ details + before/after numbers in `plan/prompt-31-remaining.md` §4.
   `proton_charge` log over each channel's pulses and returns it; the loader sets it on
   each `MRDataset`. Verified == Mantid's split (44159: Off_Off 142.70, On_Off 155.26
   µAh). Full diagnosis: `plan/v1-vs-mantid-deficit-rootcause.md`.
-- **`correctReduction` was made with BG-X OFF and single-DB.** v1's `OffSpecular`
-  always subtracts BG (`qreduce.py:3314`, no toggle) and the v4.3.0rc1 reference did
-  not (Valeria 2025-04-08). To match it, BG must be off — a `subtract_background`
-  option still needs adding to v1 (v2 has `Configuration.subtract_background`). Also
-  reduce **single-DB** (all runs → 44033): `correctReduction` is DB_ID=1/1/1 even
-  though `session13/...-correct-db-id.dat` relabels the header to 1/2/3.
+- **`correctReduction` was made with BG-X OFF and single-DB.** `Reflectivity`/
+  `OffSpecular` now take a `subtract_background` option (default True = current
+  behavior; the v2/QuickNXS-4.x "BG X" toggle); set False to match a BG-X-off
+  reference. `reduce_offspec_headless.py --no-subtract-bg` exposes it. Also reduce
+  **single-DB** (all runs → 44033): `correctReduction` is DB_ID=1/1/1 even though
+  `session13/...-correct-db-id.dat` relabels the header to 1/2/3.
+- **End-to-end match (2026-05-28):** load the session13 extraction, Reduce single-DB
+  + `--no-subtract-bg` (pc-fix active): off-spec median ratio vs `correctReduction`
+  rose from 0.154 → **0.60 (both channels)**, the specular/off-spec **asymmetry
+  vanished** (spec 0.60 ≈ offspec 0.60) and the peaks coincide (Δ≈0). A *uniform*
+  ~0.6× residual remains (same for Off_Off/On_Off, spec and off-spec) — a single
+  global scale between this harness and the archived reference, NOT the per-channel
+  normalization (a controlled single-run raw-S test matches v2 to ~1.0). Likely the
+  off-spec smoothing-kernel params (headless `xysigma0≈Qzmax/3` vs the v2 GUI's
+  0.06) or `correctReduction`'s unrecorded bins/scale; pin down with a controlled v2
+  end-to-end. See `plan/v1-vs-mantid-deficit-rootcause.md`.
 
 ## buzhug Database — Read-Only Mode
 

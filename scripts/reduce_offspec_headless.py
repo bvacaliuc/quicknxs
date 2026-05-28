@@ -274,8 +274,13 @@ def _direct_beam_channel(nxs):
         return nxs[keys[0]]
 
 
-def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict, verbose=True):
+def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict,
+                  subtract_bg=True, verbose=True):
     """Run the headless reduction for `channel`, return list of per-run arrays.
+
+    ``subtract_bg`` maps to v1 ``OffSpecular``'s ``subtract_background`` option
+    (the v2/QuickNXS-4.x "BG X" toggle). Set False to match a reference reduced
+    with BG X off (e.g. the REF_M 11486 ``correctReduction``).
 
     Returns
     -------
@@ -325,6 +330,7 @@ def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict, verbose
                          bg_pos=dr.bg_pos, bg_width=dr.bg_width,
                          extract_fan=dr.extract_fan,
                          dpix=dr.dpix, tth=dr.tth,
+                         subtract_background=subtract_bg,
                          normalization=norm)
         # Apply the P0/PN truncation as the Exporter does
         n_tof = len(xs.tof)
@@ -479,6 +485,10 @@ def main():
                     help='Override ny of smoothing grid (default: from recipe).')
     ap.add_argument('--no-smooth', action='store_true',
                     help='Skip smoothing; write raw OffSpec instead')
+    ap.add_argument('--no-subtract-bg', action='store_true',
+                    help='Disable background-vs-TOF subtraction (v1 OffSpecular '
+                         'subtract_background=False / v2 "BG X" off). Use to match '
+                         'a reference reduced with BG X off, e.g. correctReduction.')
     args = ap.parse_args()
 
     print(f'Parsing recipe: {args.recipe}')
@@ -501,8 +511,10 @@ def main():
         header_db = dr.db_id_header
         print(f'  data {dr.run_number} -> DB[{db_idx}]={db_run}  (header DB_ID was {header_db})')
 
-    print(f'\nReducing channel={args.channel}, bins={args.bins}...')
-    pieces = reduce_recipe(recipe, args.channel, args.bins, db_map)
+    print(f'\nReducing channel={args.channel}, bins={args.bins}, '
+          f'subtract_bg={not args.no_subtract_bg}...')
+    pieces = reduce_recipe(recipe, args.channel, args.bins, db_map,
+                           subtract_bg=not args.no_subtract_bg)
 
     if args.no_smooth or recipe.smooth_grid is None:
         if recipe.smooth_grid is None and not args.no_smooth:
