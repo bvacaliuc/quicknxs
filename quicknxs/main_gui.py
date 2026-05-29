@@ -34,7 +34,7 @@ from .polarization_gui import PolarizationDialog
 from .qcalc import get_total_reflection, get_scaling, get_xpos, get_yregion, get_xregion
 from .qio import HeaderParser, HeaderCreator
 from .qreduce import NXSData, NXSMultiData, Reflectivity, OffSpecular, time_from_header, \
-                     GISANS, XMLData, locate_file
+                     GISANS, XMLData, locate_file, MANTID_OFFSPEC_FLUX_FLOOR
 from .rawcompare_plots import RawCompare
 from .separate_plots import ReductionPreviewDialog
 from .database_dialog import DatabaseDialog
@@ -224,6 +224,37 @@ class MainGUI(QtWidgets.QMainWindow):
     # hide radio buttons
     for i in range(1, 12):
       getattr(self.ui, 'selectedChannel%i'%i).hide()
+
+    # Off-spec BG-X + flux-floor controls (added to the Off-Specular tab).
+    # BG-X is one logical flag (v2 model): this checkbox mirrors the background
+    # checkbox (bgActive) and drives `subtract_background`; the flux floor masks
+    # off-spec TOF bins where the direct-beam flux is below 10^x of its peak
+    # (the artifact-suppressing replacement for the old wavelength band-crop).
+    self._offspecBgX=QtWidgets.QCheckBox(u'Subtract BG (BG X)', self.ui.OffSpec_Tab)
+    self._offspecBgX.setChecked(self.ui.bgActive.isChecked())
+    self._offspecBgX.setToolTip(u'Subtract the background-vs-TOF from the off-spec (and '
+                                u'specular) intensity. Uncheck to match a reference reduced '
+                                u'with BG X off (e.g. correctReduction). Mirrors the '
+                                u'background checkbox.')
+    self._offspecFluxFloor=QtWidgets.QDoubleSpinBox(self.ui.OffSpec_Tab)
+    self._offspecFluxFloor.setDecimals(1)
+    self._offspecFluxFloor.setRange(-8.0, 0.0)
+    self._offspecFluxFloor.setSingleStep(0.5)
+    self._offspecFluxFloor.setValue(log10(MANTID_OFFSPEC_FLUX_FLOOR))
+    self._offspecFluxFloor.setToolTip(u'Off-spec: mask TOF bins where the direct-beam flux '
+                                      u'is below 10^x of its peak (removes the 1/flux blow-up '
+                                      u'at the unilluminated band edges, e.g. run 44159).')
+    _offspec_ctl=QtWidgets.QHBoxLayout()
+    _offspec_ctl.addWidget(self._offspecBgX)
+    _offspec_ctl.addStretch(1)
+    _offspec_ctl.addWidget(QtWidgets.QLabel(u'Flux floor 10^', self.ui.OffSpec_Tab))
+    _offspec_ctl.addWidget(self._offspecFluxFloor)
+    _offspec_grid=self.ui.OffSpec_Tab.layout()
+    if _offspec_grid is not None:
+      _offspec_grid.addLayout(_offspec_ctl, _offspec_grid.rowCount(), 0, 1, 2)
+    self._offspecBgX.toggled.connect(self._onOffspecBgX)
+    self.ui.bgActive.toggled.connect(self._offspecBgX.setChecked)
+    self._offspecFluxFloor.editingFinished.connect(self._replotOffspec)
 
     # create progress bar in statusbar
     self.eventProgress=QtWidgets.QProgressBar(self.ui.statusbar)
@@ -1060,6 +1091,11 @@ class MainGUI(QtWidgets.QMainWindow):
                 bg_poly_regions=bg_poly_regions,
                 # scale background by 0. if BG box not checked
                 bg_scale_factor=(bg_scale*self.ui.bgActive.isChecked()),
+                # BG-X (subtract_background) is the v2-faithful background flag,
+                # driven by the background checkbox; off-spec flux floor masks
+                # unilluminated DB-flux TOF bins.
+                subtract_background=self.ui.bgActive.isChecked(),
+                offspec_flux_floor=10**self._offspecFluxFloor.value(),
                 normalization=normalization,
                   )
 
@@ -1166,6 +1202,19 @@ class MainGUI(QtWidgets.QMainWindow):
     self.ui.refl.toolbar.set_history_buttons()
 
   @log_call
+  def _onOffspecBgX(self, checked):
+    '''Keep the off-spec BG-X checkbox in sync with the background checkbox
+    (one logical flag) and re-render the off-spec preview.'''
+    if self.ui.bgActive.isChecked()!=checked:
+      self.ui.bgActive.setChecked(checked)
+    self._replotOffspec()
+
+  def _replotOffspec(self):
+    '''Re-render the off-spec preview if data is loaded (no-op on empty state).'''
+    if getattr(self, 'active_data', None) is None or not getattr(self, 'reduction_list', None):
+      return
+    self.plot_offspec()
+
   def plot_offspec(self):
     '''
     Create an offspecular plot for all channels of the datasets in the
@@ -1193,7 +1242,12 @@ class MainGUI(QtWidgets.QMainWindow):
       for i, channel in enumerate(self.ref_list_channels):
         plot=plots[i]
         selected_data=data_all[channel]
-        offspec=OffSpecular(selected_data, **item.options)
+        # Apply the live off-spec BG-X / flux-floor controls so the preview
+        # responds immediately (export bakes these at reduce time, see calcReflParams).
+        opts=dict(item.options)
+        opts['subtract_background']=self.ui.bgActive.isChecked()
+        opts['offspec_flux_floor']=10**self._offspecFluxFloor.value()
+        offspec=OffSpecular(selected_data, **opts)
         P0=len(selected_data.tof)-item.options['P0']
         PN=item.options['PN']
         Qzmax=max(offspec.Qz[int(item.options['x_pos']), PN:P0].max(), Qzmax)

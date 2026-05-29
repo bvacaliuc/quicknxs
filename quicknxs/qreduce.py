@@ -2746,6 +2746,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
        sample_length=10.,
        extract_fan=False,
        subtract_background=True,
+       offspec_flux_floor=MANTID_OFFSPEC_FLUX_FLOOR,
        normalization=None,
        bg_tof_constant=False,
        bg_poly_regions=None,
@@ -2772,6 +2773,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
        sample_length='Length of the sample in mm, used to calculate the Q-resolution',
        extract_fan='Treat every x-pixel separately and join the data afterwards',
        subtract_background='Subtract the background-vs-TOF from the intensity (the v2/QuickNXS-4.x "BG X" toggle; default True). Set False to match a reference reduced with BG X off.',
+       offspec_flux_floor='Off-spec only: mask TOF bins whose direct-beam flux is below this fraction of the DB peak flux (removes the 1/flux blow-up at unilluminated edges). Default MANTID_OFFSPEC_FLUX_FLOOR.',
        normalization='another Reflectivity object used for normalization',
        bg_tof_constant='treat background to be independent of wavelength for better statistics',
        bg_poly_regions='use polygon regions in x/λ to determine which points to use for the background',
@@ -3373,7 +3375,8 @@ class OffSpecular(Reflectivity):
       # band-crop, which could not tell a real high-angle edge from a low-angle
       # artifact.  See plan/v1-vs-mantid-deficit-rootcause.md.
       norm_peak=norm.I.max() if norm.I.size else 0.
-      idxs=norm.I>(MANTID_OFFSPEC_FLUX_FLOOR*norm_peak)
+      flux_floor=self.options.get('offspec_flux_floor', MANTID_OFFSPEC_FLUX_FLOOR)
+      idxs=norm.I>(flux_floor*norm_peak)
       self.dS[:, idxs]=sqrt(
                    (self.dS[:, idxs]/norm.I[idxs][newaxis, :])**2+
                    (self.S[:, idxs]/norm.I[idxs][newaxis, :]**2*norm.dI[idxs][newaxis, :])**2
