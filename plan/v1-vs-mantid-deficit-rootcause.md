@@ -75,12 +75,18 @@ Factor A requires a **code fix** (split proton charge per channel). After that t
 off-spec should match the reference to ~1.0 (structure already matches:
 log-Pearson 0.86–0.97).
 
-## DB-assignment note (session13 input file)
+## DB-assignment note (session13 input file) — CORRECTED 2026-05-29
 
-`session13/..._OffSpecSmooth_Off_Off-correct-db-id.dat` header says DB_ID=1/2/3
-(paired) but is byte-identical data to `correctReduction` which is DB_ID=1/1/1
-(single, all→44033). To match `correctReduction`, reduce **single-DB**, not the
-paired header.
+**Earlier in this session I wrote that `correctReduction` is "single-DB" — that was
+WRONG.** `correctReduction` is a **PAIRED** reduction (44159→44033, 44160→44034,
+44161→44035); its `DB_ID=1/1/1` column is a **v2 writer bug** (pass-by-value int in
+`quicknxs_io._get_cross_section_config_values`). The `[Direct Beam Runs]` block proves
+paired: it lists three *different* DB run numbers (44033/44034/44035). The session13
+`-correct-db-id.dat` relabels DB_ID→1/2/3, which is the *corrected* paired assignment.
+**To reproduce `correctReduction`, reduce `--db-mode paired`** (or `header` on the
+-correct-db-id file), NOT single. Full analysis + v1↔v2 interop matrix:
+`plan/db-id-bug-and-interop.md`. (My single-DB end-to-end above is therefore the wrong
+db-mode; the per-run raw-S numbers still hold for 44159 since single==paired there.)
 
 ## CONFIRMED empirically (2026-05-28)
 
@@ -143,7 +149,8 @@ active), bins=400, compared to `correctReduction` via `plot_offspec_compare.py`:
   fix) additionally needs matching its per-run scale convention (2.254/2.081) and exact
   bins/pipeline — generate a CONTROLLED v2 end-to-end (3-run merge, single-DB, BG-off,
   same scales/bins/smoothing) and compare; expect ~1.0.
-  Outputs: `/tmp/v1_rematch/{v1_pcfix_bgoff_single_*.dat,v1_band16_*.dat,v1_xys*_*.dat,cmp_*.json}`.
+  Scratch outputs (regenerable via `plan/scripts/` + `scripts/reduce_offspec_headless.py`):
+  `/tmp/v1_rematch/{v1_pcfix_bgoff_*_*.dat,v1_band16_*.dat,v1_xys*_*.dat,cmp_*.json}`.
 
 ## Remaining to do
 
@@ -158,5 +165,8 @@ active), bins=400, compared to `correctReduction` via `plot_offspec_compare.py`:
 - [ ] End-to-end: load session13 extraction, Reduce single-DB + BG-off + pc-fix,
       compare to `correctReduction/**`.
 
-Scripts (mode 600): /tmp/pc_probe.py, /tmp/v1_load_probe.py, /tmp/v2_load_probe.py,
-/tmp/pc_ratio_probe.py, /tmp/pc_split_probe.py.
+Diagnostic scripts (committed): `plan/scripts/` — `pc_probe.py`, `v1_load_probe.py`,
+`v2_load_probe.py`, `pc_ratio_probe.py`, `pc_split_probe.py`, `verify_pc_split.py`,
+`v1_offspec_S.py`, `v2_offspec_S.py`, `v1_offspec_allruns.py`, `v2_offspec_allruns.py`,
+`reduce_band16.py`, `sweep_xysigma0.py`, `test_44161_crop.py`. See `plan/scripts/README.md`
+for which env each needs and the run order. Regenerable scratch outputs go to `/tmp/v1_rematch/`.
