@@ -2514,7 +2514,59 @@ Let us inspect deeply the "v1-vs-Mantid deficit". I have arranged for mr_reducti
 
 As always, obtain any tool you need, be resourceful and ask me if you are missing any information or capability that you need to complete your investigation. Thank you!
 
+```
+● All three tasks are complete. Here's the full picture.
 
+  1. uvdl3/read-event-nexus review
+
+  The branch is essentially our branch plus one diagnostic knob. The only substantive code change is scripts/reduce_offspec_headless.py commit 5d38124 — a --no-subtract-bg flag (the rest is docs/plan/transcript). qreduce.py is
+  byte-identical to ours (our band-crop + norm.I changes were merged into uvdl3 via cc12a43). Its conclusion — that correctReduction was made BG-X off and that this causes the spec/offspec asymmetry — is correct and I've now confirmed
+  it at the source level and end-to-end.
+  
+  2. Plot-distortion preference distributed
+
+  Subagent promoted it to setup/patterns/ui-aspects.md (commit 6c103a8 on dragonfly, "Faithful axes — never distort a plot for appearance"). No push, main untouched.
+
+  3. The "v1-vs-Mantid deficit" — solved
+
+  It was never a Mantid-side scaling. It was a quicknxsv1 bug: v1 normalized every polarization channel by the full-run proton charge, while Mantid/MRFilterCrossSections (and v2) use the charge accrued while each SF-state was active.
+  Since direct beams are 100% Off_Off (polarizer out), v1's polarized reflectivity came out low by ≈ the data run's spin-state time-fraction (0.46–0.54) — per-run, which is why prior sessions saw it as "angle-correlated" and
+  "Mantid-blocked." Proven: off-spec code ≡ v2's, loaded histograms byte-identical, per-channel charge now matches Mantid exactly (44159: 142.70 / 155.26 µA·h). Committed 99baaa3 (9+61 tests green). This also fixes the deferred specular
+   deficit (#1), since _calc_normal uses the same charge.
+  
+  Default settings to match correctReduction: BG-X off (added a subtract_background toggle, commit 5b6317b) + single-DB (it's DB_ID=1/1/1, despite the session13 file's relabeled 1/2/3 header).
+
+  End-to-end Reduce (session13 extraction → /tmp/v1_rematch/, single-DB + --no-subtract-bg, pc-fix active) vs correctReduction: median ratio 0.154 → 0.60 both channels, asymmetry eliminated (spec≈offspec), peaks coincide.
+
+  The remaining ~0.6× residual is a third finding: the 1.4 Å off-spec band-crop is too blunt. Per-run raw-S shows every run's reduction is correct (~1.07 vs a controlled v2), except high-angle 44161 at 0.22 — because the crop (added to
+  kill 44159's low-angle 1-count artifact) also destroys 44161's legitimate high-Q signal, which sits at the same short-λ edge. Widening to 1.6 Å recovers 44161 (40→200, matching v2) but reintroduces 44159's artifact. The proper fix is
+  a direct-beam flux guard (v2-faithful raw-count norm_raw>0), not a blanket λ-crop — I left it for your call since it's entangled with the prompt-31 artifact history and is a science-output change. Full diagnosis in
+  plan/v1-vs-mantid-deficit-rootcause.md.
+  
+  Ready for you to push (human-only)
+
+  - quicknxsv1 feature/read-event-nexus: ahead of GitHub by 5 (99baaa3, 5b6317b, dc5585e are this session's).
+  - Parent repo dragonfly: 6c103a8 (ui-aspects) — pending the usual main round-trip when code.ornl.gov is writable.
+
+  Suggested next steps: (a) replace the band-crop with the flux guard and re-validate 44161 + 44159 together; (b) a controlled v2 end-to-end (matched scales/bins) to close the last factor vs the archived file. Want me to take on the
+  band-crop fix?
+```
+
+( *the above required **three** usage periods - i.e. Claude ran out of tokens twice* )
+
+### Prompt 34.1
+
+Nice work, Claude! I have a two clarifying tasks for you and then we can proceed:
+
+In plan/v1-vs-mantid-deficit-rootcause.md, section "DB-assignment note (session13 input file)", you introduce **single-DB**, suggesting that the use of "DB_ID=1/1/1 (single, all→44033)" is a thing. In earlier sessions (see plan/prompt-29-todo.md) we had discussed this topic, but perhaps had not finished its investigation. Let us finish it now; please investigate the fault in plan/prompt-29-todo.md in light of the above fixes and your current understanding. I recall ( *but cannot reference the specific conversation* ) that we had concluded that v2 *ignores* the DB_ID=1/1/1 when reading reduced files and *forces* a re-match of the direct beam based on angles. v1 *interprets* the DB_ID and uses it. My assumption was that v2 had a **bug** in the DB_ID writing that was papered over by *forcing* this rematch. Please challenge this assumption and determine what exactly causes v2 to write DB_ID=1/1/1 when writing off specular files (such as the ones in correctReduction/*), how DB_ID=1/1/1 is used ( *in v2 and now in v1* ) and what is correct/works/bad/dangerous about it when considering interoperability of reduced files produced by v2 to be read by v1 and vice-versa.
+
+The scripts you left in /tmp (*_probe.py) but reference in plan/v1-vs-mantid-deficit-rootcause.md should not be out-of-tree, rather please move them to plan/scripts/* and reference them in the .md files. If I read v1-vs-mantid-deficit-rootcause.md on a different machine, I do not have access to these scripts and this is disturbing to me. Please remember that I *abhor* hidden code and techniques and *require* that all methods (once they have proven useful enough to document) be captured in the repositories. If a code/method is genuinely useful to a human or used in testing (for example the reduce_offspec_headless.py and plot_offspec_compare.py in v1's scripts/*) then it should be in the repository. If a script is only useful or specific to your purpose and you document its use in an .md file that you generate, then please move it to plan/scripts/*, commit it so that it can be referenced by any reader, and maintain it further from there. If you do not document a script, then you may leave it in /tmp as you do now. Please make a note on this into the cross-platform knowledge base to be distributed to other sessions. This is an important point for me. 
+
+After all that, please proceed with (a) replace the band-crop with the flux guard and re-validate as you have proposed.
+
+If you reach a session token limit, please wait for the limit to reset instead of asking me - in our last session we used two such limits and I had to prompt you. I do not wish to prompt you on this topic (and you can remember my preference on this). If there are funds available in extra-effort I know you will use them, but otherwise my default is to wait until the session limit resets and continue. Please make a note in the cross-platform knowledge base to add a preference on this as a todo task there.
+
+Good luck with all of this, I know you will do great! Thanks again for your hard work and attention to my project(s)!
 
 
 
