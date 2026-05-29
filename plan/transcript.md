@@ -2568,5 +2568,53 @@ If you reach a session token limit, please wait for the limit to reset instead o
 
 Good luck with all of this, I know you will do great! Thanks again for your hard work and attention to my project(s)!
 
+```
+● All committed; both working trees clean. Here's the complete rundown.
+
+  1. DB_ID=1/1/1 — your assumption was right, with a precise mechanism
+
+  It's a v2 writer bug, not a deliberate design. In quicknxsv2/.../quicknxs_io.py, _get_cross_section_config_values does i_direct_beam += 1 on a pass-by-value int parameter, so the caller's loop counter never advances and every data run
+   is written DB_ID=1. The [Direct Beam Runs] block (which increments inside its loop) correctly lists three distinct DBs — proving correctReduction is a PAIRED reduction (44033/44034/44035), with the DB_ID column wrongly collapsed to
+  1/1/1.
+  
+  On read, both v1 (qio.py:643) and v2 (quicknxs_io.py:429) interpret DB_ID literally → reading 1/1/1 yields single-DB (all→44033). The nuance behind your recollection: v2 has an optional Match-direct-beam angle re-match
+  (match_direct_beam, default off) that can recover the paired assignment; v1 has no such feature, so v1 is stuck with the wrong single-DB. v1's writer is correct, so v1→v2 is safe; v2→v1 of a multi-DB reduction is dangerous (silently
+  re-reduces single, lower intensity, looks plausible). This corrects my earlier "single-DB" claim — the right db-mode to reproduce correctReduction is --db-mode paired. Full matrix in plan/db-id-bug-and-interop.md.
+  
+  2. Scripts relocated (no more out-of-tree references)
+
+  All 15 diagnostic scripts moved from /tmp to quicknxsv1/plan/scripts/ with a README.md documenting each script's environment (v1 vs Mantid) and run order; the plan docs now cite in-repo paths. Committed (9c13190, 358b8ba).
+
+  3. Knowledge base updated (parent repo, dragonfly)
+
+  - Parent CLAUDE.md: new rule "Capture documented methods in the repo (no out-of-tree references)" with the project-scripts/ vs plan/scripts/ vs /tmp decision table.
+  - setup/patterns/agent-discipline.md: the session-limit → wait-and-continue, never ask preference + a TODO to formalize it. (Both also saved to machine memory.) Committed (b758ab1).
+
+  4. Band-crop → flux-floor fix (validated)
+
+  Replaced the 1.4 Å wavelength band-crop with MANTID_OFFSPEC_FLUX_FLOOR = 1e-3: mask off-spec TOF bins where the direct-beam flux is below 1e-3 of the DB's own peak. The band-crop was too blunt — it killed run 44161's legitimate
+  high-angle short-λ signal (same band edge as 44159's artifact). Per-run raw-S (paired, vs v2): 44159 1.05, 44160 1.11, 44161 1.01 (was 0.22), 44159 artifact max 25.6→1.18. 62 qreduce tests green (2 new flux-floor tests). Committed
+  (358b8ba).
+  
+  Blocker (surfacing loudly, not asking)
+
+  The /SNS/users/6ov sshfs mount is throwing I/O errors (Errno 5) — so the end-to-end paired + flux-floor + BG-off comparison against correctReduction/** is the one thing I couldn't run; it needs a remount (your call). The rclone
+  /SNS/REF_M raw-NXS mount is fine, which is how I validated everything via per-run raw-S. I left that end-to-end as the open item in the plan doc; it should land near 1.0.
+
+  Ready for you to push (human-only)
+  
+  - quicknxsv1 feature/read-event-nexus: ahead by 8 (this+prior session: 358b8ba, 9c13190, 99baaa3, 5b6317b, dc5585e, …).
+  - Parent dragonfly: ahead by 2 (b758ab1, 6c103a8).
+
+  I worked straight through per your preferences. When the sshfs mount is back, I can run the final paired end-to-end to close the last numeric comparison.
+```
+
+I restored the sshfs mounts
+
+### Prompt 34.2
+
+I have restored the sshfs mounts, please continue with the paired end-to-end check.
+
+
 
 
