@@ -2615,6 +2615,34 @@ I restored the sshfs mounts
 
 I have restored the sshfs mounts, please continue with the paired end-to-end check.
 
+```
+● Committed 4a87b61 (only this commit is unpushed now — looks like you pushed the earlier ones).
+  
+  Done — the v1-vs-Mantid off-spec deficit is fully resolved
+
+  With the mount back, the paired end-to-end closes it: v1 now matches correctReduction at median ratio 1.067 (both channels) — from the original 0.154. Specular ≈ off-spec (asymmetry gone), peaks coincident, log-Pearson 0.89. The
+  leftover 1.067 is the benign ~1.07 ROI-bookkeeping factor (v1's round(pos±w/2)+1 pixel ROI vs v2's exact ROI — uniform, peaks aligned), not a deficit.
+
+  Four root causes, four fixes — all committed on feature/read-event-nexus:
+  1. Per-channel proton charge (99baaa3) — the ~2× factor; v1 was normalizing every spin channel by the full-run charge. This also fixed the deferred specular deficit #1.
+  2. BG-X off toggle (5b6317b) — correctReduction was made with background subtraction off; removed the spec/offspec asymmetry.
+  3. Paired DB (9c13190) — the DB_ID=1/1/1 is a v2 writer bug (pass-by-value int); correctReduction is actually paired. Use --db-mode paired.
+  4. Direct-beam flux floor (358b8ba) — replaced the too-blunt 1.4 Å band-crop that was destroying run 44161's high-angle signal; masks only genuinely unilluminated DB bins.
+
+  Your three clarifying tasks
+
+  - DB_ID: confirmed a v2 writer bug; correctReduction is paired; v2→v1 interop is dangerous (v1 reads DB_ID literally, no angle re-match). Full matrix in plan/db-id-bug-and-interop.md.
+  - Scripts: all 15 diagnostics moved to quicknxsv1/plan/scripts/ (+README); docs cite in-repo paths. The "capture documented methods in the repo" rule is now in the parent CLAUDE.md.
+  - Preferences saved: no out-of-tree documented code, and wait-for-limit-reset (memory + agent-discipline.md todo).
+
+  Ready to push: quicknxsv1 4a87b61 (final docs) and parent dragonfly (b758ab1, 6c103a8). Nothing left open — the deficit investigation is complete end-to-end.
+```
+
+### Prompt 34.3
+
+Expose subtract_background and flux floor in the GUI off-spec dialog.
+
+
 
 
 
