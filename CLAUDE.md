@@ -230,14 +230,16 @@ details + before/after numbers in `plan/prompt-31-remaining.md` §4.
   background-subtracted `norm.Rraw` (= I−BG), in `OffSpecular._calc_offspec` —
   matching quicknxsv2's `off_specular.py` (`norm_raw`). (Numerically ≈ identical
   when the DB background is ~0, but the v2-faithful quantity.)
-- **Off-spec is cropped to Mantid's wavelength band.** v1's *load* band uses
-  `TOF_HALF_BANDWIDTH_60HZ = 1.6` Å (matching the quicknxsv2 GUI), but Mantid
-  `MagnetismReflectometryReduction.get_tof_range` (what autoreduce runs) uses
-  **1.4**. The off-spec is cropped to `MANTID_OFFSPEC_HALF_BANDWIDTH = 1.4`
-  (chopper-scaled) to drop the poorly-illuminated band edges where a one-count
-  direct beam makes 1/flux blow up a spurious pixel (the "44159 bright feature").
-  Loading + specular still use 1.6 — aligning them globally is entangled with the
-  specular-scaling item below.
+- **Off-spec masks low-direct-beam-flux TOF bins (flux floor), replacing the old
+  wavelength band-crop (2026-05-29).** `_calc_offspec` masks any TOF bin whose direct-
+  beam flux is below `MANTID_OFFSPEC_FLUX_FLOOR = 1e-3` of the DB's own peak. This kills
+  the 1/flux blow-up at poorly-illuminated edges (the "44159 bright feature") at its
+  physical cause — no usable direct beam — while KEEPING every bin the DB illuminates.
+  The earlier 1.4 Å band-crop (`MANTID_OFFSPEC_HALF_BANDWIDTH`, kept only as a reference
+  constant now) was too blunt: it also destroyed run 44161's *legitimate* high-angle
+  short-λ signal (0.22× vs paired v2), which sits at the same band edge as 44159's
+  artifact. With the floor, all three runs match paired v2 at ~1.0–1.1 (44161 0.22→1.01).
+  Loading + specular still use the 1.6 Å load band.
 - **The broad v1-vs-Mantid intensity "deficit" was a v1 bug, now fixed (2026-05-28):
   v1 did not split proton charge per polarization channel.** `from_event_h5_filtered`
   gave every channel the FULL-run charge; v2/Mantid `MRFilterCrossSections` normalizes
@@ -255,21 +257,20 @@ details + before/after numbers in `plan/prompt-31-remaining.md` §4.
   `OffSpecular` now take a `subtract_background` option (default True = current
   behavior; the v2/QuickNXS-4.x "BG X" toggle); set False to match a BG-X-off
   reference. `reduce_offspec_headless.py --no-subtract-bg` exposes it. Also reduce
-  **single-DB** (all runs → 44033): `correctReduction` is DB_ID=1/1/1 even though
-  `session13/...-correct-db-id.dat` relabels the header to 1/2/3.
-- **End-to-end match (2026-05-28):** load the session13 extraction, Reduce single-DB
-  + `--no-subtract-bg` (pc-fix active): off-spec median ratio vs `correctReduction`
-  rose from 0.154 → **0.60 (both channels)**, the specular/off-spec **asymmetry
-  vanished** (spec 0.60 ≈ offspec 0.60) and peaks coincide. Per-run raw-S shows the
-  **engine is correct for every run** (~1.07 vs a controlled v2: 44159 0.93, 44160
-  0.88, 44161 0.22-with-crop). The remaining residual is the **1.4 Å off-spec
-  band-crop, which is too blunt**: run 44161's legitimate high-angle signal sits at the
-  SAME short-λ band edge (~2.4 Å) as run 44159's low-angle 1-count artifact, so the
-  crop kills both (44161 S.sum 40→200, max 0.04→7.1 when widened to 1.6, matching v2
-  ~1.08). Ruled out: smoothing `xysigma0` (median invariant) and global scale (peak
-  matches). **Proper fix:** replace the band-crop with a direct-beam flux guard
-  (v2-faithful raw-count `norm_raw>0`) so 44159's artifact is masked at its cause while
-  44161's signal is kept. See `plan/v1-vs-mantid-deficit-rootcause.md`.
+  **`--db-mode paired`** (44159→44033, 44160→44034, 44161→44035): `correctReduction` is
+  a PAIRED reduction; its `DB_ID=1/1/1` column is a **v2 writer bug** (the `[Direct Beam
+  Runs]` block lists 3 distinct DBs). The session13 `-correct-db-id.dat` relabels DB_ID
+  →1/2/3, the corrected paired assignment. Reading the buggy 1/1/1 literally (v1 always;
+  v2 with match-DB off) collapses to single-DB and is WRONG. Full analysis +
+  v1↔v2 interop matrix: `plan/db-id-bug-and-interop.md`.
+- **Per-run raw-S confirms the engine is correct for every run** (~1.07 vs paired v2:
+  44159 1.05, 44160 1.11, 44161 1.01) once the flux floor (above) replaces the band-crop:
+  44161's high-angle signal went 0.22→**1.01** and 44159's artifact is masked. Ruled out
+  for the prior ~0.6× residual: smoothing `xysigma0` (median invariant) and a global scale
+  (specular peak already matched). The end-to-end PAIRED + flux-floor + BG-off comparison
+  vs `correctReduction` was blocked 2026-05-29 by the `/SNS/users/6ov` sshfs mount (I/O
+  error; rclone `/SNS/REF_M` raw NXS is fine) — retry when it recovers.
+  See `plan/v1-vs-mantid-deficit-rootcause.md`.
 
 ## buzhug Database — Read-Only Mode
 

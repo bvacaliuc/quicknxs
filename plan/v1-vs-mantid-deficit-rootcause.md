@@ -138,12 +138,25 @@ active), bins=400, compared to `correctReduction` via `plot_offspec_compare.py`:
   two horns of a fixed-λ crop that cannot separate a real high-angle edge from a
   low-angle artifact.
 
-  **Proper fix (replaces the band-crop):** guard the off-spec normalization on the
-  direct-beam *flux* (e.g. mask only where the raw DB counts are genuinely ~0, the
-  v2-faithful `norm_raw>0` on RAW integer counts), not a blanket λ-band crop. Then
-  44159's artifact is masked at its true cause (no DB flux) while 44161's real signal
-  (which HAS DB flux) is kept. NOTE: prompt-31 tried `norm.I` and called it a "no-op";
-  re-examine why v2's RAW-count guard avoids the blow-up that v1's `I=Rraw` did.
+  **FIXED 2026-05-29 — flux floor replaces the band-crop.** `_calc_offspec` now masks
+  TOF bins where the direct-beam flux is below `MANTID_OFFSPEC_FLUX_FLOOR` (=1e-3) of the
+  DB's own peak flux, instead of cropping a fixed λ band. (Why fine binning, not v2,
+  caused it: v1's 400 fine TOF bins leave one-count bins at the DB's poorly-illuminated
+  edges; v2's coarse default `tof_bins`=400-µs-step bins average them away. The floor
+  removes the spike at its cause for any binning.) PAIRED per-run raw-S validation
+  (`plan/scripts/validate_fix_{v1,v2}.py`, BG-off, scale=1), v1-floor vs v2:
+
+  | run | v1 S.sum | v2 S.sum | v1/v2 | 44161 was (band-crop) |
+  |---|---|---|---|---|
+  | 44159→44033 | 1439 | 1368 | 1.05 | — (artifact max 25.6 → **1.18**) |
+  | 44160→44034 | 243 | 219 | 1.11 | — |
+  | 44161→44035 | 137 | 136 | **1.01** | 0.22 (sum 40) → **retained** |
+
+  All three now match v2 at the ~1.07 ROI-bookkeeping factor; **44161's high-angle signal
+  is retained** (1.01 vs the band-crop's 0.22) and **44159's artifact is masked** (max
+  1.18, the noisy low-flux edge that `correctReduction` smooths away). Regression tests:
+  `qreduce_test.py::test_offspec_masks_low_flux_direct_beam_bins` +
+  `::test_offspec_flux_floor_tames_low_flux_blowup`.
 
   **Full closure vs the ARCHIVED correctReduction** (still ~0.6 merged after a band
   fix) additionally needs matching its per-run scale convention (2.254/2.081) and exact
@@ -154,19 +167,25 @@ active), bins=400, compared to `correctReduction` via `plot_offspec_compare.py`:
 
 ## Remaining to do
 
-- [x] Confirm with a direct raw-S run (DONE: ratio 0.5142 = 0.479 pc × 1.075 region).
-- [x] Implement per-channel proton-charge split (DONE, commit 99baaa3).
-- [x] Add `subtract_background` option + `--no-subtract-bg` (DONE).
-- [x] End-to-end vs correctReduction (DONE: 0.15 → 0.60 uniform, asymmetry gone).
-- [ ] Pin the residual ~0.6× with a controlled v2 end-to-end (smoothing-param vs scale).
-- [ ] Implement per-channel proton-charge split in `from_event_h5` (TDD).
-- [ ] Add `subtract_background` option to v1 `OffSpecular`/`Reflectivity` (default
-      preserve current behavior; expose in GUI off-spec dialog).
-- [ ] End-to-end: load session13 extraction, Reduce single-DB + BG-off + pc-fix,
-      compare to `correctReduction/**`.
+- [x] Per-channel proton-charge split in `from_event_h5_filtered` (commit 99baaa3).
+- [x] `subtract_background` option + `--no-subtract-bg` (commit 5b6317b).
+- [x] DB_ID investigation — it's a v2 writer bug; reproduce with `--db-mode paired`
+      (`plan/db-id-bug-and-interop.md`).
+- [x] Replace the band-crop with the direct-beam flux floor; per-run raw-S validated
+      (44161 0.22→1.01, 44159 artifact masked).
+- [ ] **End-to-end PAIRED + flux-floor + BG-off vs `correctReduction`** — blocked
+      2026-05-29 by the `/SNS/users/6ov` sshfs mount (Errno 5 I/O error; the rclone
+      `/SNS/REF_M` raw-NXS mount is fine). Retry when the sshfs mount recovers; expect a
+      uniform near-1.0 (the GUI reference is coarse-binned + smoothed, so a small
+      smoothing/bin difference may remain — quantify then).
+- [ ] Expose `subtract_background` (and optionally the flux floor) in the GUI off-spec
+      dialog so the operator can set BG-X off without the headless script.
+- [ ] (Upstream) fix v2's `quicknxs_io` DB_ID writer; harden v1's reader to warn on a
+      1/1/1 column with a multi-DB block (`plan/db-id-bug-and-interop.md`).
 
 Diagnostic scripts (committed): `plan/scripts/` — `pc_probe.py`, `v1_load_probe.py`,
 `v2_load_probe.py`, `pc_ratio_probe.py`, `pc_split_probe.py`, `verify_pc_split.py`,
 `v1_offspec_S.py`, `v2_offspec_S.py`, `v1_offspec_allruns.py`, `v2_offspec_allruns.py`,
-`reduce_band16.py`, `sweep_xysigma0.py`, `test_44161_crop.py`. See `plan/scripts/README.md`
-for which env each needs and the run order. Regenerable scratch outputs go to `/tmp/v1_rematch/`.
+`reduce_band16.py`, `sweep_xysigma0.py`, `test_44161_crop.py`, `validate_fix_v1.py`,
+`validate_fix_v2.py`. See `plan/scripts/README.md` for which env each needs and the run
+order. Regenerable scratch outputs go to `/tmp/v1_rematch/`.

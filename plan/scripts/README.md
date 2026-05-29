@@ -41,6 +41,8 @@ Data paths are hard-coded to REF_M 11486 (IPTS-34473) under the `/SNS` mounts.
 | `reduce_band16.py` | v1 | re-reduce Off_Off with the off-spec band widened 1.4→1.6 Å | — |
 | `sweep_xysigma0.py` | v1 | sweep the smoothing kernel `xysigma0` (ruled smoothing out) | — |
 | `test_44161_crop.py` | v1 | 44161 S.sum vs band half-width (1.4/1.6/none) — pins the band-crop as the 44161 cause | — |
+| `validate_fix_v1.py` | v1 | PAIRED per-run raw-S with the flux-floor fix (44159 artifact suppressed, 44161 retained) | — |
+| `validate_fix_v2.py` | v2 | PAIRED per-run raw-S targets for the fix validation | needs `/tmp/v1_44159.npz` |
 
 ## Typical order for the proton-charge / deficit reproduction
 1. `v1_load_probe.py` (v1) → writes `/tmp/v1_44159.npz`
