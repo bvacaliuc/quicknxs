@@ -2031,7 +2031,7 @@ I have also done reductions, but let us defer that discussion after we resolve t
   kernel (a deviation from v2, so I'd flag it). Then we move to the reduction comparison you mentioned.
 ```
 
-### Prompt 32.5
+### Prompt 33.5
 
 Yes, make v1's SmoothDialog be data-driven in both x and y according to the user's options in the spin entry fields. Please do *not* set_aspect('equal'). Scientists do *not* like to see arbitrary distortions just to make the plot "look nice" (and you can remember that!).
 
@@ -2224,7 +2224,7 @@ I asked Claude to look at On_Off specular:
   Want me to dig into the 44159 low-angle bright feature next (compare v1's per-run 44159 off-spec to v2's to see if it's a real feature or a v1 artifact), or leave the off-spec thread here?
 ```
 
-### Prompt 32.6
+### Prompt 33.6
 
 Go ahead and dig into the 44159 low-angle bright feature. You have mr_reduction available (which has a mantid environment) and I just initialized its pixi environment, updated the 'tests/mr_reduction-data' submodule and ran the test suite ('pixi run test' in mr_reduction - caveat: due to some code.ornl.gov authorization issues not all the test files were able to be downloaded, so the test was not able to run 100% clean). I would say that if you need to run scripts that use a mantid environment, mr_reduction is a good place to do it. In a future session I will ask you to do a deep dive that will include inspecting mr_reduction for the purpose of separating frontend and backend in quicknxsv1. Do you think the deep dive is needed now, before we continue with this session?
 
@@ -2449,8 +2449,172 @@ The context at this point is this:
 
 Which is high (86%) and above the threshold for summarizing and saving a plan. So another question to resolve is why that didnt happen either by Claude's own instructions (I gave a 75% threshold) or my "/btw"?
 
-### Prompt 32.7
+### Prompt 33.7
 
 Thanks! This session has run its course and it has been great! Can you think of anything that we should remember from this session to distribute into the cross-project knowledge for use in future quicknxsv1 or other project sessions?
+
+```
+● Both distributions are committed. Here's the wrap-up of what's worth remembering and where it now lives.
+
+  Cross-project knowledge (the reusable lessons)
+
+  Added a "Validating against a reference dataset" section to setup/patterns/numerical-diagnostics.md (the natural home — it's quantitative-model debugging). Four lessons, each generalized from this session:
+
+  1. Match how the reference was produced, not its labels. A header that says "corrected" may have been relabeled, not re-run — diff the data body, match the real inputs (associations, binning, upstream crop). (The session13 DB_ID was 
+  relabeled 1→1/2/3 but the data was unchanged; my first comparison conflated the DB-association difference.)
+  2. Confirm the symptom still reproduces on the pinned toolchain before fixing it. (I built a suppression for a matplotlib warning that matplotlib had already removed.)
+  3. A no-op fix = an unverified hypothesis — byte-identical output after the change means you changed the wrong thing; re-diagnose. (I−BG→I did nothing because BG≈0; the real cause was a 1.6 vs 1.4 constant.)
+  4. A single hot pixel / 1-over-x blow-up → a near-zero denominator (a normalization band edge); a clean constant ratio between two pipelines → a parameter/convention mismatch — and the same algorithm can ship different defaults in a 
+  GUI vs an autoreduce backend.
+
+  Committed as 57f99ad on the parent repo's dragonfly branch (I left the dirty M quicknxsv1/m mr_reduction submodule pointers untouched). It needs the pending dragonfly→main round-trip (batch it with the others) so sibling machines pick
+   it up.
+
+  Project-specific (future quicknxsv1 sessions)
+  
+  Added an "Off-specular reduction conventions" section to quicknxsv1/CLAUDE.md (838fe63, on feature/read-event-nexus): normalize off-spec by raw DB flux (norm.I); crop to Mantid's 1.4-Å band vs v1's 1.6-Å load band; and the broad ~0.2×
+   v1-vs-Mantid deficit lives in MagnetismReflectometryReduction (needs the mr_reduction Mantid env). This puts it at the entry point, not just in the (transient) plan file.
+
+  One gap to flag
+  
+  The "don't distort plots for appearance" preference I saved earlier this session went only to machine-local MEMORY.md. By the golden rule (cross-project knowledge belongs in a committed file), it should be promoted to
+  setup/patterns/ui-aspects.md so other machines get it. I didn't do it now to keep this wrap-up within budget — want me to promote it, or leave it for a quick follow-up?
+
+  Everything else (the strategic call — v1 as the non-Mantid reality check, Phase 3 threading = a boundary problem, 2b/3 → modularization; and the reduction findings) already travels via commit messages and plan/. Net git state: all
+  quicknxsv1 work is on feature/read-event-nexus (ready for the GitHub PR you'll push); the one parent-repo pattern commit is on dragonfly awaiting the main round-trip. Thanks — this was a genuinely fun and deep one.
+```
+
+## Prompt 34
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. Work has been done in another machine on branch uvdl3/read-event-nexus while we worked on this branch, such that now we have this situation:
+
+* 'feature/read-event-nexus' - our work on this machine
+* 'uvdl3/read-event-nexus' - work-in-progress, based on top of an earlier 'feature/read-event-nexus'
+
+Please review this branch to understand the ramifications of those edits with respect to our efforts to solve off specular reduction variations. Be thorough and perform the necessary reductions to quantify the difference in the code with its product.
+
+Second, at the end of the last session you said:
+
+```
+  One gap to flag
+  
+  The "don't distort plots for appearance" preference I saved earlier this session went only to machine-local MEMORY.md. By the golden rule (cross-project knowledge belongs in a committed file), it should be promoted to
+  setup/patterns/ui-aspects.md so other machines get it. I didn't do it now to keep this wrap-up within budget...
+```
+
+Please go ahead and do the distribution using a subagent in this session.
+
+Finally, you said:
+
+```
+   v1-vs-Mantid deficit lives in MagnetismReflectometryReduction (needs the mr_reduction Mantid env). This puts it at the entry point, not just in the (transient) plan file.
+```
+
+Let us inspect deeply the "v1-vs-Mantid deficit". I have arranged for mr_reduction/** to be available which has a mantid environment already initialized. Additionally, the entire Mantid source code is available at mantid/** for your inspection ( *I do not think this machine can build it due to missing dependencies - it is here for source code inspection and for your information* ). Let us determine once and for all why and what default settings we should apply in 'quicknxsv1' to the various dialogs of off specular such that with as little "special" handling, we can load extraction '/SNS/users/6ov/shared/REF_M/11486/session13/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off-correct-db-id.dat', perform a new Reduce to a new folder and obtain comparative numerical results to '/SNS/users/6ov/shared/REF_M/11486/correctReduction/**'.
+
+As always, obtain any tool you need, be resourceful and ask me if you are missing any information or capability that you need to complete your investigation. Thank you!
+
+```
+● All three tasks are complete. Here's the full picture.
+
+  1. uvdl3/read-event-nexus review
+
+  The branch is essentially our branch plus one diagnostic knob. The only substantive code change is scripts/reduce_offspec_headless.py commit 5d38124 — a --no-subtract-bg flag (the rest is docs/plan/transcript). qreduce.py is
+  byte-identical to ours (our band-crop + norm.I changes were merged into uvdl3 via cc12a43). Its conclusion — that correctReduction was made BG-X off and that this causes the spec/offspec asymmetry — is correct and I've now confirmed
+  it at the source level and end-to-end.
+  
+  2. Plot-distortion preference distributed
+
+  Subagent promoted it to setup/patterns/ui-aspects.md (commit 6c103a8 on dragonfly, "Faithful axes — never distort a plot for appearance"). No push, main untouched.
+
+  3. The "v1-vs-Mantid deficit" — solved
+
+  It was never a Mantid-side scaling. It was a quicknxsv1 bug: v1 normalized every polarization channel by the full-run proton charge, while Mantid/MRFilterCrossSections (and v2) use the charge accrued while each SF-state was active.
+  Since direct beams are 100% Off_Off (polarizer out), v1's polarized reflectivity came out low by ≈ the data run's spin-state time-fraction (0.46–0.54) — per-run, which is why prior sessions saw it as "angle-correlated" and
+  "Mantid-blocked." Proven: off-spec code ≡ v2's, loaded histograms byte-identical, per-channel charge now matches Mantid exactly (44159: 142.70 / 155.26 µA·h). Committed 99baaa3 (9+61 tests green). This also fixes the deferred specular
+   deficit (#1), since _calc_normal uses the same charge.
+  
+  Default settings to match correctReduction: BG-X off (added a subtract_background toggle, commit 5b6317b) + single-DB (it's DB_ID=1/1/1, despite the session13 file's relabeled 1/2/3 header).
+
+  End-to-end Reduce (session13 extraction → /tmp/v1_rematch/, single-DB + --no-subtract-bg, pc-fix active) vs correctReduction: median ratio 0.154 → 0.60 both channels, asymmetry eliminated (spec≈offspec), peaks coincide.
+
+  The remaining ~0.6× residual is a third finding: the 1.4 Å off-spec band-crop is too blunt. Per-run raw-S shows every run's reduction is correct (~1.07 vs a controlled v2), except high-angle 44161 at 0.22 — because the crop (added to
+  kill 44159's low-angle 1-count artifact) also destroys 44161's legitimate high-Q signal, which sits at the same short-λ edge. Widening to 1.6 Å recovers 44161 (40→200, matching v2) but reintroduces 44159's artifact. The proper fix is
+  a direct-beam flux guard (v2-faithful raw-count norm_raw>0), not a blanket λ-crop — I left it for your call since it's entangled with the prompt-31 artifact history and is a science-output change. Full diagnosis in
+  plan/v1-vs-mantid-deficit-rootcause.md.
+  
+  Ready for you to push (human-only)
+
+  - quicknxsv1 feature/read-event-nexus: ahead of GitHub by 5 (99baaa3, 5b6317b, dc5585e are this session's).
+  - Parent repo dragonfly: 6c103a8 (ui-aspects) — pending the usual main round-trip when code.ornl.gov is writable.
+
+  Suggested next steps: (a) replace the band-crop with the flux guard and re-validate 44161 + 44159 together; (b) a controlled v2 end-to-end (matched scales/bins) to close the last factor vs the archived file. Want me to take on the
+  band-crop fix?
+```
+
+( *the above required **three** usage periods - i.e. Claude ran out of tokens twice* )
+
+### Prompt 34.1
+
+Nice work, Claude! I have a two clarifying tasks for you and then we can proceed:
+
+In plan/v1-vs-mantid-deficit-rootcause.md, section "DB-assignment note (session13 input file)", you introduce **single-DB**, suggesting that the use of "DB_ID=1/1/1 (single, all→44033)" is a thing. In earlier sessions (see plan/prompt-29-todo.md) we had discussed this topic, but perhaps had not finished its investigation. Let us finish it now; please investigate the fault in plan/prompt-29-todo.md in light of the above fixes and your current understanding. I recall ( *but cannot reference the specific conversation* ) that we had concluded that v2 *ignores* the DB_ID=1/1/1 when reading reduced files and *forces* a re-match of the direct beam based on angles. v1 *interprets* the DB_ID and uses it. My assumption was that v2 had a **bug** in the DB_ID writing that was papered over by *forcing* this rematch. Please challenge this assumption and determine what exactly causes v2 to write DB_ID=1/1/1 when writing off specular files (such as the ones in correctReduction/*), how DB_ID=1/1/1 is used ( *in v2 and now in v1* ) and what is correct/works/bad/dangerous about it when considering interoperability of reduced files produced by v2 to be read by v1 and vice-versa.
+
+The scripts you left in /tmp (*_probe.py) but reference in plan/v1-vs-mantid-deficit-rootcause.md should not be out-of-tree, rather please move them to plan/scripts/* and reference them in the .md files. If I read v1-vs-mantid-deficit-rootcause.md on a different machine, I do not have access to these scripts and this is disturbing to me. Please remember that I *abhor* hidden code and techniques and *require* that all methods (once they have proven useful enough to document) be captured in the repositories. If a code/method is genuinely useful to a human or used in testing (for example the reduce_offspec_headless.py and plot_offspec_compare.py in v1's scripts/*) then it should be in the repository. If a script is only useful or specific to your purpose and you document its use in an .md file that you generate, then please move it to plan/scripts/*, commit it so that it can be referenced by any reader, and maintain it further from there. If you do not document a script, then you may leave it in /tmp as you do now. Please make a note on this into the cross-platform knowledge base to be distributed to other sessions. This is an important point for me. 
+
+After all that, please proceed with (a) replace the band-crop with the flux guard and re-validate as you have proposed.
+
+If you reach a session token limit, please wait for the limit to reset instead of asking me - in our last session we used two such limits and I had to prompt you. I do not wish to prompt you on this topic (and you can remember my preference on this). If there are funds available in extra-effort I know you will use them, but otherwise my default is to wait until the session limit resets and continue. Please make a note in the cross-platform knowledge base to add a preference on this as a todo task there.
+
+Good luck with all of this, I know you will do great! Thanks again for your hard work and attention to my project(s)!
+
+```
+● All committed; both working trees clean. Here's the complete rundown.
+
+  1. DB_ID=1/1/1 — your assumption was right, with a precise mechanism
+
+  It's a v2 writer bug, not a deliberate design. In quicknxsv2/.../quicknxs_io.py, _get_cross_section_config_values does i_direct_beam += 1 on a pass-by-value int parameter, so the caller's loop counter never advances and every data run
+   is written DB_ID=1. The [Direct Beam Runs] block (which increments inside its loop) correctly lists three distinct DBs — proving correctReduction is a PAIRED reduction (44033/44034/44035), with the DB_ID column wrongly collapsed to
+  1/1/1.
+  
+  On read, both v1 (qio.py:643) and v2 (quicknxs_io.py:429) interpret DB_ID literally → reading 1/1/1 yields single-DB (all→44033). The nuance behind your recollection: v2 has an optional Match-direct-beam angle re-match
+  (match_direct_beam, default off) that can recover the paired assignment; v1 has no such feature, so v1 is stuck with the wrong single-DB. v1's writer is correct, so v1→v2 is safe; v2→v1 of a multi-DB reduction is dangerous (silently
+  re-reduces single, lower intensity, looks plausible). This corrects my earlier "single-DB" claim — the right db-mode to reproduce correctReduction is --db-mode paired. Full matrix in plan/db-id-bug-and-interop.md.
+  
+  2. Scripts relocated (no more out-of-tree references)
+
+  All 15 diagnostic scripts moved from /tmp to quicknxsv1/plan/scripts/ with a README.md documenting each script's environment (v1 vs Mantid) and run order; the plan docs now cite in-repo paths. Committed (9c13190, 358b8ba).
+
+  3. Knowledge base updated (parent repo, dragonfly)
+
+  - Parent CLAUDE.md: new rule "Capture documented methods in the repo (no out-of-tree references)" with the project-scripts/ vs plan/scripts/ vs /tmp decision table.
+  - setup/patterns/agent-discipline.md: the session-limit → wait-and-continue, never ask preference + a TODO to formalize it. (Both also saved to machine memory.) Committed (b758ab1).
+
+  4. Band-crop → flux-floor fix (validated)
+
+  Replaced the 1.4 Å wavelength band-crop with MANTID_OFFSPEC_FLUX_FLOOR = 1e-3: mask off-spec TOF bins where the direct-beam flux is below 1e-3 of the DB's own peak. The band-crop was too blunt — it killed run 44161's legitimate
+  high-angle short-λ signal (same band edge as 44159's artifact). Per-run raw-S (paired, vs v2): 44159 1.05, 44160 1.11, 44161 1.01 (was 0.22), 44159 artifact max 25.6→1.18. 62 qreduce tests green (2 new flux-floor tests). Committed
+  (358b8ba).
+  
+  Blocker (surfacing loudly, not asking)
+
+  The /SNS/users/6ov sshfs mount is throwing I/O errors (Errno 5) — so the end-to-end paired + flux-floor + BG-off comparison against correctReduction/** is the one thing I couldn't run; it needs a remount (your call). The rclone
+  /SNS/REF_M raw-NXS mount is fine, which is how I validated everything via per-run raw-S. I left that end-to-end as the open item in the plan doc; it should land near 1.0.
+
+  Ready for you to push (human-only)
+  
+  - quicknxsv1 feature/read-event-nexus: ahead by 8 (this+prior session: 358b8ba, 9c13190, 99baaa3, 5b6317b, dc5585e, …).
+  - Parent dragonfly: ahead by 2 (b758ab1, 6c103a8).
+
+  I worked straight through per your preferences. When the sshfs mount is back, I can run the final paired end-to-end to close the last numeric comparison.
+```
+
+I restored the sshfs mounts
+
+### Prompt 34.2
+
+I have restored the sshfs mounts, please continue with the paired end-to-end check.
+
+
 
 

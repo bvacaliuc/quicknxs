@@ -282,7 +282,9 @@ def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict,
     ----------
     subtract_bg : bool
         Whether to subtract the background-vs-TOF from the intensity. v1's
-        ``OffSpecular`` always subtracts (no flag); when ``False``, we
+        ``OffSpecular``'s ``subtract_background`` option
+        (the v2/QuickNXS-4.x "BG X" toggle). Set False to match a reference reduced
+        with BG X off (e.g. the REF_M 11486 ``correctReduction``). The option will
         post-process to undo the subtraction in scientific-coordinate space
         by adding back the BG contribution scaled by the same factor:
         ``S_no_bg = S + BG * scale / norm.Rraw``.
@@ -335,6 +337,7 @@ def reduce_recipe(recipe: Recipe, channel: str, bins: int, db_map: dict,
                          bg_pos=dr.bg_pos, bg_width=dr.bg_width,
                          extract_fan=dr.extract_fan,
                          dpix=dr.dpix, tth=dr.tth,
+                         subtract_background=subtract_bg,
                          normalization=norm)
 
         # Optionally undo v1's mandatory background subtraction (no flag in v1).
@@ -504,9 +507,9 @@ def main():
     ap.add_argument('--no-smooth', action='store_true',
                     help='Skip smoothing; write raw OffSpec instead')
     ap.add_argument('--no-subtract-bg', action='store_true',
-                    help='Skip the background-vs-TOF subtraction. v1 always '
-                         'subtracts (no flag); this post-processes to undo it. '
-                         'Matches v4.3.0rc1 "BG X off" / subtract_background=False.')
+                    help='Disable background-vs-TOF subtraction (v1 OffSpecular '
+                         'subtract_background=False / v2 "BG X" off). Use to match '
+                         'a reference reduced with BG X off, e.g. correctReduction.')
     args = ap.parse_args()
 
     print(f'Parsing recipe: {args.recipe}')

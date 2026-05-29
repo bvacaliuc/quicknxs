@@ -47,11 +47,19 @@ TOF_REFERENCE_FREQUENCY=60.0
 # chopper speed.  Matches quicknxsv2's ``wl_bandwidth = 3.2 → half_width = 1.6``.
 TOF_HALF_BANDWIDTH_60HZ=1.6
 # Mantid's MagnetismReflectometryReduction (``get_tof_range``) crops to a
-# *narrower* half-bandwidth (1.4 Å at 60 Hz) than v1's load band (1.6).  The
-# off-spec normalization is cropped to this tighter, Mantid-matching band so the
-# poorly-illuminated band edges -- where a single-count direct beam makes the
-# 1/flux normalization blow up a spurious off-spec pixel -- are excluded.
+# *narrower* half-bandwidth (1.4 Å at 60 Hz) than v1's load band (1.6).  Kept for
+# reference / diagnostics; the off-spec extraction NO LONGER crops on it (see the
+# flux floor below) because a blanket λ-crop cannot distinguish a low-angle
+# normalization artifact from a high-angle run's legitimate short-λ signal.
 MANTID_OFFSPEC_HALF_BANDWIDTH=1.4
+# Off-spec direct-beam flux floor: when normalizing the off-spec by the direct
+# beam's per-TOF flux, mask any TOF bin whose DB flux is below this fraction of
+# the DB's own peak flux.  This removes the spurious "1/flux blow-up" at
+# poorly-illuminated band edges (the "44159 artifact") at its physical cause --
+# no usable direct beam there -- while keeping every bin the DB *does*
+# illuminate (so a high-angle run's short-λ signal survives).  Replaces the old
+# wavelength band-crop.  See plan/v1-vs-mantid-deficit-rootcause.md.
+MANTID_OFFSPEC_FLUX_FLOOR=1e-3
 
 
 def _compute_tof_range_us(dist_mod_det, lambda_center, chopper_speed=None,
@@ -806,7 +814,7 @@ class NXSData(object, metaclass=OptionsDocMeta):
 
     i=1
     empty_channels_list=[]
-    for name, (ids, tofs) in sorted(channels.items()):
+    for name, (ids, tofs, chan_pc) in sorted(channels.items()):
       data=MRDataset.from_event_h5_filtered(
         entry, ids, tofs, self._options,
         callback=self._options['callback'],
@@ -816,6 +824,10 @@ class NXSData(object, metaclass=OptionsDocMeta):
       if data is None:
         empty_channels_list.append(name)
         continue
+      # Override the full-run charge set during load with this channel's
+      # integrated charge so polarized normalization matches Mantid.
+      if chan_pc is not None:
+        data.proton_charge=chan_pc
       self._channel_data.append(data)
       self._channel_names.append(name)
       self._channel_origin.append(entry_keys[0])
@@ -2389,7 +2401,9 @@ def _filter_events_by_polarization(data):
   SF2 (analyzer) time-series logs from DASlogs.
 
   :param h5py._hl.group.Group data: HDF5 entry group
-  :returns: dict {cross_section_name: (event_ids, event_tofs)} or None
+  :returns: dict {cross_section_name: (event_ids, event_tofs, proton_charge)}
+            or None. ``proton_charge`` is the charge integrated over that
+            channel's pulses (None if the proton_charge log is unavailable).
   '''
   # Guard: SF1 must exist for polarization filtering
   if 'DASlogs/SF1' not in data:
@@ -2460,6 +2474,22 @@ def _filter_events_by_polarization(data):
     else:
       debug('%s not present — no veto filtering for this flipper'%veto_key)
 
+  # Per-channel proton charge: integrate the proton_charge log over each
+  # channel's pulses, matching Mantid MRFilterCrossSections which normalizes
+  # every cross-section by the charge accrued while its SF-state was active.
+  # Without this, each channel inherits the FULL-run charge and polarized
+  # reflectivity comes out low by the channel's beam-time fraction (the long-
+  # standing "v1-vs-Mantid deficit"; see plan/v1-vs-mantid-deficit-rootcause.md).
+  pulse_pc=None
+  try:
+    pc_values=data['DASlogs/proton_charge/value'][()]
+    pc_times=data['DASlogs/proton_charge/time'][()]
+    pc_pidx=clip(searchsorted(pc_times, event_tz, side='right')-1, 0, len(pc_values)-1)
+    pulse_pc=pc_values[pc_pidx]
+  except KeyError:
+    warn('DASlogs/proton_charge missing — per-channel charge unavailable; '
+         'channels will inherit the full-run charge')
+
   # Combine SF1 and SF2 into cross-section labels
   state_names={(0, 0): 'Off_Off', (1, 0): 'On_Off',
                (0, 1): 'Off_On',  (1, 1): 'On_On'}
@@ -2470,6 +2500,8 @@ def _filter_events_by_polarization(data):
     state_pulses=where(mask)[0]
     if len(state_pulses)==0:
       continue
+    # Charge integrated over this state's pulses (None -> caller keeps full run)
+    chan_pc=float(pulse_pc[state_pulses].sum()) if pulse_pc is not None else None
     event_masks=[]
     for pi in state_pulses:
       ev_start=event_idx[pi]
@@ -2478,7 +2510,7 @@ def _filter_events_by_polarization(data):
         event_masks.append(arange(ev_start, ev_end))
     if event_masks:
       all_idx=concatenate(event_masks)
-      channels[name]=(event_id[all_idx], event_tof[all_idx])
+      channels[name]=(event_id[all_idx], event_tof[all_idx], chan_pc)
 
   if len(channels)==0:
     warn('Polarization filtering produced no channels — '
@@ -2713,6 +2745,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
        scale=1.,
        sample_length=10.,
        extract_fan=False,
+       subtract_background=True,
        normalization=None,
        bg_tof_constant=False,
        bg_poly_regions=None,
@@ -2738,6 +2771,7 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
        scale='Scaling factor for the reflectivity',
        sample_length='Length of the sample in mm, used to calculate the Q-resolution',
        extract_fan='Treat every x-pixel separately and join the data afterwards',
+       subtract_background='Subtract the background-vs-TOF from the intensity (the v2/QuickNXS-4.x "BG X" toggle; default True). Set False to match a reference reduced with BG X off.',
        normalization='another Reflectivity object used for normalization',
        bg_tof_constant='treat background to be independent of wavelength for better statistics',
        bg_poly_regions='use polygon regions in x/λ to determine which points to use for the background',
@@ -2929,7 +2963,10 @@ class Reflectivity(object, metaclass=OptionsDocMeta):
                       (cos(self.ai)*dai/self.lamda)**2)
     debug("Q=%s"%repr(self.Q))
     # finally scale reflectivity by the given factor and beam width
-    self.Rraw=(self.I-self.BG) # used for normalization files
+    if self.options['subtract_background']:
+      self.Rraw=(self.I-self.BG) # used for normalization files
+    else:
+      self.Rraw=array(self.I) # BG X off: keep raw intensity
     self.dRraw=sqrt(self.dI**2+self.dBG**2)
     if self.ai>0.0002:
       sin_scale=0.005/sin(self.ai) # scale by beam-footprint
@@ -3311,7 +3348,10 @@ class OffSpecular(Reflectivity):
                                         self.options['scale']*scale/(reg[3]-reg[2])))
     self.I=self.Iraw/(reg[3]-reg[2])*scale
     self.dI=self.dIraw/(reg[3]-reg[2])*scale
-    self.S=self.I-self.BG[newaxis, :]
+    if self.options['subtract_background']:
+      self.S=self.I-self.BG[newaxis, :]
+    else:
+      self.S=array(self.I)  # BG X off: keep raw intensity (matches v2 subtract_background=False)
     self.dS=sqrt(self.dI**2+(self.dBG**2)[newaxis, :])
     self.S*=self.options['scale']
     self.dS*=self.options['scale']
@@ -3320,12 +3360,20 @@ class OffSpecular(Reflectivity):
       norm=self.options['normalization']
       debug("Performing normalization from %s"%norm)
       # Normalize by the direct beam's RAW flux (norm.I), not the
-      # background-subtracted norm.Rraw (= I - BG).  At a band edge the DB
-      # signal approaches its own background, so Rraw collapses toward zero (a
-      # tiny positive residual) and 1/Rraw blows up a spurious off-spec pixel,
-      # while the raw flux I stays well-behaved.  Matches quicknxsv2
+      # background-subtracted norm.Rraw (= I - BG).  Matches quicknxsv2
       # off_specular.py, which normalizes off-spec by raw direct-beam counts.
-      idxs=norm.I>0.
+      #
+      # Guard against dividing by a near-zero DB flux: v1's fine TOF binning
+      # leaves a few one-count bins at the poorly-illuminated band edges where
+      # 1/flux blows up a spurious off-spec pixel (the "44159 artifact").  Mask
+      # where the DB flux is below a small fraction of its OWN peak -- removing
+      # the artifact at its physical cause (no usable direct beam) while keeping
+      # every bin the DB actually illuminates, so a high-angle run's legitimate
+      # short-λ (high-Q) signal survives.  This replaces the old blanket λ
+      # band-crop, which could not tell a real high-angle edge from a low-angle
+      # artifact.  See plan/v1-vs-mantid-deficit-rootcause.md.
+      norm_peak=norm.I.max() if norm.I.size else 0.
+      idxs=norm.I>(MANTID_OFFSPEC_FLUX_FLOOR*norm_peak)
       self.dS[:, idxs]=sqrt(
                    (self.dS[:, idxs]/norm.I[idxs][newaxis, :])**2+
                    (self.S[:, idxs]/norm.I[idxs][newaxis, :]**2*norm.dI[idxs][newaxis, :])**2
@@ -3333,19 +3381,6 @@ class OffSpecular(Reflectivity):
       self.S[:, idxs]/=norm.I[idxs][newaxis, :]
       self.S[:, logical_not(idxs)]=0.
       self.dS[:, logical_not(idxs)]=0.
-
-    # Crop to Mantid MRR's usable wavelength band (get_tof_range): the chopper
-    # half-bandwidth is MANTID_OFFSPEC_HALF_BANDWIDTH at the reference speed and
-    # widens inversely with chopper speed.  v1's load band is wider (1.6), so its
-    # low-flux edges -- where the direct-beam normalization is a single count and
-    # 1/flux blows up a spurious off-spec pixel (the 44159 artifact) -- are
-    # trimmed here for the off-spec, matching Mantid.
-    cs=getattr(dataset, 'chopper_speed', None)
-    scale=TOF_REFERENCE_FREQUENCY/float(cs) if cs else 1.
-    hb=MANTID_OFFSPEC_HALF_BANDWIDTH*scale
-    out_of_band=(self.lamda<dataset.lambda_center-hb)|(self.lamda>dataset.lambda_center+hb)
-    self.S[:, out_of_band]=0.
-    self.dS[:, out_of_band]=0.
 
 class GISANS(Reflectivity):
   '''

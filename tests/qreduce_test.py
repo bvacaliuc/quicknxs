@@ -270,24 +270,43 @@ class DataReductionTests(unittest.TestCase):
     np.testing.assert_allclose(np.asarray(oS.S)[:, k], expected, rtol=1e-6, atol=1e-12)
     self.assertTrue(np.isfinite(oS.S).all())
 
-  def test_offspec_cropped_to_mantid_wavelength_band(self):
-    """prompt-31: off-spec is cropped to Mantid MRR's chopper band (half-bw
-    MANTID_OFFSPEC_HALF_BANDWIDTH, scaled by chopper speed).  Wavelengths
-    outside the band -- the low-flux edges where the direct-beam normalization
-    is a single count and 1/flux blows up (the 44159 artifact) -- are masked."""
+  def test_offspec_masks_low_flux_direct_beam_bins(self):
+    """Off-spec normalization masks TOF bins where the direct-beam flux is below
+    MANTID_OFFSPEC_FLUX_FLOOR of the DB's own peak flux.  This replaces the old
+    wavelength band-crop: it kills the 1/flux blow-up at poorly-illuminated edges
+    (the 44159 artifact) at its physical cause -- no usable direct beam -- while
+    KEEPING every bin the DB actually illuminates (so a high-angle run's short-λ
+    signal survives, unlike the blunt band-crop).  See
+    plan/v1-vs-mantid-deficit-rootcause.md."""
     d=self.data[0]
     norm=qreduce.Reflectivity(d, x_pos=206., tth=0., dpix=206.)
     oS=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206., normalization=norm)
-    cs=getattr(d, 'chopper_speed', None)
-    scale=qreduce.TOF_REFERENCE_FREQUENCY/float(cs) if cs else 1.
-    hb=qreduce.MANTID_OFFSPEC_HALF_BANDWIDTH*scale
-    lam=np.asarray(oS.lamda)
-    out=(lam < d.lambda_center-hb) | (lam > d.lambda_center+hb)
-    self.assertTrue(out.any(), 'fixture should have band-edge bins beyond the 1.4-A band')
-    self.assertTrue(np.all(np.asarray(oS.S)[:, out] == 0.),
-                    'out-of-band wavelengths must be masked to 0')
-    self.assertGreater(np.abs(np.asarray(oS.S)[:, ~out]).max(), 0.,
-                       'in-band off-spec must retain signal')
+    normI=np.asarray(norm.I)
+    floor=qreduce.MANTID_OFFSPEC_FLUX_FLOOR*normI.max()
+    S=np.asarray(oS.S)
+    masked=normI<=floor
+    kept=normI>floor
+    self.assertTrue(np.isfinite(S).all(), 'no 1/flux blow-up anywhere')
+    self.assertTrue(np.all(S[:, masked]==0.), 'below-floor DB-flux bins must be masked to 0')
+    self.assertGreater(kept.sum(), 0, 'some bins must be above the flux floor')
+    self.assertGreater(np.abs(S[:, kept]).max(), 0., 'illuminated bins must retain signal')
+
+  def test_offspec_flux_floor_tames_low_flux_blowup(self):
+    """With the flux floor, the off-spec max is no larger than with the floor
+    disabled (floor=0, the old norm.I>0 guard) -- i.e. the floor only ever
+    removes (masks) the low-flux 1/flux spikes, never inflates signal."""
+    d=self.data[0]
+    norm=qreduce.Reflectivity(d, x_pos=206., tth=0., dpix=206.)
+    oS_floor=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206., normalization=norm)
+    old=qreduce.MANTID_OFFSPEC_FLUX_FLOOR
+    try:
+      qreduce.MANTID_OFFSPEC_FLUX_FLOOR=0.0
+      oS_none=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206., normalization=norm)
+    finally:
+      qreduce.MANTID_OFFSPEC_FLUX_FLOOR=old
+    self.assertLessEqual(np.nanmax(np.abs(np.asarray(oS_floor.S))),
+                         np.nanmax(np.abs(np.asarray(oS_none.S)))+1e-12)
+    self.assertTrue(np.isfinite(oS_floor.S).all())
 
 
 class LRDatasetTests(unittest.TestCase):

@@ -221,6 +221,57 @@ Files in `/SNS/REF_M/` and `/SNS/REF_L/` are accessed via sshfs mounts. See the
 parent project's `CLAUDE.md` for network mount handling rules. Key test files are
 cataloged in the plan with expected values for validation.
 
+## Off-specular reduction conventions (REF_M, learned 2026-05)
+
+Validated against the v2/Mantid reference (REF_M 11486, runs 44159/60/61);
+details + before/after numbers in `plan/prompt-31-remaining.md` §4.
+
+- **Off-spec normalizes by the direct beam's RAW flux** (`norm.I`), not the
+  background-subtracted `norm.Rraw` (= I−BG), in `OffSpecular._calc_offspec` —
+  matching quicknxsv2's `off_specular.py` (`norm_raw`). (Numerically ≈ identical
+  when the DB background is ~0, but the v2-faithful quantity.)
+- **Off-spec masks low-direct-beam-flux TOF bins (flux floor), replacing the old
+  wavelength band-crop (2026-05-29).** `_calc_offspec` masks any TOF bin whose direct-
+  beam flux is below `MANTID_OFFSPEC_FLUX_FLOOR = 1e-3` of the DB's own peak. This kills
+  the 1/flux blow-up at poorly-illuminated edges (the "44159 bright feature") at its
+  physical cause — no usable direct beam — while KEEPING every bin the DB illuminates.
+  The earlier 1.4 Å band-crop (`MANTID_OFFSPEC_HALF_BANDWIDTH`, kept only as a reference
+  constant now) was too blunt: it also destroyed run 44161's *legitimate* high-angle
+  short-λ signal (0.22× vs paired v2), which sits at the same band edge as 44159's
+  artifact. With the floor, all three runs match paired v2 at ~1.0–1.1 (44161 0.22→1.01).
+  Loading + specular still use the 1.6 Å load band.
+- **The broad v1-vs-Mantid intensity "deficit" was a v1 bug, now fixed (2026-05-28):
+  v1 did not split proton charge per polarization channel.** `from_event_h5_filtered`
+  gave every channel the FULL-run charge; v2/Mantid `MRFilterCrossSections` normalizes
+  each cross-section by the charge accrued while its SF-state was active. With single-
+  channel direct beams (polarizer out, 100% Off_Off), v1's polarized reflectivity came
+  out low by ≈ the data run's beam-time fraction in that channel (~0.46–0.54 for
+  44159/60/61) — uniform per channel, hence *per-run* and only *apparently* angle-
+  correlated. **NOT a Mantid-side scaling** (the off-spec reference is v2's pure-numpy
+  `off_specular.py`, whose extraction is identical to v1's; the loaded histograms are
+  byte-identical). Fix: `_filter_events_by_polarization` now integrates the
+  `proton_charge` log over each channel's pulses and returns it; the loader sets it on
+  each `MRDataset`. Verified == Mantid's split (44159: Off_Off 142.70, On_Off 155.26
+  µAh). Full diagnosis: `plan/v1-vs-mantid-deficit-rootcause.md`.
+- **`correctReduction` was made with BG-X OFF and single-DB.** `Reflectivity`/
+  `OffSpecular` now take a `subtract_background` option (default True = current
+  behavior; the v2/QuickNXS-4.x "BG X" toggle); set False to match a BG-X-off
+  reference. `reduce_offspec_headless.py --no-subtract-bg` exposes it. Also reduce
+  **`--db-mode paired`** (44159→44033, 44160→44034, 44161→44035): `correctReduction` is
+  a PAIRED reduction; its `DB_ID=1/1/1` column is a **v2 writer bug** (the `[Direct Beam
+  Runs]` block lists 3 distinct DBs). The session13 `-correct-db-id.dat` relabels DB_ID
+  →1/2/3, the corrected paired assignment. Reading the buggy 1/1/1 literally (v1 always;
+  v2 with match-DB off) collapses to single-DB and is WRONG. Full analysis +
+  v1↔v2 interop matrix: `plan/db-id-bug-and-interop.md`.
+- **Per-run raw-S confirms the engine is correct for every run** (~1.07 vs paired v2:
+  44159 1.05, 44160 1.11, 44161 1.01) once the flux floor (above) replaces the band-crop:
+  44161's high-angle signal went 0.22→**1.01** and 44159's artifact is masked. Ruled out
+  for the prior ~0.6× residual: smoothing `xysigma0` (median invariant) and a global scale
+  (specular peak already matched). The end-to-end PAIRED + flux-floor + BG-off comparison
+  vs `correctReduction` was blocked 2026-05-29 by the `/SNS/users/6ov` sshfs mount (I/O
+  error; rclone `/SNS/REF_M` raw NXS is fine) — retry when it recovers.
+  See `plan/v1-vs-mantid-deficit-rootcause.md`.
+
 ## buzhug Database — Read-Only Mode
 
 The embedded buzhug database (`quicknxs/buzhug/`) was originally designed as read-write
