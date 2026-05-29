@@ -107,13 +107,43 @@ active), bins=400, compared to `correctReduction` via `plot_offspec_compare.py`:
 
 - **Asymmetry eliminated** (spec ≈ offspec) → BG-X-off confirmed as the asymmetry cause.
 - **~4× magnitude jump** → the pc-split fix.
-- **Remaining: a single uniform ~0.6× (≈1.65×)** — identical for both channels and for
-  spec vs offspec, so a global scale, NOT the per-channel normalization (the controlled
-  single-run raw-S test matches v2 to ~1.0). Candidate causes: off-spec smoothing-kernel
-  params (headless `xysigma0≈Qzmax/3≈0.04` vs v2 GUI 0.06 → v1 over-smooths) or
-  `correctReduction`'s unrecorded bins/scale. **Definitive next step:** generate a
-  controlled v2 off-spec end-to-end (single-DB, BG-off, bins=400) and compare — expect ~1.0.
-  Outputs: `/tmp/v1_rematch/{v1_pcfix_bgoff_single_*.dat,cmp_*.png,cmp_*.json}`.
+- **Remaining residual is NOT a global scale.** Peak (specular-ridge) intensity ratio
+  is ~0.94 (Off_Off) / 1.05 (On_Off) — **v1 matches the reference at the bright peak** —
+  but the median (off-spec wings) is ~0.60 (q25 0.49, q75 0.77). So v1 is dimmer only in
+  the *dim/wing* regions, i.e. higher contrast than the reference. The per-channel
+  normalization is correct (controlled single-run raw-S ~1.0; peak ~1.0). Candidate
+  cause was pinned by per-run raw-S (BG-off, scale=1, DB 44033, vs a controlled v2 run):
+
+  | run | v1 S.sum | v2 S.sum | v1/v2 | note |
+  |---|---|---|---|---|
+  | 44159 | 1271 | 1368 | 0.93 | 1.4-band costs ~13% (low-angle artifact region) |
+  | 44160 | 137 | 156 | 0.88 | mid-angle, ~ROI factor |
+  | 44161 | 40 | 186 | **0.22** | **high-angle: 1.4-band cuts real signal** |
+
+  **The 1.4 Å off-spec band-crop is the residual, and it is too blunt.** For 44161
+  (highest angle, tth=5.63°) the legitimate high-Q signal sits at SHORT λ (~2.4 Å) —
+  the *same band edge* as run 44159's low-angle 1-count artifact. Cropping to 1.4 Å
+  removes both: 44161 S.sum 40→**200** and max 0.04→**7.1** when the band is widened to
+  1.6 (then it matches v2's 186 to ~1.08, the ROI-bookkeeping factor — like the other
+  runs). So **every run's per-run reduction is correct (~1.07 vs a controlled v2)**;
+  ruled out: smoothing `xysigma0` (median invariant 0.59–0.61 over 0.06–0.20) and a
+  global scale (peak matches). The crop's damage scales with angle (44159 −13%, 44160
+  ~0, 44161 −78%); the merged median (~0.6) and the artifact (returns at 1.6) are the
+  two horns of a fixed-λ crop that cannot separate a real high-angle edge from a
+  low-angle artifact.
+
+  **Proper fix (replaces the band-crop):** guard the off-spec normalization on the
+  direct-beam *flux* (e.g. mask only where the raw DB counts are genuinely ~0, the
+  v2-faithful `norm_raw>0` on RAW integer counts), not a blanket λ-band crop. Then
+  44159's artifact is masked at its true cause (no DB flux) while 44161's real signal
+  (which HAS DB flux) is kept. NOTE: prompt-31 tried `norm.I` and called it a "no-op";
+  re-examine why v2's RAW-count guard avoids the blow-up that v1's `I=Rraw` did.
+
+  **Full closure vs the ARCHIVED correctReduction** (still ~0.6 merged after a band
+  fix) additionally needs matching its per-run scale convention (2.254/2.081) and exact
+  bins/pipeline — generate a CONTROLLED v2 end-to-end (3-run merge, single-DB, BG-off,
+  same scales/bins/smoothing) and compare; expect ~1.0.
+  Outputs: `/tmp/v1_rematch/{v1_pcfix_bgoff_single_*.dat,v1_band16_*.dat,v1_xys*_*.dat,cmp_*.json}`.
 
 ## Remaining to do
 

@@ -260,13 +260,16 @@ details + before/after numbers in `plan/prompt-31-remaining.md` §4.
 - **End-to-end match (2026-05-28):** load the session13 extraction, Reduce single-DB
   + `--no-subtract-bg` (pc-fix active): off-spec median ratio vs `correctReduction`
   rose from 0.154 → **0.60 (both channels)**, the specular/off-spec **asymmetry
-  vanished** (spec 0.60 ≈ offspec 0.60) and the peaks coincide (Δ≈0). A *uniform*
-  ~0.6× residual remains (same for Off_Off/On_Off, spec and off-spec) — a single
-  global scale between this harness and the archived reference, NOT the per-channel
-  normalization (a controlled single-run raw-S test matches v2 to ~1.0). Likely the
-  off-spec smoothing-kernel params (headless `xysigma0≈Qzmax/3` vs the v2 GUI's
-  0.06) or `correctReduction`'s unrecorded bins/scale; pin down with a controlled v2
-  end-to-end. See `plan/v1-vs-mantid-deficit-rootcause.md`.
+  vanished** (spec 0.60 ≈ offspec 0.60) and peaks coincide. Per-run raw-S shows the
+  **engine is correct for every run** (~1.07 vs a controlled v2: 44159 0.93, 44160
+  0.88, 44161 0.22-with-crop). The remaining residual is the **1.4 Å off-spec
+  band-crop, which is too blunt**: run 44161's legitimate high-angle signal sits at the
+  SAME short-λ band edge (~2.4 Å) as run 44159's low-angle 1-count artifact, so the
+  crop kills both (44161 S.sum 40→200, max 0.04→7.1 when widened to 1.6, matching v2
+  ~1.08). Ruled out: smoothing `xysigma0` (median invariant) and global scale (peak
+  matches). **Proper fix:** replace the band-crop with a direct-beam flux guard
+  (v2-faithful raw-count `norm_raw>0`) so 44159's artifact is masked at its cause while
+  44161's signal is kept. See `plan/v1-vs-mantid-deficit-rootcause.md`.
 
 ## buzhug Database — Read-Only Mode
 
