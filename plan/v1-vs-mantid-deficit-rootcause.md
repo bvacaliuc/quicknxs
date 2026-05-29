@@ -173,11 +173,14 @@ active), bins=400, compared to `correctReduction` via `plot_offspec_compare.py`:
       (`plan/db-id-bug-and-interop.md`).
 - [x] Replace the band-crop with the direct-beam flux floor; per-run raw-S validated
       (44161 0.22→1.01, 44159 artifact masked).
-- [ ] **End-to-end PAIRED + flux-floor + BG-off vs `correctReduction`** — blocked
-      2026-05-29 by the `/SNS/users/6ov` sshfs mount (Errno 5 I/O error; the rclone
-      `/SNS/REF_M` raw-NXS mount is fine). Retry when the sshfs mount recovers; expect a
-      uniform near-1.0 (the GUI reference is coarse-binned + smoothed, so a small
-      smoothing/bin difference may remain — quantify then).
+- [x] **End-to-end PAIRED + flux-floor + BG-off + pc-fix vs `correctReduction`**
+      (2026-05-29, mount restored): **median ratio 1.067 (both channels)**, spec ≈
+      offspec (1.06/1.07, no asymmetry), peaks coincident (Δ≈0), log-Pearson 0.89,
+      integrated 1.12–1.18. **From 0.154 → 1.067.** The residual 1.067 is the ~1.07
+      ROI-bookkeeping factor (v1's `round(pos±w/2)+1` pixel ROI vs v2's exact ROI:
+      (55/56)·(1313/1200)≈1.07) — uniform, peaks aligned, NOT a deficit. The deficit is
+      fully resolved by the four fixes: per-channel pc + BG-X off + paired DB + flux floor.
+      Outputs: `/tmp/v1_rematch/{v1_PAIRED_fluxfloor_*.dat,cmp_PAIRED_*.{png,json}}`.
 - [ ] Expose `subtract_background` (and optionally the flux floor) in the GUI off-spec
       dialog so the operator can set BG-X off without the headless script.
 - [ ] (Upstream) fix v2's `quicknxs_io` DB_ID writer; harden v1's reader to warn on a

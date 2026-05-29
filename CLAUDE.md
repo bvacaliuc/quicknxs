@@ -267,10 +267,14 @@ details + before/after numbers in `plan/prompt-31-remaining.md` §4.
   44159 1.05, 44160 1.11, 44161 1.01) once the flux floor (above) replaces the band-crop:
   44161's high-angle signal went 0.22→**1.01** and 44159's artifact is masked. Ruled out
   for the prior ~0.6× residual: smoothing `xysigma0` (median invariant) and a global scale
-  (specular peak already matched). The end-to-end PAIRED + flux-floor + BG-off comparison
-  vs `correctReduction` was blocked 2026-05-29 by the `/SNS/users/6ov` sshfs mount (I/O
-  error; rclone `/SNS/REF_M` raw NXS is fine) — retry when it recovers.
-  See `plan/v1-vs-mantid-deficit-rootcause.md`.
+  (specular peak already matched).
+- **End-to-end RESOLVED (2026-05-29):** load the session13 extraction, Reduce
+  `--db-mode paired --no-subtract-bg` (pc-fix + flux-floor active) vs `correctReduction`:
+  **median ratio 1.067 (both channels)**, spec ≈ offspec (no asymmetry), peaks coincident,
+  log-Pearson 0.89. **From 0.154 → 1.067** — the deficit is gone. The residual 1.067 is the
+  ~1.07 ROI-bookkeeping factor (v1's `round(pos±w/2)+1` pixel ROI vs v2's exact ROI), not a
+  deficit. Four fixes did it: per-channel proton charge + BG-X off + paired DB +
+  flux floor. See `plan/v1-vs-mantid-deficit-rootcause.md` and `plan/db-id-bug-and-interop.md`.
 
 ## buzhug Database — Read-Only Mode
 
