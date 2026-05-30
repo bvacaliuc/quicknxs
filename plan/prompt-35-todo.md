@@ -23,19 +23,49 @@ User confirmed:
   (debounced via DelayedTrigger if available, else direct) and record the v2
   Enter behavior as a *future* harmonization project in the project CLAUDE.md.
 
-## N4 — UI freezes without immediate statusbar/cursor feedback
-- User observed long no-response periods (>30s) for actions including: BG-X
-  toggle, flux-floor change, switching to Overview after reduction. After
-  enabling debug logging the timing should be visible in `~/.quicknxs/debug.log`.
-- **Investigate:** read the log for the timestamps the user described and
-  identify which handlers ran without a `busy()` / `_activity_transient()`
-  wrapper. Likely culprits: `_onOffspecBgX` → `plot_offspec` (heavy: re-reads
-  every reduction-list file + computes off-spec per channel; per CLAUDE.md
-  responsiveness section, the OffSpec Preview is ~1.4s **per re-render**), and
-  the smoothing-parameters dialog open.
-- **Plan:** wrap the off-spec replot in `with self.busy('Off-specular preview…')`
-  so the user sees the message + wait cursor instantly; for high-frequency
-  inputs (valueChanged) use `_activity_transient` to coalesce.
+## N4 — UI freezes without immediate statusbar/cursor feedback (PARTIAL FIX 2026-05-30)
+- Parsed `~/.quicknxs/debug.log` (1063 events). Biggest non-idle gaps:
+
+  | gap   | after / before                              | meaning |
+  |------:|---------------------------------------------|---------|
+  |  109s | gui_utils @log_call → qio.py:898 export     | reduction → export gap |
+  |   98s | gui_utils @log_call → main_gui:2341         | reduction commit |
+  |   98s | gui_utils 479 → 500                         | reduction body |
+  |   65s | gui_logging.setup → loadExtraction          | startup-ish |
+  |   57s | qreduce:3363 _calc_offspec → qreduce:380    | off-spec extract → next channel |
+  |   43s | gui_utils 500 → 546                         | reduction inner |
+  |   38s | qreduce:3363 _calc_offspec → main_gui:1857  | off-spec extract → next handler |
+  |   27s | qreduce:3363 _calc_offspec → main_gui:686   | off-spec extract |
+  |   26s | qreduce:3363 _calc_offspec → main_gui:686   | off-spec extract |
+
+- **Root cause** of the BG-X / flux-floor freeze: `plot_offspec` iterates every
+  reduction-list file and re-runs `OffSpecular` per channel — with 3 runs × 2
+  channels that's ~6 invocations of off-spec extraction at ~5s each = ~30s. No
+  `busy()` wrapper, so the user just sees a frozen UI.
+- **Applied (this commit):** wrap `_replotOffspec` in `with self.busy('Off-specular
+  preview...')` so the statusbar message + wait cursor fire INSTANTLY when bgActive
+  toggles or the flux-floor changes. The actual work is still slow; the user now
+  sees feedback throughout.
+- **Remaining for next session:**
+  - **Coalesce valueChanged** so spinning the flux-floor spinbox doesn't queue
+    multiple 30s recomputes: switch the connection to a DelayedTrigger / QTimer
+    (≈300 ms) or use `_activity_transient` for the tick stream + a settled
+    redraw. Currently every step of the spinbox triggers a full off-spec replot.
+  - **Speed up `plot_offspec` itself**: re-load and re-extract on every preview
+    is the cost (see the 25–57s gaps after `_calc_offspec`). Options: cache
+    per-run `OffSpecular` results keyed on `(file, channel, item.options)`
+    until the inputs change; or recompute only the channels visible in the
+    plot grid (currently all 4 are iterated even if only 2 channels exist).
+  - **N4 sub-item — reduction dialog statusbar feedback** (N5): the
+    statusbar text was stuck at "Opening reduction dialog…" during reduction.
+    The 109s and 98s gaps in the export/reduce path confirm the dialog runs
+    long without updating the statusbar. Wire the reduction loop to update the
+    main statusbar (or propagate the dialog's progress into it) at least once
+    per file/channel.
+  - **N4 sub-item — Overview-tab switch 30s freeze**: gather the timestamp the
+    user observed and trace which slot ran; almost certainly missing a
+    `busy()`. Common culprits: `plotActiveTab` on tab switch (matplotlib
+    `draw()` cost per CLAUDE.md responsiveness section).
 
 ## N5 — Off-spec preview vs smoothing-parameters dialog discrepancies
 - Axes scales, colormap, intensity scale differ between the two views.

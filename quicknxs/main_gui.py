@@ -1199,11 +1199,16 @@ class MainGUI(QtWidgets.QMainWindow):
     self.ui.refl.toolbar.set_history_buttons()
 
   @log_call
-  def _replotOffspec(self):
-    '''Re-render the off-spec preview if data is loaded (no-op on empty state).'''
+  def _replotOffspec(self, *_):
+    '''Re-render the off-spec preview if data is loaded (no-op on empty state).
+    Wrapped in ``self.busy`` so the statusbar message + wait cursor fire
+    immediately -- the off-spec preview iterates every reduction-list file and
+    re-runs OffSpecular per channel, so a single replot can take many seconds.
+    Without the wrap the user just sees the GUI freeze (see prompt-35-todo §N4).'''
     if getattr(self, 'active_data', None) is None or not getattr(self, 'reduction_list', None):
       return
-    self.plot_offspec()
+    with self.busy(u'Off-specular preview...'):
+      self.plot_offspec()
 
   def plot_offspec(self):
     '''
