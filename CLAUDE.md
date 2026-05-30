@@ -239,11 +239,17 @@ details + before/after numbers in `plan/prompt-31-remaining.md` §4.
   constant now) was too blunt: it also destroyed run 44161's *legitimate* high-angle
   short-λ signal (0.22× vs paired v2), which sits at the same band edge as 44159's
   artifact. With the floor, all three runs match paired v2 at ~1.0–1.1 (44161 0.22→1.01).
-  Loading + specular still use the 1.6 Å load band. **GUI:** the Off-Specular tab
-  exposes a "Subtract BG (BG X)" checkbox (mirrors/​drives the `bgActive` background
-  checkbox → `subtract_background`) and a "Flux floor 10^" spinbox (`offspec_flux_floor`
-  option); both apply live to the off-spec preview and bake into the reduction options
-  on Reduce (for export). Headless: `reduce_offspec_headless.py --no-subtract-bg`.
+  Loading + specular still use the 1.6 Å load band. **GUI:** BG-X is driven by the
+  existing `bgActive` background checkbox → `subtract_background` (one flag, one
+  control — no redundant off-spec mirror). The "Flux floor 10^" spinbox sits next to
+  the BG controls → `offspec_flux_floor` option. Both apply live to the off-spec
+  preview (toggling bgActive or changing the spinbox replots immediately, v1 style)
+  and bake into the reduction options on Reduce (for export). Headless:
+  `reduce_offspec_headless.py --no-subtract-bg`. **Future** (deferred): v2 uses
+  Enter-to-commit (`editingFinished`) for spinboxes; v1 recalculates on every
+  `valueChanged`. The flux-floor spinbox follows v1 convention; harmonizing v1's
+  spinboxes to the v2 behavior is a future-session project (see
+  `plan/prompt-35-todo.md`).
 - **The broad v1-vs-Mantid intensity "deficit" was a v1 bug, now fixed (2026-05-28):
   v1 did not split proton charge per polarization channel.** `from_event_h5_filtered`
   gave every channel the FULL-run charge; v2/Mantid `MRFilterCrossSections` normalizes

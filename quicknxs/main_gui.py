@@ -225,18 +225,15 @@ class MainGUI(QtWidgets.QMainWindow):
     for i in range(1, 12):
       getattr(self.ui, 'selectedChannel%i'%i).hide()
 
-    # Off-spec BG-X + flux-floor controls (added to the Off-Specular tab).
-    # BG-X is one logical flag (v2 model): this checkbox mirrors the background
-    # checkbox (bgActive) and drives `subtract_background`; the flux floor masks
-    # off-spec TOF bins where the direct-beam flux is below 10^x of its peak
-    # (the artifact-suppressing replacement for the old wavelength band-crop).
-    self._offspecBgX=QtWidgets.QCheckBox(u'Subtract BG (BG X)', self.ui.OffSpec_Tab)
-    self._offspecBgX.setChecked(self.ui.bgActive.isChecked())
-    self._offspecBgX.setToolTip(u'Subtract the background-vs-TOF from the off-spec (and '
-                                u'specular) intensity. Uncheck to match a reference reduced '
-                                u'with BG X off (e.g. correctReduction). Mirrors the '
-                                u'background checkbox.')
-    self._offspecFluxFloor=QtWidgets.QDoubleSpinBox(self.ui.OffSpec_Tab)
+    # Off-spec flux-floor control, added next to the existing background
+    # controls (bgActive / bgCenter / bgWidth). BG-X (subtract_background) is
+    # driven by the existing `bgActive` checkbox -- ONE logical flag, ONE
+    # visible control (no redundant mirror; see plan/prompt-35-todo.md N1).
+    # The flux floor masks off-spec TOF bins where the direct-beam flux is
+    # below 10^x of its peak -- the artifact-suppressing replacement for the
+    # old λ band-crop.  Spinbox uses valueChanged (v1's immediate-recalc
+    # convention).  See CLAUDE.md for the deferred v2-Enter harmonization.
+    self._offspecFluxFloor=QtWidgets.QDoubleSpinBox(self.ui.bgActive.parentWidget())
     self._offspecFluxFloor.setDecimals(1)
     self._offspecFluxFloor.setRange(-8.0, 0.0)
     self._offspecFluxFloor.setSingleStep(0.5)
@@ -244,17 +241,17 @@ class MainGUI(QtWidgets.QMainWindow):
     self._offspecFluxFloor.setToolTip(u'Off-spec: mask TOF bins where the direct-beam flux '
                                       u'is below 10^x of its peak (removes the 1/flux blow-up '
                                       u'at the unilluminated band edges, e.g. run 44159).')
-    _offspec_ctl=QtWidgets.QHBoxLayout()
-    _offspec_ctl.addWidget(self._offspecBgX)
-    _offspec_ctl.addStretch(1)
-    _offspec_ctl.addWidget(QtWidgets.QLabel(u'Flux floor 10^', self.ui.OffSpec_Tab))
-    _offspec_ctl.addWidget(self._offspecFluxFloor)
-    _offspec_grid=self.ui.OffSpec_Tab.layout()
-    if _offspec_grid is not None:
-      _offspec_grid.addLayout(_offspec_ctl, _offspec_grid.rowCount(), 0, 1, 2)
-    self._offspecBgX.toggled.connect(self._onOffspecBgX)
-    self.ui.bgActive.toggled.connect(self._offspecBgX.setChecked)
-    self._offspecFluxFloor.editingFinished.connect(self._replotOffspec)
+    _fflabel=QtWidgets.QLabel(u'Flux floor 10^', self.ui.bgActive.parentWidget())
+    _fflabel.setToolTip(u'Off-spec direct-beam flux floor (off-spec only).')
+    _bg_grid=self.ui.bgActive.parentWidget().layout()
+    if _bg_grid is not None and hasattr(_bg_grid, 'addWidget'):
+      _row=_bg_grid.rowCount()
+      _bg_grid.addWidget(_fflabel, _row, 0, 1, 1)
+      _bg_grid.addWidget(self._offspecFluxFloor, _row, 1, 1, 2)
+    # Immediate recalc on every value change (v1 convention) + re-render when
+    # bgActive toggles so BG-X is reflected in the off-spec preview live.
+    self._offspecFluxFloor.valueChanged.connect(self._replotOffspec)
+    self.ui.bgActive.toggled.connect(self._replotOffspec)
 
     # create progress bar in statusbar
     self.eventProgress=QtWidgets.QProgressBar(self.ui.statusbar)
@@ -1202,13 +1199,6 @@ class MainGUI(QtWidgets.QMainWindow):
     self.ui.refl.toolbar.set_history_buttons()
 
   @log_call
-  def _onOffspecBgX(self, checked):
-    '''Keep the off-spec BG-X checkbox in sync with the background checkbox
-    (one logical flag) and re-render the off-spec preview.'''
-    if self.ui.bgActive.isChecked()!=checked:
-      self.ui.bgActive.setChecked(checked)
-    self._replotOffspec()
-
   def _replotOffspec(self):
     '''Re-render the off-spec preview if data is loaded (no-op on empty state).'''
     if getattr(self, 'active_data', None) is None or not getattr(self, 'reduction_list', None):

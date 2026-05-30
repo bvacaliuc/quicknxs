@@ -88,21 +88,20 @@ class MainGUIGeneral(unittest.TestCase):
     self.assertNotEqual(ystart, self.gui.ui.refYPos.value(), 'y-fitting')
     self.assertNotEqual(ywstart, self.gui.ui.refYWidth.value(), 'yw-fitting')
 
-  def test_offspec_bgx_and_flux_floor_controls(self):
-    '''The Off-Specular tab exposes a BG-X checkbox (mirroring bgActive) and a
-    flux-floor spinbox (default = MANTID_OFFSPEC_FLUX_FLOOR, as log10).'''
+  def test_offspec_flux_floor_control(self):
+    '''The flux-floor spinbox lives next to the background controls (no redundant
+    BG-X mirror); default value = MANTID_OFFSPEC_FLUX_FLOOR (as log10); it is
+    parented under the same widget as bgActive; v1 immediate-recalc convention
+    (valueChanged-connected, not editingFinished).'''
     from quicknxs.qreduce import MANTID_OFFSPEC_FLUX_FLOOR
-    self.assertTrue(hasattr(self.gui, '_offspecBgX'))
     self.assertTrue(hasattr(self.gui, '_offspecFluxFloor'))
+    self.assertFalse(hasattr(self.gui, '_offspecBgX'),
+                     'BG-X mirror was removed; bgActive is the single BG-X control')
     self.assertAlmostEqual(10**self.gui._offspecFluxFloor.value(),
                            MANTID_OFFSPEC_FLUX_FLOOR, places=6)
-    # BG-X and the background checkbox are one logical flag (two-way sync)
-    self.gui.ui.bgActive.setChecked(True)
-    self.assertTrue(self.gui._offspecBgX.isChecked())
-    self.gui.ui.bgActive.setChecked(False)
-    self.assertFalse(self.gui._offspecBgX.isChecked())
-    self.gui._offspecBgX.setChecked(True)
-    self.assertTrue(self.gui.ui.bgActive.isChecked())
+    # parented next to bgActive (same parent widget) so the BG controls cluster
+    self.assertIs(self.gui._offspecFluxFloor.parentWidget(),
+                  self.gui.ui.bgActive.parentWidget())
 
   def test_eventTofBins_max_supports_v2_resolution(self):
     # v2 reduces off-spec at 400 TOF bins; Load Extraction reads at this
