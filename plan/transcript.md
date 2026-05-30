@@ -2642,6 +2642,68 @@ I have restored the sshfs mounts, please continue with the paired end-to-end che
 
 Expose subtract_background and flux floor in the GUI off-spec dialog.
 
+```
+● Done — both settings are now in the Off-Specular tab. Committed 718fc8c.
+
+  What I added
+  
+  - offspec_flux_floor — new qreduce per-run option (in Reflectivity.DEFAULT_OPTIONS, default MANTID_OFFSPEC_FLUX_FLOOR=1e-3); _calc_offspec now reads it.
+  - Off-Specular tab controls (added programmatically in main_gui.py, so both default/docked interfaces get them, no .ui recompile):
+    - "Subtract BG (BG X)" checkbox → subtract_background.
+    - "Flux floor 10^" spinbox → offspec_flux_floor (default −3 = 1e‑3).
+  - Wiring: both flow into the calcReflParams options dict (baked at Reduce, so export honors them) and are applied live in plot_offspec (preview updates immediately).
+
+  Design choice (worth knowing)
+
+  BG-X is one logical flag (v2's model — it affects specular and off-spec). Rather than add a second, redundant BG control, I two-way-synced the new "Subtract BG (BG X)" checkbox with the existing background checkbox (bgActive), which
+  now drives the clean subtract_background flag. So you get the BG-X toggle visible in the off-spec tab, but there's still a single source of truth. The flux floor is genuinely off-spec-specific and new.
+
+  Tests (headless/offscreen, green)
+  
+  - main_gui_test.test_offspec_bgx_and_flux_floor_controls — controls exist, default flux floor = 1e‑3, BG-X ↔ bgActive two-way sync.
+  - qreduce_test flux-floor tests now exercise the offspec_flux_floor option path.
+  - GUI construction + reduce tests still pass.
+
+  Needs your eyes (display required)
+
+  I can't click through a live window. Quick smoke test:
+  1. Load a polarized REF_M run set, reduce a few into the list, open the Off-Specular tab → confirm the checkbox + spinbox appear under the Imin/Imax row.
+  2. Toggle Subtract BG (BG X) → it should track the main background checkbox and the preview wings should change (BG off ⇒ brighter wings). 
+  3. Bump Flux floor 10^ (−3 → −2, Enter) → preview re-renders (more edge masking); set it very low (−8) and you should see the 44159-type edge spike reappear.
+  4. Export off-spec → the .dat reflects the settings baked at the last Reduce.
+
+  Ready to push: 718fc8c on feature/read-event-nexus.
+```
+
+### Prompt 34.4
+
+I have performed the live test. My artifacts are saved in ~/shared/REF_M/QuickNXSv1/session13/**. To answer your questions:
+
+Re: 1. I confirm the checkbox + spinbox
+Re: 2. I confirm the subtract BG tracks the main background and the preview changes when toggled (quicknxsv1-offspec-no-bgx.png)
+Re: 3. I confirm the change in flux floor spinbox changes the preview (quicknxsv1-offspec-no-bgx-flux-floor-10e{-2,-8}.png)
+Re: 4. I confirm reduction, but I am unsure that the settings are reflected as we are still not comparable to correctReduction
+
+I have the following notes on UI usability, however:
+
+N1. If the 'Subtract BG' on the Off-Specular tab is just a mirror of the main background checkbox, why have it in two places?
+N2. Along the lines of A1, can the Flux floor 10^ spinbox be moved to the main background checkbox?
+N3. The spinbox behavior differs from the rest: In v1 changing any value of the spinbox causes *immediate* recalculation. In v2 one must press Enter before the recalculation starts. The new flux floor spinbox follows v2 behavior contrary to the rest of the spin boxes. I have spoken with the scientists about this and they have accepted the new v2 behavior (in v2). Converting v1 is a project to be dealt with in another session. For now, please harmonize the flux floor spinbox with the v1 behavior and make a note about this in the project CLAUDE.md for future agents.
+N4. I observed many cases where an action "froze" the UI for some time with no obvious report. Recall that we had done work to make sure that *all actions* produced an immediate feedback in the statusbar text and a spinning cursor for long runs. One very obvious one was when I switched back to the Overview tab: There was a very long (30s?) period of *no response*, before the feedback in the statusbar came thru and by that time the UI had changed. I then enabled the DEBUG log, so ~/.quicknx/debug.log shows timelines. I performed the same operations again. Please review the logs and see if you can identify the reason for the lack of feedback. If you can, please make a plan for the next prompt (I guess that would be prompt-35-todo.md) to resolve this and other identified issues.
+  - change flux floor, toggle Subtract BG (no response for >30s, then box goes gray for >30s, then check appears and UI is responsive again)
+  - toggle Subtract BG (box goes gray for >30s, then check disappears and UI is responsive again)
+  - select Overview tab (this time, the feedback happened immediately...)
+  - after doing the reduction for N5 below, I went back to change the flux floor (very long no response)
+  - then I changed the colorbar to 'jet'. This time I did get the statusbar message right away
+N5. For reduction, I observe that the off specular preview has different axes scales, colormap and intensity scale than the off specular smoothing parameters dialog. See quicknxsv1-offspec-smoothing-parameters-no-bgx-flux-floor-10e-3.png. I would like the off specular preview to begin with full scale rendering (like in the smoothing parameters dialog) and I would like to select the same colormap (I like the one in the smoothing parameters dialog).
+  - in the main window, in plot options, there is a Colorbar checkbox and a drop down that holds the value 'gist_ncar'. Is this where the colormap is selected? If so what is the one used for the offspec smoothing parameters dialog? If they differ, please ensure that all plots use the same colormap defined in the plot options. Otherwise, please investigate the dichotomy.
+  - I changed the sigma value to 0.000525 (see quicknxsv1-offspec-smoothing-parameters-no-bgx-flux-floor-10e-3-000525.png). Notice the black spot at (0.0, 0.10). It would seem to be a more appropriate default. There is also the anisotropy of the spot. I understand this is an artifact of the single entry. Please add the sigma value treatment (default size, anisotropy, x/y coupled calculations) to the prompt-35-todo.md to tackle in a future session.
+  - I performed the reduction. I noticed the pop up progress box, but the statusbar text was frozen at 'Opening reduction dialog...'. Is there a way to update that in the dialog (at least once when performing the reductions)?
+N6. I performed a reduction with no Subtract BG, flux floor 10^-8 and smoothing parameters similar to the ones that v4.17.0rc5 used and the comparison is still pretty far away (compare-v4.3.0rc1-vs-v1.3.0dev49-flux-floor-10e-8.{png, txt}). Would you have a look at what parameters are missing/different so as to cause the difference?
+
+One point to note: the power has gone off at this worksite. We are running on battery backup for the internet. The UPS running the worksations will run out of power in approx 15min. The UPS running the internet will run out of power in approx 60min. The machine you are running on is a laptop with an old battery and I do not know how long it will last. So please checkpoint often, write .md files to the filesystem more often than you normally do for the rest of this session. Because of this, after making the plans, you may go ahead and execute them. If there are any design choices, do document them, but proceed according to your recommended option. If you get close to the 60min mark, go ahead and update the prompt-35-todo.md file with the remaining investigations and prepare for a hard shutdown. I myself are leaving this worksite for another, so you are on your own. Good luck!
+
+
 
 
 
