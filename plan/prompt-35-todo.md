@@ -67,13 +67,42 @@ User confirmed:
     `busy()`. Common culprits: `plotActiveTab` on tab switch (matplotlib
     `draw()` cost per CLAUDE.md responsiveness section).
 
+## N6 — Comparison vs `correctReduction` shows identical metrics for default + 10^-8 (FIXED CAUSE 2026-05-30)
+- The user's two comparison `.txt` files (default flux-floor and `flux-floor-10e-8`)
+  have BYTE-IDENTICAL metrics (median 0.547, spec 0.904, offspec 0.528).
+- Root cause: the off-spec flux-floor (and BG-X) **bake into `refl.options` only at
+  `calcReflParams` time** (i.e. when each run is added to the reduction list). The
+  user changed the spinbox AFTER reducing, so the stored options retained the old
+  values; the export silently used them.
+- **Applied (this commit):** `Reducer.execute()` now refreshes
+  `subtract_background` and `offspec_flux_floor` on every `refl.options` from the
+  live GUI before the Exporter is built. The off-spec extraction
+  (`Exporter.extract_offspecular`) constructs `OffSpecular()` fresh from
+  `refl.options`, so the new values propagate to export.
+  - Note (specular path): the specular R(Q) is already computed in each
+    Reflectivity object, so changing `subtract_background` here does NOT
+    recompute the specular; only the off-spec re-extracts. If the user also
+    wants the specular to honor a late BG-X toggle, they need to re-Calc each
+    item (existing workflow). Documented for the next session.
+- **User-facing follow-up:** with this fix the user should re-run the same
+  reduction (flux floor 10^-8, BG off) and now see DIFFERENT metrics; if they
+  still don't match `correctReduction` (v4.3.0rc1), the residual is the
+  smoothing-parameter mismatch (v4.17.0rc5-like vs v4.3.0rc1 defaults), not a
+  reduction-engine issue.  Yesterday's matched run (paired + flux-floor 1e-3 +
+  BG-off + v1 default smoothing) gave median 1.067 — the user's run with flux
+  floor 10^-8 + v4.17.0rc5-like smoothing will differ in the off-spec wings
+  because of the smoothing kernel differences.
+
 ## N5 — Off-spec preview vs smoothing-parameters dialog discrepancies
 - Axes scales, colormap, intensity scale differ between the two views.
-- **Colormap:** main plot options has a "Colorbar" checkbox + dropdown
-  (user sees `gist_ncar` selected). The smoothing-parameters dialog uses a
-  different colormap. Locate where the smoothing dialog sets its cmap; either
-  (a) bind it to the same `self.color` (`misc.cmap` config) the main offspec
-  uses, or (b) document the dichotomy if there's a deliberate reason.
+- **Colormap (FIXED 2026-05-30):** the smoothing dialog's `plot.pcolormesh`
+  call (`gui_utils.py:759`) had no `cmap=` kwarg, so it fell through to
+  matplotlib's default (viridis), whereas the main off-spec preview uses
+  `cmap=self.color` from the Plot-Options dropdown (default `gist_ncar`).
+  `SmoothDialog.drawPlot` now reads `self.parent().color` and passes it to
+  pcolormesh, so both views use the SAME colormap from Plot Options. If the
+  user prefers viridis, change it in the Plot Options dropdown — it now
+  applies everywhere.
 - **Intensity scale / axes:** the smoothing-parameters dialog renders the full
   un-clipped intensity range with its own auto-limits. The off-spec preview is
   clipped to `offspecImin`/`offspecImax` (user-set). The user wants the

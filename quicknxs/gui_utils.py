@@ -82,6 +82,23 @@ class Reducer(object):
     self.exported_files_plots=[]
     self.exported_files_data=[]
 
+    # Refresh off-spec settings (BG-X / flux floor) from the live GUI so a
+    # change after the last calcReflParams takes effect on export.  Off-spec
+    # extraction happens inside Exporter.extract_offspecular and constructs
+    # OffSpecular() fresh from refl.options, so updating the options dict here
+    # propagates to the export.  (Without this the user's spinbox/checkbox
+    # changes silently used the *baked* values; see plan/prompt-35-todo.md N6.)
+    _pw=getattr(self, '_parent_window', None)
+    if _pw is not None and hasattr(_pw, 'ui') and hasattr(_pw, '_offspecFluxFloor'):
+      try:
+        _bgx=_pw.ui.bgActive.isChecked()
+        _ff=10**_pw._offspecFluxFloor.value()
+        for refl in self.refls:
+          refl.options['subtract_background']=_bgx
+          refl.options['offspec_flux_floor']=_ff
+      except Exception:
+        pass
+
     # calculate and collect reflectivities
     self.exporter=Exporter(self.channels, self.refls,
                            sample_length=opts['sampleSize'],
@@ -706,8 +723,17 @@ class SmoothDialog(QDialog):
         else:
           xdata=ki_z
           ydata=kf_z
-        plot.pcolormesh(xdata, ydata, I, log=True,
-                        imin=1e-6, imax=1., shading='gouraud')
+        # Use the same colormap the main window uses for its off-spec preview
+        # (self.parent() is the MainGUI; it sets `self.color` from the
+        # Plot-Options dropdown).  Without this, this dialog would inherit
+        # matplotlib's default (viridis) while the main preview shows the
+        # configured map -- a confusing inconsistency reported in
+        # plan/prompt-35-todo.md N5.
+        _pcm=dict(log=True, imin=1e-6, imax=1., shading='gouraud')
+        _cmap=getattr(self.parent(), 'color', None)
+        if _cmap is not None:
+          _pcm['cmap']=_cmap
+        plot.pcolormesh(xdata, ydata, I, **_pcm)
         # accumulate the data extent (where there is intensity) across items
         mask=I>0
         if not mask.any():
