@@ -246,14 +246,33 @@ class MainGUI(QtWidgets.QMainWindow):
                                       u'(removes the 1/flux blow-up at the unilluminated band '
                                       u'edges, e.g. run 44159).')
     # Label kept short ("Flux 10^") to match the existing "Scale 10^" / "BG X"
-    # naming pattern; full description is in the tooltips.
+    # naming pattern; full description is in the tooltips.  Right-aligned to
+    # match the other labels in the Reflectivity Extraction (Basic) panel.
     _fflabel=QtWidgets.QLabel(u'Flux 10^', self.ui.bgActive.parentWidget())
     _fflabel.setToolTip(u'Off-spec direct-beam flux floor (off-spec only).')
+    _fflabel.setAlignment(QtCore.Qt.AlignRight|QtCore.Qt.AlignTrailing|QtCore.Qt.AlignVCenter)
     _bg_grid=self.ui.bgActive.parentWidget().layout()
     if _bg_grid is not None and hasattr(_bg_grid, 'addWidget'):
       _row=_bg_grid.rowCount()
       _bg_grid.addWidget(_fflabel, _row, 0, 1, 1)
       _bg_grid.addWidget(self._offspecFluxFloor, _row, 1, 1, 1)
+      # The container started with a fixed height (no QScrollArea); adding a row
+      # would otherwise push the QDockWidget/QToolBox page over its limit and
+      # sprout scrollbars.  Recompute the contents' minimum height and propagate
+      # to the enclosing QDockWidget so the panel grows to fit the new row.
+      _container=self.ui.bgActive.parentWidget()
+      _container.updateGeometry()
+      _container.adjustSize()
+      _need_h=_container.sizeHint().height()
+      if _need_h>0:
+        _container.setMinimumHeight(_need_h)
+        _w=_container.parentWidget()
+        while _w is not None:
+          if isinstance(_w, (QtWidgets.QDockWidget, QtWidgets.QToolBox)):
+            _w.setMinimumHeight(max(_w.minimumHeight(), _need_h+10))
+            _w.resize(_w.width(), max(_w.height(), _need_h+10))
+            break
+          _w=_w.parentWidget()
     # Immediate recalc on every value change (v1 convention) + re-render when
     # bgActive toggles so BG-X is reflected in the off-spec preview live.
     self._offspecFluxFloor.valueChanged.connect(self._replotOffspec)
