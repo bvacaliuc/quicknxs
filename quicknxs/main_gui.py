@@ -238,16 +238,22 @@ class MainGUI(QtWidgets.QMainWindow):
     self._offspecFluxFloor.setRange(-8.0, 0.0)
     self._offspecFluxFloor.setSingleStep(0.5)
     self._offspecFluxFloor.setValue(log10(MANTID_OFFSPEC_FLUX_FLOOR))
-    self._offspecFluxFloor.setToolTip(u'Off-spec: mask TOF bins where the direct-beam flux '
-                                      u'is below 10^x of its peak (removes the 1/flux blow-up '
-                                      u'at the unilluminated band edges, e.g. run 44159).')
-    _fflabel=QtWidgets.QLabel(u'Flux floor 10^', self.ui.bgActive.parentWidget())
+    # Constrain spinbox width so it doesn't overflow the Reflectivity Extraction
+    # (Basic) panel and trigger scrollbars (prompt-35: "improper scrollbars").
+    self._offspecFluxFloor.setMaximumWidth(60)
+    self._offspecFluxFloor.setToolTip(u'Off-spec direct-beam flux floor 10^x: mask TOF bins '
+                                      u'where the direct-beam flux is below 10^x of its peak '
+                                      u'(removes the 1/flux blow-up at the unilluminated band '
+                                      u'edges, e.g. run 44159).')
+    # Label kept short ("Flux 10^") to match the existing "Scale 10^" / "BG X"
+    # naming pattern; full description is in the tooltips.
+    _fflabel=QtWidgets.QLabel(u'Flux 10^', self.ui.bgActive.parentWidget())
     _fflabel.setToolTip(u'Off-spec direct-beam flux floor (off-spec only).')
     _bg_grid=self.ui.bgActive.parentWidget().layout()
     if _bg_grid is not None and hasattr(_bg_grid, 'addWidget'):
       _row=_bg_grid.rowCount()
       _bg_grid.addWidget(_fflabel, _row, 0, 1, 1)
-      _bg_grid.addWidget(self._offspecFluxFloor, _row, 1, 1, 2)
+      _bg_grid.addWidget(self._offspecFluxFloor, _row, 1, 1, 1)
     # Immediate recalc on every value change (v1 convention) + re-render when
     # bgActive toggles so BG-X is reflected in the off-spec preview live.
     self._offspecFluxFloor.valueChanged.connect(self._replotOffspec)

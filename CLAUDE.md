@@ -241,8 +241,10 @@ details + before/after numbers in `plan/prompt-31-remaining.md` §4.
   artifact. With the floor, all three runs match paired v2 at ~1.0–1.1 (44161 0.22→1.01).
   Loading + specular still use the 1.6 Å load band. **GUI:** BG-X is driven by the
   existing `bgActive` background checkbox → `subtract_background` (one flag, one
-  control — no redundant off-spec mirror). The "Flux floor 10^" spinbox sits next to
-  the BG controls → `offspec_flux_floor` option. Both apply live to the off-spec
+  control — no redundant off-spec mirror). The compact "Flux 10^" spinbox (label
+  shortened from "Flux floor 10^" and width capped at 60 px so the Basic Extraction
+  panel doesn't overflow into scrollbars) sits next to the BG controls →
+  `offspec_flux_floor` option. Both apply live to the off-spec
   preview (toggling bgActive or changing the spinbox replots immediately, v1 style)
   and bake into the reduction options on Reduce (for export). Headless:
   `reduce_offspec_headless.py --no-subtract-bg`. **Future** (deferred): v2 uses
