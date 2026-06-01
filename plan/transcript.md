@@ -2703,8 +2703,40 @@ N6. I performed a reduction with no Subtract BG, flux floor 10^-8 and smoothing 
 
 One point to note: the power has gone off at this worksite. We are running on battery backup for the internet. The UPS running the worksations will run out of power in approx 15min. The UPS running the internet will run out of power in approx 60min. The machine you are running on is a laptop with an old battery and I do not know how long it will last. So please checkpoint often, write .md files to the filesystem more often than you normally do for the rest of this session. Because of this, after making the plans, you may go ahead and execute them. If there are any design choices, do document them, but proceed according to your recommended option. If you get close to the 60min mark, go ahead and update the prompt-35-todo.md file with the remaining investigations and prepare for a hard shutdown. I myself are leaving this worksite for another, so you are on your own. Good luck!
 
+```
+  Shipped this session
 
+  - N1+N2 (UI consolidation, 0e2b5c0) — removed the redundant BG-X mirror from the Off-Specular tab; moved the Flux floor 10^ spinbox to sit next to bgActive/bgCenter/bgWidth in the BG controls. bgActive is the single BG-X control.
+  - N3 (v1 immediate-recalc) — flux-floor spinbox now uses valueChanged instead of editingFinished. The v1→v2 (Enter-to-commit) harmonization is noted as a future-session project in the project CLAUDE.md and plan/prompt-35-todo.md.
+  - N4 (freeze feedback, 3a4244c) — debug log shows 25–57s gaps after _calc_offspec (3 runs × 2 channels × ~5s each). _replotOffspec is now wrapped in self.busy('Off-specular preview...') so the wait cursor + statusbar message fire
+  instantly on BG-X toggle or flux-floor change. The work is still slow; the user sees feedback throughout.
+  - N5 (colormap unification, 4c7b2d0) — SmoothDialog.drawPlot had no cmap= and inherited matplotlib's default (viridis), while the main preview used cmap=self.color (gist_ncar). It now reads self.parent().color so both use the same
+  colormap from Plot Options. Change it once there, it applies everywhere.
+  - N6 (export refresh, 4c7b2d0) — the two flux-floor-10e-{3,8} exports had byte-identical metrics because off-spec settings baked into refl.options only at calcReflParams time. Reducer.execute() now refreshes subtract_background and
+  offspec_flux_floor from the live GUI on every refl before the Exporter runs, so the user's late toggles actually take effect on Reduce → export.
 
+  Deferred to next session (in plan/prompt-35-todo.md)
+  
+  - Coalesce the spinbox valueChanged so spinning doesn't queue multiple 30s replots.
+  - Cache OffSpecular results per (file, channel, options) to make preview fast.
+  - Reduction-dialog statusbar updates (statusbar froze at "Opening reduction dialog…").
+  - Overview-tab switch trace (find the missing busy() wrapper).
+  - Off-spec preview start with full-scale rendering (like the smoothing dialog).
+  - Smoothing σ defaults + anisotropy + x/y coupling.
+  - Specular re-compute on late BG-X toggle (the export refresh only re-extracts off-spec; specular R(Q) is already computed and unchanged).
+  - Upstream v2 quicknxs_io DB_ID writer fix; harden v1's reader to warn on 1/1/1 with a multi-DB block.
 
+  Quick numerical answer for N6
 
+  Your two comparison .txts had identical metrics because the spinbox change wasn't reaching the export. With 4c7b2d0 it will. Note: even after that, matching correctReduction (v4.3.0rc1) requires v4.3.0rc1-style smoothing, not
+  v4.17.0rc5 — yesterday's matched run (paired + flux floor 1e-3 + BG-off + v1 default smoothing) gave median 1.067; v4.17.0rc5-like smoothing will diverge in the off-spec wings.
+
+  Push-ready
+  
+  feature/read-event-nexus is 3 ahead of origin: 0e2b5c0, 3a4244c, 4c7b2d0. Tests green (qreduce + GUI). Good luck with the trip.
+```
+
+### Prompt 34.5
+
+Ok, one last item before we close this session. I checked the gui and I notice the following: The reflectivity extraction control has got scrollbars now. The addition of the flux floor control has overloaded the scaling. See ~/shared/REF_M/QuickNXSv1/prompt34/quicknxsv1-reflectivity-extraction-improper-scrollbars.png - Is there an adjustment you can make? Perhaps not so wide of a spinbox for the Flux floor 10^ spinbox if its only 1 or 2 digits?
 
