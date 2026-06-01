@@ -225,54 +225,36 @@ class MainGUI(QtWidgets.QMainWindow):
     for i in range(1, 12):
       getattr(self.ui, 'selectedChannel%i'%i).hide()
 
-    # Off-spec flux-floor control, added next to the existing background
-    # controls (bgActive / bgCenter / bgWidth). BG-X (subtract_background) is
-    # driven by the existing `bgActive` checkbox -- ONE logical flag, ONE
-    # visible control (no redundant mirror; see plan/prompt-35-todo.md N1).
-    # The flux floor masks off-spec TOF bins where the direct-beam flux is
-    # below 10^x of its peak -- the artifact-suppressing replacement for the
-    # old λ band-crop.  Spinbox uses valueChanged (v1's immediate-recalc
-    # convention).  See CLAUDE.md for the deferred v2-Enter harmonization.
-    self._offspecFluxFloor=QtWidgets.QDoubleSpinBox(self.ui.bgActive.parentWidget())
+    # Off-spec flux-floor control, placed in the Off-Specular tab (the
+    # Reflectivity Extraction (Basic) QToolBox page is sized for its original 6
+    # rows; adding a row there sprouted scrollbars regardless of how we
+    # manipulated the geometry -- see prompt-35-todo.md N1).  BG-X
+    # (subtract_background) is driven by the existing `bgActive` checkbox --
+    # ONE logical flag, ONE visible control (no redundant mirror).  The flux
+    # floor masks off-spec TOF bins where the direct-beam flux is below 10^x
+    # of its peak -- the artifact-suppressing replacement for the old λ
+    # band-crop.  Spinbox uses valueChanged (v1's immediate-recalc convention);
+    # see CLAUDE.md for the deferred v2-Enter harmonization.
+    self._offspecFluxFloor=QtWidgets.QDoubleSpinBox(self.ui.OffSpec_Tab)
     self._offspecFluxFloor.setDecimals(1)
     self._offspecFluxFloor.setRange(-8.0, 0.0)
     self._offspecFluxFloor.setSingleStep(0.5)
     self._offspecFluxFloor.setValue(log10(MANTID_OFFSPEC_FLUX_FLOOR))
-    # Constrain spinbox width so it doesn't overflow the Reflectivity Extraction
-    # (Basic) panel and trigger scrollbars (prompt-35: "improper scrollbars").
     self._offspecFluxFloor.setMaximumWidth(60)
     self._offspecFluxFloor.setToolTip(u'Off-spec direct-beam flux floor 10^x: mask TOF bins '
                                       u'where the direct-beam flux is below 10^x of its peak '
                                       u'(removes the 1/flux blow-up at the unilluminated band '
                                       u'edges, e.g. run 44159).')
-    # Label kept short ("Flux 10^") to match the existing "Scale 10^" / "BG X"
-    # naming pattern; full description is in the tooltips.  Right-aligned to
-    # match the other labels in the Reflectivity Extraction (Basic) panel.
-    _fflabel=QtWidgets.QLabel(u'Flux 10^', self.ui.bgActive.parentWidget())
+    _fflabel=QtWidgets.QLabel(u'Flux 10^', self.ui.OffSpec_Tab)
     _fflabel.setToolTip(u'Off-spec direct-beam flux floor (off-spec only).')
     _fflabel.setAlignment(QtCore.Qt.AlignRight|QtCore.Qt.AlignTrailing|QtCore.Qt.AlignVCenter)
-    _bg_grid=self.ui.bgActive.parentWidget().layout()
-    if _bg_grid is not None and hasattr(_bg_grid, 'addWidget'):
-      _row=_bg_grid.rowCount()
-      _bg_grid.addWidget(_fflabel, _row, 0, 1, 1)
-      _bg_grid.addWidget(self._offspecFluxFloor, _row, 1, 1, 1)
-      # The container started with a fixed height (no QScrollArea); adding a row
-      # would otherwise push the QDockWidget/QToolBox page over its limit and
-      # sprout scrollbars.  Recompute the contents' minimum height and propagate
-      # to the enclosing QDockWidget so the panel grows to fit the new row.
-      _container=self.ui.bgActive.parentWidget()
-      _container.updateGeometry()
-      _container.adjustSize()
-      _need_h=_container.sizeHint().height()
-      if _need_h>0:
-        _container.setMinimumHeight(_need_h)
-        _w=_container.parentWidget()
-        while _w is not None:
-          if isinstance(_w, (QtWidgets.QDockWidget, QtWidgets.QToolBox)):
-            _w.setMinimumHeight(max(_w.minimumHeight(), _need_h+10))
-            _w.resize(_w.width(), max(_w.height(), _need_h+10))
-            break
-          _w=_w.parentWidget()
+    _offspec_row=QtWidgets.QHBoxLayout()
+    _offspec_row.addStretch(1)
+    _offspec_row.addWidget(_fflabel)
+    _offspec_row.addWidget(self._offspecFluxFloor)
+    _offspec_grid=self.ui.OffSpec_Tab.layout()
+    if _offspec_grid is not None and hasattr(_offspec_grid, 'addLayout'):
+      _offspec_grid.addLayout(_offspec_row, _offspec_grid.rowCount(), 0, 1, 2)
     # Immediate recalc on every value change (v1 convention) + re-render when
     # bgActive toggles so BG-X is reflected in the off-spec preview live.
     self._offspecFluxFloor.valueChanged.connect(self._replotOffspec)

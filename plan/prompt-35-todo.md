@@ -9,12 +9,17 @@ User confirmed:
 - Flux-floor changes the preview at -2 and -8 (see PNGs in session13/).
 - Reduction runs, but comparability to `correctReduction` is uncertain (see N6).
 
-## N1 + N2 — Consolidate UI: BG-X stays at the main BG section; move flux floor there too
-- The BG-X checkbox in the Off-Specular tab was a mirror of `bgActive`. Two
-  controls for one logical flag confused the user. Remove the off-spec BG-X
-  mirror; keep only `bgActive` (in the existing BG controls). Move the
-  "Flux floor 10^" spinbox to sit alongside `bgActive` so all BG-related
-  controls live together.
+## N1 + N2 — Consolidate UI (resolved 2026-06-01)
+- BG-X: the off-spec mirror checkbox was removed — `bgActive` is the single
+  BG-X control.
+- Flux floor placement: **reverted to the Off-Specular tab.** Attempt to put it
+  next to `bgActive` in the Reflectivity Extraction (Basic) QToolBox page made
+  the page sprout vertical (and sometimes horizontal) scrollbars regardless of
+  how we tried to expand the page widget's geometry, because the QToolBox page
+  was originally sized for its 6-row content and adding a row pushed it past
+  the allocated section height. Compact label ("Flux 10^") and width-capped
+  spinbox (60 px) are kept; the control sits in the OffSpec tab next to the
+  Imin/Imax controls, where there is room. Documented in `CLAUDE.md`.
 
 ## N3 — Harmonize flux-floor spinbox with v1 immediate-recalc behavior
 - v1's spinboxes recompute on every `valueChanged`; v2 waits for Enter

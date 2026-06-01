@@ -89,9 +89,10 @@ class MainGUIGeneral(unittest.TestCase):
     self.assertNotEqual(ywstart, self.gui.ui.refYWidth.value(), 'yw-fitting')
 
   def test_offspec_flux_floor_control(self):
-    '''The flux-floor spinbox lives next to the background controls (no redundant
-    BG-X mirror); default value = MANTID_OFFSPEC_FLUX_FLOOR (as log10); it is
-    parented under the same widget as bgActive; v1 immediate-recalc convention
+    '''The flux-floor spinbox lives in the Off-Specular tab (the Reflectivity
+    Extraction Basic panel is sized for its original rows; adding controls
+    there sprouts scrollbars).  No redundant BG-X mirror; default value =
+    MANTID_OFFSPEC_FLUX_FLOOR (as log10); v1 immediate-recalc convention
     (valueChanged-connected, not editingFinished).'''
     from quicknxs.qreduce import MANTID_OFFSPEC_FLUX_FLOOR
     self.assertTrue(hasattr(self.gui, '_offspecFluxFloor'))
@@ -99,9 +100,9 @@ class MainGUIGeneral(unittest.TestCase):
                      'BG-X mirror was removed; bgActive is the single BG-X control')
     self.assertAlmostEqual(10**self.gui._offspecFluxFloor.value(),
                            MANTID_OFFSPEC_FLUX_FLOOR, places=6)
-    # parented next to bgActive (same parent widget) so the BG controls cluster
-    self.assertIs(self.gui._offspecFluxFloor.parentWidget(),
-                  self.gui.ui.bgActive.parentWidget())
+    # parented under the Off-Specular tab so the Reflectivity Extraction (Basic)
+    # QToolBox page doesn't gain a row and start showing scrollbars
+    self.assertIs(self.gui._offspecFluxFloor.parentWidget(), self.gui.ui.OffSpec_Tab)
 
   def test_eventTofBins_max_supports_v2_resolution(self):
     # v2 reduces off-spec at 400 TOF bins; Load Extraction reads at this
