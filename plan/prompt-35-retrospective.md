@@ -77,3 +77,43 @@ fallback (which would seed y_min=0 regardless and obscure the clamp).
 **Tests run:**
 - `tests/main_gui_test.py::SmoothDialogYClamp` — 3 passed
 
+### T2 part 1 — TOF-binning coverage documentation
+
+**Decision:** create `plan/tof-binning-and-offspec-coverage.md` capturing
+the bin-invariance / coverage / integrated-intensity nuance. Reference
+the comparison script (`plan/scripts/prompt-35/compare_tof_binning.py`)
+and the produced metrics (median ratio 0.93 on a common (Qx, Qz) grid;
+no cells are lost only at TOF=400, 623 cells lost only at TOF=40).
+This addresses the user's request to **document for future sessions**
+so we never re-investigate this.
+
+No code change.
+
+### T2 part 2 — shading change experiment
+
+**Decision: KEEP `shading='gouraud'`.** The experiment shows that
+`shading='nearest'` produces **the same** visible gaps at TOF=40 as
+`gouraud` does. The gaps are not a shading artifact — they are the
+physical Qz region between two runs' bands that neither run measured.
+
+**Evidence:** `plan/scripts/prompt-35/render_offspec_shading.py` renders
+the user's TOF=40 .dat (and TOF=400 .dat) with three shading modes
+side-by-side; the artifacts are:
+
+- `/tmp/render-shading-tof40.png` — gouraud and nearest both show the
+  same horizontal gap between the lowest-angle and middle-angle runs
+- `/tmp/render-shading-tof400.png` — gouraud and nearest both show
+  continuous coverage, no gaps in either shading
+
+So changing the default would not improve the user's experience, and
+the visually-smoother `gouraud` is still the right choice for dense
+plots.
+
+**The actual mitigation** for the user's complaint is:
+1. Document the "use bins=400 for clean off-spec preview" guidance
+   (now captured in `plan/tof-binning-and-offspec-coverage.md`).
+2. Optionally pre-smooth the preview onto a regular (Qx, Qz) grid
+   in `plot_offspec` — deferred, design discussion needed.
+
+No code change for T2 part 2 — only the experiment record above.
+
