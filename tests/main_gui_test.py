@@ -1379,6 +1379,98 @@ class SmoothDataCallbackFix(unittest.TestCase):
     self.assertAlmostEqual(progress_values[-1], 1.0)
 
 
+class OffspecIntensityAutoFit(unittest.TestCase):
+  """N5: the off-spec preview should auto-fit Imin/Imax to the actual
+  data extent on the FIRST plot after a clear-or-load event; user edits
+  of the spinboxes disable further auto-fit until the reduction list is
+  reset again.  See plan/prompt-35-todo.md N5.
+  """
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def _mock_prepared(self, *, I_min, I_max, n_pts=64):
+    """Build a list of (channel_idx, FakeOffSpec, P0, PN) the way
+    plot_offspec's pre-pass would, with a known S-extent."""
+    import numpy as np
+    class FakeOffSpec:
+      pass
+    fos=FakeOffSpec()
+    # S has shape (Nx, NTOF); the visible slice is [:, PN:P0]
+    NTOF=n_pts
+    PN, P0=0, NTOF
+    Nx=4
+    # log-spaced positive values from I_min to I_max
+    S=np.geomspace(I_min, I_max, NTOF)[None, :]*np.ones(Nx)[:, None]
+    fos.S=S
+    return [(0, fos, P0, PN)]
+
+  def test_offspec_intensity_extent_returns_data_bounds(self):
+    """_offspec_intensity_extent should return (I_min, I_max) ≈ data extent
+    with Imin floored by the 1st percentile."""
+    prepared=self._mock_prepared(I_min=1e-6, I_max=1e-2, n_pts=200)
+    I_min, I_max=self.gui._offspec_intensity_extent(prepared)
+    self.assertIsNotNone(I_min)
+    self.assertIsNotNone(I_max)
+    # I_max should match the data max within numeric precision
+    self.assertAlmostEqual(I_max, 1e-2, delta=1e-6)
+    # I_min is the 1st percentile of positive values, floored at 1e-8.
+    # For geomspace this is close to the min, but above the floor.
+    self.assertGreater(I_min, 1e-8)
+    self.assertLess(I_min, 1e-4)
+
+  def test_offspec_intensity_extent_empty_input(self):
+    """No positive values → returns (None, None)."""
+    import numpy as np
+    class FakeOffSpec:
+      pass
+    fos=FakeOffSpec()
+    fos.S=np.zeros((4, 16))
+    I_min, I_max=self.gui._offspec_intensity_extent([(0, fos, 16, 0)])
+    self.assertIsNone(I_min)
+    self.assertIsNone(I_max)
+
+  def test_clearRefList_sets_auto_fit_pending(self):
+    """clearRefList must set the auto-fit flag so the next plot fits."""
+    self.gui._offspec_auto_fit_pending=False
+    self.gui.clearRefList(do_plot=False)
+    self.assertTrue(self.gui._offspec_auto_fit_pending,
+                    'clearRefList should re-enable auto-fit on the next preview')
+
+  def test_user_spinbox_change_disables_auto_fit(self):
+    """A non-programmatic spinbox edit must mark auto-fit as 'done'
+    so a subsequent plot does not re-fit and clobber the user's value."""
+    self.gui._offspec_auto_fit_pending=True
+    self.gui.auto_change_active=False  # user input, not programmatic
+    self.gui._on_offspec_intensity_user_set(-4.0)
+    self.assertFalse(self.gui._offspec_auto_fit_pending,
+                     'a user edit of Imin/Imax should disable auto-fit')
+
+  def test_programmatic_setValue_preserves_auto_fit_state(self):
+    """The slot must be a no-op when auto_change_active is True, so
+    the plot_offspec auto-fit pass does not flip the flag back off
+    mid-fit and re-enable it the user does not want."""
+    self.gui._offspec_auto_fit_pending=True
+    self.gui.auto_change_active=True  # programmatic
+    self.gui._on_offspec_intensity_user_set(-4.0)
+    self.assertTrue(self.gui._offspec_auto_fit_pending,
+                    'programmatic setValue must not flip auto-fit state')
+
+
 class SmoothDialogYClamp(unittest.TestCase):
   """Verify SmoothDialog.drawPlot clamps Y1 >= 0 in (kizmkfz, Qz) /
   (Qx, Qz) modes, where the y axis is Qz (non-physical for Qz < 0)."""

@@ -117,3 +117,51 @@ plots.
 
 No code change for T2 part 2 — only the experiment record above.
 
+### N5 — auto-fit off-spec preview intensity bounds
+
+**Decision:** auto-fit `offspecImin`/`offspecImax` to the data extent on
+the FIRST preview after a clear-or-load event, then respect any user
+edit until the reduction list is reset.
+
+**Implementation:**
+- New class attr `_offspec_auto_fit_pending = True` (default true).
+- `clearRefList` sets it back to True (so a fresh reduction always fits).
+- `plot_offspec` refactored to a two-pass shape: pre-pass collects the
+  `OffSpecular` extraction results in a `prepared` list, then (if flag
+  is set) computes the intensity extent via `_offspec_intensity_extent`
+  and writes Imin / Imax through to the spinboxes under
+  `auto_change_active`; the draw pass then `pcolormesh`'es each entry.
+- The two-pass refactor is a wash on cost in the common case because
+  `NXSData` hits its cache on the inner second read; the refactor pays
+  off precisely because the auto-fit needs the S extent.
+- A new slot `_on_offspec_intensity_user_set` is wired to both
+  `offspecImin.valueChanged` and `offspecImax.valueChanged`; it sets
+  the flag to False when a user edits the spinbox.  The slot is a
+  no-op when `auto_change_active` is True, so the programmatic
+  setValue during auto-fit does not flip the flag back.
+
+**Why the 1st-percentile floor on Imin:** a single near-zero pixel
+(e.g. one bin barely above the flux floor) would otherwise stretch
+the log color scale by 3-5 orders of magnitude and wash out the
+real signal range.  Using the 1st percentile of positive values
+gives an Imin that excludes outlier-low pixels while still showing
+the dimmest physically-real off-spec features.  Floor at 1e-8 to
+keep the result inside the spinbox's range (`offspecImin` min is
+`-20`, but values below `log10(1e-8) = -8` are uncomfortable).
+
+**Why I_max = max (no percentile floor on high end):** the off-spec
+specular peak is the brightest feature and the user wants it
+visible.  A 99th-percentile cap would dim it.
+
+**Regression test** (added in
+`tests/main_gui_test.py::OffspecIntensityAutoFit`):
+- `_offspec_intensity_extent` returns sensible bounds for geomspaced
+  positive S values and (None, None) for an all-zero S.
+- `clearRefList` sets the auto-fit pending flag.
+- User-driven spinbox change (`auto_change_active=False`) disables
+  auto-fit; programmatic change (`auto_change_active=True`) does not.
+
+**Tests run:**
+- `tests/main_gui_test.py::OffspecIntensityAutoFit` — 5 passed
+- regression: 15 tests across `LoadExtractionRoundTrip` (5), `MainGUIReductionActions` (7), `SmoothDialogYClamp` (3) — all pass.
+

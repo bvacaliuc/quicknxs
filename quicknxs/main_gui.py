@@ -138,6 +138,11 @@ class MainGUI(QtWidgets.QMainWindow):
   channels=[] #: Available channels of the active dataset
   active_channel='x' #: Selected channel for the overview and projection plots
   _control_down=False
+  # Auto-fit Imin/Imax to the actual data extent on the FIRST off-spec
+  # preview after a clear-or-add-from-empty event; subsequent user edits
+  # of offspecImin / offspecImax win and disable auto-fit until the
+  # reduction list is cleared again.  See plan/prompt-35-todo.md N5.
+  _offspec_auto_fit_pending=True
   y_bg=0.
   background_dialog=None
   # threads
@@ -259,6 +264,12 @@ class MainGUI(QtWidgets.QMainWindow):
     # bgActive toggles so BG-X is reflected in the off-spec preview live.
     self._offspecFluxFloor.valueChanged.connect(self._replotOffspec)
     self.ui.bgActive.toggled.connect(self._replotOffspec)
+    # Detect user edits of the offspec intensity bounds so an auto-fit
+    # pass does not overwrite them on the next preview.  The 'changed'
+    # signal is also emitted by programmatic setValue, which is why we
+    # also gate on `auto_change_active` inside the slot.
+    self.ui.offspecImin.valueChanged.connect(self._on_offspec_intensity_user_set)
+    self.ui.offspecImax.valueChanged.connect(self._on_offspec_intensity_user_set)
 
     # create progress bar in statusbar
     self.eventProgress=QtWidgets.QProgressBar(self.ui.statusbar)
@@ -1217,12 +1228,54 @@ class MainGUI(QtWidgets.QMainWindow):
     with self.busy(u'Off-specular preview...'):
       self.plot_offspec()
 
+  def _on_offspec_intensity_user_set(self, *_):
+    '''Mark the off-spec intensity bounds as user-controlled when the
+    user edits ``offspecImin`` or ``offspecImax``.  Gated by
+    ``auto_change_active`` so a programmatic setValue inside
+    ``plot_offspec`` (the auto-fit pass) does not flip the flag.
+    '''
+    if self.auto_change_active:
+      return
+    self._offspec_auto_fit_pending=False
+
+  def _offspec_intensity_extent(self, prepared):
+    '''Return (Imin, Imax) covering the positive-S values in the
+    visible (PN:P0) slice of every prepared OffSpecular, or (None, None)
+    if no positive value exists.  Used by ``plot_offspec``'s auto-fit
+    pass.  Imax is the actual max; Imin is the 1st-percentile positive
+    value floored at 1e-8 so a single outlier-low pixel does not stretch
+    the log scale.
+    '''
+    from numpy import concatenate, percentile
+    parts=[]
+    for _ch_i, offspec, P0, PN in prepared:
+      sub=offspec.S[:, PN:P0]
+      pos=sub[sub > 0]
+      if pos.size:
+        parts.append(pos.ravel())
+    if not parts:
+      return None, None
+    all_pos=concatenate(parts)
+    I_max=float(all_pos.max())
+    # 1st-percentile floor so a single near-zero pixel does not push
+    # Imin down by orders of magnitude on the log scale.
+    I_min=float(max(percentile(all_pos, 1.0), 1e-8))
+    if I_min >= I_max:
+      return None, None
+    return I_min, I_max
+
   def plot_offspec(self):
     '''
     Create an offspecular plot for all channels of the datasets in the
     reduction list. The user can define upper and lower bounds for the
     plotted intensity and select the coordinates to be ither kiz-kfz vs. Qz,
     Qx vs. Qz or kiz vs. kfz.
+
+    If ``_offspec_auto_fit_pending`` is True (set by ``clearRefList`` and
+    by the first add to an empty reduction list), the intensity bounds
+    spinboxes are auto-fit to the actual data extent on this pass and the
+    flag is cleared.  A subsequent user edit of either bound disables
+    further auto-fit until the reduction list is reset.
     '''
     plots=[self.ui.offspec_pp, self.ui.offspec_mm,
            self.ui.offspec_pm, self.ui.offspec_mp]
@@ -1231,9 +1284,13 @@ class MainGUI(QtWidgets.QMainWindow):
     for i in range(len(self.active_data), 4):
       if plots[i].cplot is not None:
         plots[i].draw()
-    Imin=10**self.ui.offspecImin.value()
-    Imax=10**self.ui.offspecImax.value()
+    # Pre-pass: compute OffSpecular for every (item, channel) pair and stash
+    # the slices we will pcolormesh.  Pulling the OffSpec construction out of
+    # the inner draw loop lets us auto-fit the intensity bounds from real
+    # data before the pcolormesh LogNorm is built, without paying the
+    # extraction cost twice (NXSData hits the cache on the second loop).
     Qzmax=0.01
+    prepared=[]   # list of (channel_idx, OffSpecular, P0, PN)
     for item in self.reduction_list:
       if type(item.origin) is list:
         flist=[origin[0] for origin in item.origin]
@@ -1242,7 +1299,6 @@ class MainGUI(QtWidgets.QMainWindow):
         fname=item.origin[0]
         data_all=NXSData(fname, **item.read_options)
       for i, channel in enumerate(self.ref_list_channels):
-        plot=plots[i]
         selected_data=data_all[channel]
         # Apply the live off-spec BG-X / flux-floor controls so the preview
         # responds immediately (export bakes these at reduce time, see calcReflParams).
@@ -1253,22 +1309,43 @@ class MainGUI(QtWidgets.QMainWindow):
         P0=len(selected_data.tof)-item.options['P0']
         PN=item.options['PN']
         Qzmax=max(offspec.Qz[int(item.options['x_pos']), PN:P0].max(), Qzmax)
-        ki_z, kf_z, Qx, Qz, S=offspec.ki_z, offspec.kf_z, offspec.Qx, offspec.Qz, offspec.S
-        if self.ui.kizmkfzVSqz.isChecked():
-          plot.pcolormesh((ki_z-kf_z)[:, PN:P0],
-                                        Qz[:, PN:P0], S[:, PN:P0], log=True,
-                                        imin=Imin, imax=Imax, cmap=self.color,
-                                        shading='gouraud')
-        elif self.ui.qxVSqz.isChecked():
-          plot.pcolormesh(Qx[:, PN:P0],
-                                        Qz[:, PN:P0], S[:, PN:P0], log=True,
-                                        imin=Imin, imax=Imax, cmap=self.color,
-                                        shading='gouraud')
-        else:
-          plot.pcolormesh(ki_z[:, PN:P0],
-                                        kf_z[:, PN:P0], S[:, PN:P0], log=True,
-                                        imin=Imin, imax=Imax, cmap=self.color,
-                                        shading='gouraud')
+        prepared.append((i, offspec, P0, PN))
+    # Auto-fit pass: if pending, set the spinboxes from the SLICES we will
+    # actually plot (so Imin reflects the smallest positive S in the visible
+    # region, Imax the brightest).  auto_change_active gates the
+    # `_on_offspec_intensity_user_set` slot so the setValue does not flip
+    # the pending flag back off.
+    if self._offspec_auto_fit_pending and prepared:
+      I_min_data, I_max_data=self._offspec_intensity_extent(prepared)
+      if I_min_data is not None and I_max_data is not None:
+        self.auto_change_active=True
+        try:
+          self.ui.offspecImin.setValue(log10(I_min_data))
+          self.ui.offspecImax.setValue(log10(I_max_data))
+        finally:
+          self.auto_change_active=False
+        self._offspec_auto_fit_pending=False
+    Imin=10**self.ui.offspecImin.value()
+    Imax=10**self.ui.offspecImax.value()
+    # Draw pass: pcolormesh each prepared slice.
+    for ch_i, offspec, P0, PN in prepared:
+      plot=plots[ch_i]
+      ki_z, kf_z, Qx, Qz, S=offspec.ki_z, offspec.kf_z, offspec.Qx, offspec.Qz, offspec.S
+      if self.ui.kizmkfzVSqz.isChecked():
+        plot.pcolormesh((ki_z-kf_z)[:, PN:P0],
+                                      Qz[:, PN:P0], S[:, PN:P0], log=True,
+                                      imin=Imin, imax=Imax, cmap=self.color,
+                                      shading='gouraud')
+      elif self.ui.qxVSqz.isChecked():
+        plot.pcolormesh(Qx[:, PN:P0],
+                                      Qz[:, PN:P0], S[:, PN:P0], log=True,
+                                      imin=Imin, imax=Imax, cmap=self.color,
+                                      shading='gouraud')
+      else:
+        plot.pcolormesh(ki_z[:, PN:P0],
+                                      kf_z[:, PN:P0], S[:, PN:P0], log=True,
+                                      imin=Imin, imax=Imax, cmap=self.color,
+                                      shading='gouraud')
     for i, channel in enumerate(self.ref_list_channels):
       plot=plots[i]
       if self.ui.kizmkfzVSqz.isChecked():
@@ -2294,6 +2371,11 @@ class MainGUI(QtWidgets.QMainWindow):
       self.reduction_list=[]
       self.ui.reductionTable.setRowCount(0)
       self.ui.actionAutoYLimits.setChecked(True)
+      # Re-enable off-spec intensity auto-fit: the next preview after
+      # the user adds a new refl should fit Imin/Imax to that data,
+      # not to whatever bounds the previous reduction left in the
+      # spinboxes.  See plan/prompt-35-todo.md N5.
+      self._offspec_auto_fit_pending=True
       self.reflectivityUpdated.emit(do_plot)
       if do_plot:
         self.initiateReflectivityPlot.emit(False)
