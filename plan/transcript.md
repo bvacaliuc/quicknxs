@@ -2740,3 +2740,186 @@ One point to note: the power has gone off at this worksite. We are running on ba
 
 Ok, one last item before we close this session. I checked the gui and I notice the following: The reflectivity extraction control has got scrollbars now. The addition of the flux floor control has overloaded the scaling. See ~/shared/REF_M/QuickNXSv1/prompt34/quicknxsv1-reflectivity-extraction-improper-scrollbars.png - Is there an adjustment you can make? Perhaps not so wide of a spinbox for the Flux floor 10^ spinbox if its only 1 or 2 digits?
 
+```
+● Fixed and committed 2585c71.
+
+  What I changed:
+  - Label: "Flux floor 10^" → "Flux 10^" (now matches the "Scale 10^" / "BG X" naming pattern in that panel).
+  - Spinbox: setMaximumWidth(60) — plenty for the 4-character "-3.0" / "-8.0" values. 
+  - Grid cell: reduced the spinbox column span from (1, 2) → (1, 1) so it no longer claims two columns.
+  - Tooltip kept the full "Off-spec direct-beam flux floor 10^x: …" description so the meaning isn't lost when hovering.
+  - Project CLAUDE.md note updated to reflect the shorter label. 
+  
+  Push-ready: feature/read-event-nexus is now 4 ahead of origin — 0e2b5c0, 3a4244c, 4c7b2d0, 2585c71. Tests green.
+```
+
+### Prompt 34.6
+
+Thanks; can you adjust the Label+Spinbox so that it is right-justified and set the entire 'Reflectivity Extraction (Basic)' height so as to remove the vertical scrollbar? What I see is ~/shared/REF_M/QuickNXSv1/prompt34/quicknxsv1-reflectivity-extraction-improper-scrollbars-2.png - the parameter sections should not have scrollbars.
+
+```
+● Committed b574946. Two changes:
+
+  - Right-align label — Qt.AlignRight | Qt.AlignTrailing | Qt.AlignVCenter on the "Flux 10^" QLabel so it matches the existing "X", "Y", "BG X", "Scale 10^", "Cut Pts" labels in the panel.
+  - Expand the enclosing dock/toolbox — after adding the row, recompute the contents widget's sizeHint().height() and propagate it to the enclosing QDockWidget (docked interface) or QToolBox (default interface). The original .ui sized
+  the dock for the original row count; adding a row programmatically without resizing was what forced the scrollbars.
+
+  This is heuristic (Qt geometry-walking always is) — if the V-scrollbar persists in your live test, send me another screenshot and I'll tune the +10 px buffer or set a setFixedHeight instead.
+
+  Push-ready: feature/read-event-nexus is 5 ahead of origin — 0e2b5c0, 3a4244c, 4c7b2d0, 2585c71, b574946. Tests green.
+```
+
+### Prompt 34.7
+
+Ok, still got scrollbars: here is the default main window view: '~/shared/REF_M/QuickNXSv1/prompt34/quicknxsv1-overview-after-prompt-34.6.png'. If I resize the main window, it shows like this: '~/shared/REF_M/QuickNXSv1/prompt34/quicknxsv1-overview-after-prompt-34.6-resized-to-remove-horizontal-scrollbar-but-vertical-scrollbar-persists.png
+
+```
+● Committed 04fb840. Honest answer: the QToolBox page in the .ui was sized for its original 6 rows, and Qt internally wraps an oversized page in a scroll area regardless of what we try to do at runtime — a clean fix would need editing
+  the .ui itself (which is a bigger change with .py-recompile fallout).
+
+  So I reverted the flux-floor placement to the OffSpec tab (its original home, plenty of room there). What I kept from your N1/N2/N3 feedback and the subsequent polish:
+
+  - No BG-X mirror — bgActive remains the single BG-X control (your N1).
+  - Compact "Flux 10^" label + 60 px width-capped spinbox (your screenshot follow-up).
+  - Right-aligned label style consistent with the rest.
+  - v1 immediate valueChanged recalc (your N3).
+  - self.busy('Off-specular preview…') wrap for instant feedback (N4).
+  - Reducer.execute() refresh of refl.options from the live GUI so toggles take effect on export (N6).
+
+  The Reflectivity Extraction (Basic) panel returns to its original row count — no scrollbars there. The flux floor lives in the OffSpec tab where it has room. prompt-35-todo.md is updated with the design iteration so the next session
+  knows the placement history.
+
+  Push-ready: feature/read-event-nexus is now 7 ahead of origin — 0e2b5c0, 3a4244c, 4c7b2d0, 2585c71, b574946, b574946's revert, 04fb840. All tests green.
+```
+
+### Prompt 34.8 (epilogue)
+
+Thanks, Claude. Good session, and I appreciate that you reverted the UI edit once you realized the structural difficulty. Before we go, would you do two things? 1) Make sure we describe the ui tension as a *deficiency to be dealt with in a future date, perhaps in plan/todo-* document or something like that. 2) Is there anything we have learned during this session that should be promoted to the cross-project knowledge layer? Please lets do that before we move on to continue with our plans for prompt 35 in a new session. See you soon!
+
+```
+● Both done. Summary for your records:
+
+  1. Project-specific deficiency (committed 1795225 in quicknxsv1)
+
+  quicknxsv1/plan/todo-ui-toolbox-page-sizing.md — describes the BG-section / QToolBox page sizing tension, the runtime mitigations tried and rejected, what a proper .ui-level fix looks like, why we did not do it this session, and the
+  acceptance criterion (no scrollbars with both BG-X and Flux 10^ visible in "Reflectivity Extraction (Basic)" in both default and docked interfaces).
+
+  2. Cross-project lessons (committed cf5510f on dragonfly)
+
+  setup/patterns/ui-aspects.md gained two new sections — both generally useful for any Qt+matplotlib reduction GUI:
+
+  - "Adding widgets at runtime to a Qt Designer–sized container" — captures the order-of-preference fixes (roomier container > edit .ui > scroll-policy override) and the docked-vs-default column-position gotcha, so the next agent who
+  tries to programmatically grow a QToolBox page knows the runtime mitigations don't reliably work and reaches for the right tool.
+  - "Diagnosing UI freezes with a debug-log gap scan" — the project-agnostic Python snippet we used here to find the 25–57 s gaps after _calc_offspec, plus how to read the output (gap-after-single-heavy-handler → missing busy() /
+  _activity_transient; gaps of hundreds of seconds → user idle, not a freeze; 5–60 s gaps matching the user's window → the signal).
+
+  Push-ready, both repos:
+  - quicknxsv1 feature/read-event-nexus: ahead 8 (1795225, 04fb840, b574946, 2585c71, 4c7b2d0, 3a4244c, 0e2b5c0, plus my earlier 718fc8c).
+  - Parent dragonfly: ahead by 1 net new (cf5510f).
+
+  Have a good break — see you in prompt 35.
+```
+
+## Prompt 35
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. In the last prompt, we made progress on understanding the issues surrounding offspecular reduction behavior between a later version of quicknxsv2 (v4.3.0rc1) and quicknxsv1. With the right set of steps and parameters, it is possible to obtain comparable reductions as shown in ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8.png. For this session, please continue this investigation. I have made the following notes from the previous session, which I would like you to tackle:
+
+Files referenced without a full path are to be found in ~/shared/REF_M/QuickNXSv1/prompt34/**.
+
+1. Loading a reduced data with tof bins = 40, results in the gaps (see quicknxsv1-offspec-preview-tof-40-after-prompt-34.7.png). Loading the same dataset with tof bins = 400, results in no gaps (see quicknxsv1-offspec-preview-tof-400-flux-10e-8.png). Please investigate why the choice of TOF bins affects the *data itself*. This is not expected and I would argue that it is incorrect behavior. The selection of how to partition the TOF bins is a purely statistical choice that the scientist has to control the level of detail they observe - it *must not* in any way alter the data. Please consider this issue *very carefully* as it lies at the heart of many problems that are seen in quicknxsv2 that force us to use '400' on this parameter. 
+
+2. In one session with quicknxsv1, I loaded reduced data with tof bins = 40, then *CLEARED* the data set using the trashcan icon on the main UI, then *changed* tof bins = 400, and reloaded the *same reduced data*. What I got was a *DIFFERENT* overview than I expected (see quicknxsv1-overview-tof-400-clear-and-reload.png). I saved the contents of ~/.quicknxs/** to dot-quicknxs-prompt34.7-clear-and-reload.tar.gz (so as to preserve it as a snap shot for your review). Then, I closed quicknxsv1, started a new session, set tof bins = 400, loaded the *same reduced data*. This time I got what I expected (see quicknxsv1-overview-tof-400-clean-load-extraction.png). This is quite jarring. Please determine the root cause of this and add this to the plan to fix it.
+
+3. I went ahead and reduced the off specular data (files in ~/shared/REF_M/QuickNXSv1/prompt34/reduced-prompt-34.7-smoothed/**). I had to change the default off specular smoothing output options (see quicknxs-offspecular-smoothing-options-default.png) to change extents (see quicknxs-offspecular-smoothing-options-000525.png). This is ok, but I would like to know how the options for off specular smoothing are determined by quicknxsv1. I think this could be a good item to capture in a review document because it will inform future sessions and eventually affect quicknxsv2. The product of the reduction, I compared with the script that you made for this purpose, giving:
+
+```
+└─$ ( cd ~/Projects/Claude/1/quicknxsv1 ; pixi run python scripts/plot_offspec_compare.py --ref ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat --prop ~/shared/REF_M/QuickNXSv1/prompt34/reduced-prompt-34.7-smoothed/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat --out ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8.png )
+Loading reference:  /home/bvacaliuc/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat
+  meta:    QuickNXS 4.3.0rc1 | Mantid 6.12.0 | 2025-04-08 16:11:14
+  columns: 3-col file, using (x,y,I)=(0, 1, 2)
+  grid:    nx=563, ny=1000, regular=True
+  x range: [-0.11404, 0.08589]
+  y range: [-0.10000, 0.37582]
+Loading proposed:   /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt34/reduced-prompt-34.7-smoothed/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat
+  meta:    QuickNXS 1.3.0.dev49 | 2026-06-02 07:16:26
+  columns: 3-col file, using (x,y,I)=(0, 1, 2)
+  grid:    nx=536, ny=996, regular=True
+  x range: [-0.11404, 0.08589]
+  y range: [0.00000, 0.37097]
+Regridding (intersect) to common scientific coordinate space...
+  common grid: nx=563, ny=996, x=[-0.11404,0.08589], y=[0.00000,0.37097]
+Computing metrics...
+  pixels_valid_ref         560748
+  pixels_valid_prop        560748
+  pixels_valid_both        560748
+  pixels_positive_both     238212
+  fraction_valid_both      1
+  log_pearson              0.901875
+  rms_log_residual         0.700286
+  median_ratio             1.07224
+  ratio_q25                0.87712
+  ratio_q75                1.30895
+  total_intensity_ref      1282.62
+  total_intensity_prop     1924.24
+  integrated_ratio         1.50025
+  specular_pixels          7656
+  specular_median_ratio    1.06359
+  specular_log_pearson     0.981814
+  offspec_pixels           230556
+  offspec_median_ratio     1.07278
+  offspec_log_pearson      0.883762
+  peak_dx                  -0.0747051
+  peak_dy                  0.104767
+Plotting...
+Wrote /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8.png
+```
+
+I then noticed that the x-range and y-range values in the above *differed* between the two reduced values, so I started a *third* quicknxsv1 session, to choose the *same* x/y range values (see quicknxs-offspecular-smoothing-options-000525-take2.png, and the reduced output in ~/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/**):
+
+```
+└─$ ( cd ~/Projects/Claude/1/quicknxsv1 ; pixi run python scripts/plot_offspec_compare.py --ref ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat --prop ~/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat --out ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8-take2.png )
+Loading reference:  /home/bvacaliuc/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat
+  meta:    QuickNXS 4.3.0rc1 | Mantid 6.12.0 | 2025-04-08 16:11:14
+  columns: 3-col file, using (x,y,I)=(0, 1, 2)
+  grid:    nx=563, ny=1000, regular=True
+  x range: [-0.11404, 0.08589]
+  y range: [-0.10000, 0.37582]
+Loading proposed:   /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat
+  meta:    QuickNXS 1.3.0.dev49 | 2026-06-02 09:03:33
+  columns: 3-col file, using (x,y,I)=(0, 1, 2)
+  grid:    nx=536, ny=1000, regular=True
+  x range: [-0.11404, 0.08589]
+  y range: [-0.10000, 0.37582]
+Regridding (intersect) to common scientific coordinate space...
+  common grid: nx=563, ny=1000, x=[-0.11404,0.08589], y=[-0.10000,0.37582]
+Computing metrics...
+  pixels_valid_ref         444770
+  pixels_valid_prop        563000
+  pixels_valid_both        444770
+  pixels_positive_both     184942
+  fraction_valid_both      0.79
+  log_pearson              0.887755
+  rms_log_residual         0.744522
+  median_ratio             1.07109
+  ratio_q25                0.872968
+  ratio_q75                1.31137
+  total_intensity_ref      1004.38
+  total_intensity_prop     1521.22
+  integrated_ratio         1.51459
+  specular_pixels          5957
+  specular_median_ratio    1.06328
+  specular_log_pearson     0.96255
+  offspec_pixels           178985
+  offspec_median_ratio     1.0717
+  offspec_log_pearson      0.868674
+  peak_dx                  -0.0743493
+  peak_dy                  0.104785
+Plotting...
+Wrote /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8-take2.png
+```
+
+4. Please review plan/prompt-35-todo.md and update it in light of the above investigations.
+
+5. After completing 1-4 above, please execute the revised plan/prompt-35-todo.md. If there are any choices, please use your recommended choice, but explain in a retrospective document why you made the choice so that I may review it. The reason I give this instruction in this session is that I will be away from this workstation and your goal is to complete all the tasks to completion.
+
+The cross-project rules should tell you that if you reach a session token limit, please wait for the limit to reset. As always, obtain any tool you need, be resourceful and ask me if you are missing any information or capability that you need to complete your investigation. Thank you!
