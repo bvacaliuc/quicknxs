@@ -165,3 +165,46 @@ visible.  A 99th-percentile cap would dim it.
 - `tests/main_gui_test.py::OffspecIntensityAutoFit` — 5 passed
 - regression: 15 tests across `LoadExtractionRoundTrip` (5), `MainGUIReductionActions` (7), `SmoothDialogYClamp` (3) — all pass.
 
+### N4 — debounce flux-floor `valueChanged`
+
+**Decision:** install a single `QTimer` (single-shot, 300 ms) on the
+`MainGUI` instance, wire `self._offspecFluxFloor.valueChanged.connect(
+timer.start)`, and connect `timer.timeout` to `self._replotOffspec`.
+
+**Why a QTimer over the existing `DelayedTrigger` (`gui_utils.py:1142`):**
+
+| option | description | accept? |
+|---|---|---|
+| QTimer.singleShot (CHOSEN) | Qt-native, 5-line install, well-understood | ✅ minimal, matches the discrete-event need |
+| DelayedTrigger | existing QThread-based debouncer keyed by action name | ⚠️ heavier, designed for repeated GUI-thread actions, overkill here |
+| `_activity_transient` only | shows status but does not coalesce work | ❌ does not solve the queuing problem |
+
+QTimer.start() is already a "reset" — each successive call restarts the
+countdown from 300 ms.  So the spinbox's `valueChanged → timer.start`
+wiring gives us a natural debounce: only the last value in a burst
+fires the actual `_replotOffspec`.
+
+**Why 300 ms** — short enough that a single-step spinbox click feels
+responsive, long enough to coalesce a typed value (~50 ms between
+character entries) and a held arrow-key (~150 ms autorepeat).
+
+**`bgActive.toggled` left direct-connected** — a checkbox toggle is a
+single discrete event, not a stream; debouncing it would only delay
+feedback.
+
+**Regression test** (added in
+`tests/main_gui_test.py::OffspecFluxFloorDebounce`):
+- `test_timer_is_configured_singleshot_300ms`: asserts the install
+  invariants (single-shot, 300 ms).
+- `test_rapid_value_changes_coalesce_to_one_replot`: replaces
+  `_replotOffspec` (well, the timer's timeout connection) with a
+  counter, drives the spinbox through 8 values in a tight loop with
+  `processEvents` between, asserts the counter is 0 during the burst,
+  then sleeps up to 1 s while pumping events and asserts the counter
+  is exactly 1 — verifying the burst coalesced into a single replot
+  after the quiet period.
+
+**Tests run:**
+- `tests/main_gui_test.py::OffspecFluxFloorDebounce` — 2 passed
+- regression: 22 tests across `LoadExtractionRoundTrip` (5), `MainGUIReductionActions` (7), `SmoothDialogYClamp` (3), `OffspecIntensityAutoFit` (5), `OffspecFluxFloorDebounce` (2) — all pass.
+

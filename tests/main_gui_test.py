@@ -1379,6 +1379,80 @@ class SmoothDataCallbackFix(unittest.TestCase):
     self.assertAlmostEqual(progress_values[-1], 1.0)
 
 
+class OffspecFluxFloorDebounce(unittest.TestCase):
+  """N4: rapid valueChanged on the flux-floor spinbox should coalesce
+  to a single _replotOffspec call ~300 ms after the spinbox settles,
+  not one call per step.  See plan/prompt-35-todo.md N4."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_timer_is_configured_singleshot_300ms(self):
+    """The debounce timer must be single-shot at 300 ms."""
+    self.assertTrue(hasattr(self.gui, '_offspec_replot_timer'),
+                    'debounce timer should be installed in __init__')
+    t=self.gui._offspec_replot_timer
+    self.assertTrue(t.isSingleShot(),
+                    'debounce timer must be single-shot so each new '
+                    'valueChanged resets it instead of stacking')
+    self.assertEqual(t.interval(), 300,
+                     'debounce should be 300 ms')
+
+  def test_rapid_value_changes_coalesce_to_one_replot(self):
+    """Twenty rapid spinbox steps within 100 ms should fire _replotOffspec
+    once (after the 300 ms quiet period), not 20 times.
+
+    We replace _replotOffspec with a counter to avoid the heavy actual
+    replot, then drive the spinbox programmatically and pump the Qt event
+    loop with sleeps until the timer fires.
+    """
+    from qtpy.QtCore import QCoreApplication
+    import time
+    counter=[0]
+    def _count(*_):
+      counter[0]+=1
+    # _offspec_replot_timer was wired to self._replotOffspec at __init__.
+    # We can't rebind self._replotOffspec on an instance (it's a method)
+    # and have the existing connection follow; instead disconnect and
+    # rewire the timer to our counter.
+    self.gui._offspec_replot_timer.timeout.disconnect()
+    self.gui._offspec_replot_timer.timeout.connect(_count)
+
+    # Burst of value changes in tight succession.
+    for v in (-7.5, -7.0, -6.5, -6.0, -5.5, -5.0, -4.5, -4.0):
+      self.gui._offspecFluxFloor.setValue(v)
+      QCoreApplication.processEvents()
+    # During the burst the timer is in the running state but should NOT
+    # have fired (each setValue calls timer.start() which resets it).
+    self.assertEqual(counter[0], 0,
+                     'no replot should fire while the burst is in progress')
+
+    # Wait long enough for the timer to expire on its OWN cadence, but pump
+    # the event loop so the timeout actually fires (offscreen Qt won't tick
+    # unless we yield to it).
+    t0=time.time()
+    while time.time()-t0 < 1.0:
+      QCoreApplication.processEvents()
+      time.sleep(0.05)
+
+    self.assertEqual(counter[0], 1,
+                     'debounce should coalesce the burst into ONE replot')
+
+
 class OffspecIntensityAutoFit(unittest.TestCase):
   """N5: the off-spec preview should auto-fit Imin/Imax to the actual
   data extent on the FIRST plot after a clear-or-load event; user edits

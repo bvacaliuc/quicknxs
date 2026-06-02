@@ -260,9 +260,18 @@ class MainGUI(QtWidgets.QMainWindow):
     _offspec_grid=self.ui.OffSpec_Tab.layout()
     if _offspec_grid is not None and hasattr(_offspec_grid, 'addLayout'):
       _offspec_grid.addLayout(_offspec_row, _offspec_grid.rowCount(), 0, 1, 2)
-    # Immediate recalc on every value change (v1 convention) + re-render when
-    # bgActive toggles so BG-X is reflected in the off-spec preview live.
-    self._offspecFluxFloor.valueChanged.connect(self._replotOffspec)
+    # Re-render the off-spec preview when bgActive toggles (cheap signal:
+    # a toggle is a single discrete event, not a stream) and when the
+    # flux-floor spinbox value settles.  Direct-connecting the spinbox
+    # would queue a ~30 s replot for every step the user clicks; instead
+    # debounce via a 300 ms single-shot QTimer that the spinbox restarts
+    # on every value change -- only the last value in a burst fires the
+    # actual replot.  See plan/prompt-35-todo.md N4.
+    self._offspec_replot_timer=QtCore.QTimer(self)
+    self._offspec_replot_timer.setSingleShot(True)
+    self._offspec_replot_timer.setInterval(300)
+    self._offspec_replot_timer.timeout.connect(self._replotOffspec)
+    self._offspecFluxFloor.valueChanged.connect(self._offspec_replot_timer.start)
     self.ui.bgActive.toggled.connect(self._replotOffspec)
     # Detect user edits of the offspec intensity bounds so an auto-fit
     # pass does not overwrite them on the next preview.  The 'changed'
