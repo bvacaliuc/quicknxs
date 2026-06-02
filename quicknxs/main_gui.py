@@ -1589,6 +1589,14 @@ class MainGUI(QtWidgets.QMainWindow):
     # busy scope guarantees a "Complete" (and cursor restore) on every exit path.
     with self.busy(u'Loading extraction...'):
       self.clearRefList(do_plot=False)
+      # Also reset the normalize list so a reload with different read_options
+      # (notably a different `bins` / TOF binning) does not retain stale
+      # Reflectivity objects bound to the OLD binning.  setNorm() below is
+      # called with `do_remove=False` and only adds if the number is NOT
+      # already present -- without this clear, the prior session's norms
+      # survive and getNorm() returns None on the length mismatch, breaking
+      # the xtof_overview normalization.  See `plan/prompt-35-todo.md` T1.
+      self.clearNormList()
       if self._pending_header is None:
         with open(filename, 'rb') as _fh:
           text=_fh.read().decode('utf8')

@@ -1578,6 +1578,50 @@ class LoadExtractionRoundTrip(unittest.TestCase):
     self.assertGreater(len(self.gui.reduction_list), 0,
                        'reduction_list should be populated from pending header')
 
+  def test_load_extraction_clears_stale_norms_on_reload(self):
+    """Reload after a trashcan-clear must NOT keep the previous load's
+    norms.  Otherwise a reload at a different `bins` (TOF bin count) is
+    silently mismatched against the new active_data and `getNorm()`
+    returns None, breaking the xtof_overview normalization.
+
+    See plan/prompt-35-todo.md T1 — the visible difference between the
+    user's `quicknxsv1-overview-tof-400-clear-and-reload.png` and
+    `quicknxsv1-overview-tof-400-clean-load-extraction.png` traces to
+    this: ref_norm survived the trashcan + reload, then carried an
+    OLD-binning Reflectivity whose Rraw length no longer matched
+    active_data.tof at the new bin count.
+    """
+    dat_path=self._generate_reduced_dat()
+
+    # First load — populates ref_norm normally.
+    self.gui.loadExtraction(filename=dat_path)
+    self.assertGreater(len(self.gui.ref_norm), 0,
+                       'first load should populate ref_norm')
+    # Save the EXACT same Reflectivity objects so we can detect identity
+    # (these MUST be replaced by the reload, not kept around).
+    first_load_norm_ids=set(id(v) for v in self.gui.ref_norm.values())
+
+    # Simulate the trashcan click: clears refl list only.  This is the
+    # user's behavior that previously left ref_norm populated.
+    self.gui.clearRefList(do_plot=False)
+    self.assertEqual(len(self.gui.reduction_list), 0,
+                     'trashcan should clear refl list')
+
+    # Reload the same extraction.  With the fix, ref_norm is wiped at
+    # the top of loadExtraction and re-populated with fresh objects.
+    self.gui.loadExtraction(filename=dat_path)
+    self.assertGreater(len(self.gui.ref_norm), 0,
+                       'reload should re-populate ref_norm')
+
+    # POST-CONDITION: every Reflectivity in ref_norm is a fresh object,
+    # not the stale ones from the first load.  Identity check is the
+    # strongest assertion that the fix is in place — even if the
+    # bin count happens to match, the objects must be replaced.
+    second_load_norm_ids=set(id(v) for v in self.gui.ref_norm.values())
+    self.assertFalse(first_load_norm_ids & second_load_norm_ids,
+                     'ref_norm must hold fresh Reflectivity objects '
+                     'after reload, not stale ones from the prior load')
+
 
 class CalcReflParamsFreshFileReseed(unittest.TestCase):
   """Regression for prompt-28.2: 44035 captured 44160's widths.
