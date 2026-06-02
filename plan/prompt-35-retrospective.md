@@ -208,3 +208,55 @@ feedback.
 - `tests/main_gui_test.py::OffspecFluxFloorDebounce` — 2 passed
 - regression: 22 tests across `LoadExtractionRoundTrip` (5), `MainGUIReductionActions` (7), `SmoothDialogYClamp` (3), `OffspecIntensityAutoFit` (5), `OffspecFluxFloorDebounce` (2) — all pass.
 
+----
+
+## Session summary (autonomous run end)
+
+**Items shipped (all committed to `feature/read-event-nexus`):**
+
+| # | item                       | commit  | tests added |
+|---|----------------------------|---------|-------------|
+| T1 | clear+reload `ref_norm` fix          | `f092b54` | 1 |
+| T4 | smoothing dialog Y1 ≥ 0 clamp        | `12001e8` | 3 |
+| T2 | TOF-binning docs + shading experiment| `ed86435` | 0 (docs + scripts only) |
+| N5 | offspec preview Imin/Imax auto-fit   | `eb3cd05` | 5 |
+| N4 | flux-floor `valueChanged` debounce    | `803925a` | 2 |
+
+**Total:** 11 new regression tests, 5 commits, full test suite still green
+(130 main_gui + 105 qreduce/qio/qcalc = 235 passed).
+
+**Items DEFERRED to a future session** (per the revised plan):
+
+- N4 `plot_offspec` speed-up (caching OffSpec per `(file, channel, opts)`).
+- N4 reduction-dialog → main statusbar progress updates.
+- N4 Overview-tab switch 30 s freeze (needs reproducible trace).
+- N5 σ default coupling change in `SmoothDialog`.
+- N6 v4.17.0rc5 vs v4.3.0rc1 — no v4.17.0rc5 reference data available.
+- T2 part 3 — render off-spec preview onto a regularised (Qx, Qz) grid
+  to make the visualisation bin-invariant (design discussion needed).
+
+**Outstanding for the user (not in this session's scope):**
+
+- Pushes — the human reserves all `git push` per `CLAUDE.md`. The 5
+  commits above land on `feature/read-event-nexus` ready to push. There
+  is no `main` round-trip in this session; the work is project-specific
+  to quicknxsv1 and stays on the working branch.
+- The "use bins=400 for clean off-spec preview" operating recommendation
+  is now in `plan/tof-binning-and-offspec-coverage.md`; the user may want
+  to surface it in `quicknxs/CLAUDE.md` after reviewing.
+
+**Files created:**
+
+- `plan/offspec-smoothing-defaults.md` (Smoothing dialog seeding rule)
+- `plan/tof-binning-and-offspec-coverage.md` (bin-invariance finding)
+- `plan/prompt-35-retrospective.md` (this file)
+- `plan/scripts/prompt-35/compare_tof_binning.py` (TOF=40 vs 400 metrics)
+- `plan/scripts/prompt-35/render_offspec_shading.py` (shading experiment)
+
+**Files modified:**
+
+- `plan/prompt-35-todo.md` (full rewrite, fold new findings into plan)
+- `quicknxs/main_gui.py` (T1, N5, N4 wiring)
+- `quicknxs/gui_utils.py` (T4 clamp)
+- `tests/main_gui_test.py` (11 new tests in 4 new test classes)
+
