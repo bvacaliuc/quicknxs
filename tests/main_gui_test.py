@@ -1379,6 +1379,91 @@ class SmoothDataCallbackFix(unittest.TestCase):
     self.assertAlmostEqual(progress_values[-1], 1.0)
 
 
+class SmoothDialogYClamp(unittest.TestCase):
+  """Verify SmoothDialog.drawPlot clamps Y1 >= 0 in (kizmkfz, Qz) /
+  (Qx, Qz) modes, where the y axis is Qz (non-physical for Qz < 0)."""
+
+  def _make_data(self, *, y_min, y_max):
+    """Build a small synthetic off-spec input data array suitable for
+    SmoothDialog.drawPlot.  Layout matches what
+    Exporter.output_data['OffSpec'] produces (shape (Nx, Ny, ≥6) with
+    columns Qx, Qz, ki_z, kf_z, _, I, ...).
+
+    ki_z is varied along the Ny (TOF) axis to keep the (ki_z) and
+    (kf_z) extents non-degenerate -- a constant ki_z triggers the
+    drawPlot 'degenerate window' fallback (x_max <= x_min) and the
+    test would not actually exercise the (ki_z, kf_z) mode.
+    """
+    import numpy as np
+    Nx, Ny=8, 12
+    Qx=np.linspace(-0.05, 0.05, Nx)[:, None]*np.ones(Ny)[None, :]
+    Qz=np.linspace(y_min, y_max, Ny)[None, :]*np.ones(Nx)[:, None]
+    ki_z=np.linspace(0.02, 0.10, Ny)[None, :]*np.ones(Nx)[:, None]
+    kf_z=Qz-ki_z
+    I=np.full_like(Qx, 1e-2)
+    dI=np.full_like(Qx, 1e-5)
+    item=np.stack([Qx, Qz, ki_z, kf_z, ki_z-kf_z, I, dI], axis=-1)
+    return [item]
+
+  def setUp(self):
+    self.app=_app
+
+  def test_kizmkfz_mode_clamps_y1_to_zero(self):
+    """In (kizmkfz)-vs-Qz mode, Y1 must seed to >= 0 even when the data
+    extent crosses zero.  This avoids the user having to manually clamp
+    Y1 every time (the user's prompt-34 take-2 screenshot shows them
+    setting Y1 from -0.0297 to 0.0).
+    """
+    from quicknxs.gui_utils import SmoothDialog
+    data=self._make_data(y_min=-0.05, y_max=0.40)
+    dia=SmoothDialog(None, data)
+    try:
+      # kizmkfzVSqz is the default radio button per smooth_dialog.py:31
+      self.assertTrue(dia.ui.kizmkfzVSqz.isChecked(),
+                      'kizmkfzVSqz should be the default mode')
+      self.assertGreaterEqual(dia.ui.gridYmin.value(), 0.0,
+                              'Y1 should clamp to >= 0 in Qz-y mode')
+    finally:
+      dia.deleteLater()
+
+  def test_qxqz_mode_clamps_y1_to_zero(self):
+    """In Qx-vs-Qz mode, Y1 must also seed to >= 0 (y axis is Qz)."""
+    from quicknxs.gui_utils import SmoothDialog
+    data=self._make_data(y_min=-0.05, y_max=0.40)
+    dia=SmoothDialog(None, data)
+    try:
+      # Switch to Qx-vs-Qz mode, then redraw so seeds reflect that mode.
+      dia.ui.kizmkfzVSqz.setChecked(False)
+      dia.ui.qxVSqz.setChecked(True)
+      dia.drawPlot()
+      self.assertGreaterEqual(dia.ui.gridYmin.value(), 0.0,
+                              'Y1 should clamp to >= 0 in qxVSqz mode')
+    finally:
+      dia.deleteLater()
+
+  def test_kizkfz_mode_does_not_clamp(self):
+    """In (ki_z)-vs-(kf_z) mode the y axis is k_fz, NOT Qz, and the
+    natural data extent can legitimately straddle zero (specular ridge).
+    Y1 must NOT be clamped in this mode.  We use a kf_z range that
+    crosses zero and verify the seeded Y1 is allowed to be negative.
+    """
+    from quicknxs.gui_utils import SmoothDialog
+    data=self._make_data(y_min=-0.05, y_max=0.40)
+    dia=SmoothDialog(None, data)
+    try:
+      dia.ui.kizmkfzVSqz.setChecked(False)
+      dia.ui.kizVSkfz.setChecked(True)
+      dia.drawPlot()
+      # In kizVSkfz mode the y axis is kf_z = Qz - ki_z.  With Qz from
+      # -0.05 to 0.40 and ki_z from 0.02 to 0.10 (data extent), kf_z
+      # ranges roughly -0.15 to +0.38, straddling zero.  T4 must NOT
+      # clamp in this mode; the seeded Y1 should be negative.
+      self.assertLess(dia.ui.gridYmin.value(), 0.0,
+                      'in kizVSkfz mode Y1 must follow the data extent (negative ok), not clamp to 0')
+    finally:
+      dia.deleteLater()
+
+
 # ──────────────────────────────────────────────────────────────
 #  QFileDialog tuple return fix tests
 # ──────────────────────────────────────────────────────────────

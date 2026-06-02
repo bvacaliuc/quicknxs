@@ -770,6 +770,15 @@ class SmoothDialog(QDialog):
       x2=x_max-(x_max-x_min)*grid_percentage
       y1=y_min+(y_max-y_min)*grid_percentage
       y2=y_max-(y_max-y_min)*grid_percentage
+      # When the y axis represents Qz (both kizmkfz and qxqz modes), clamp
+      # Y1 to 0 — negative Qz is non-physical and the off-spec extraction
+      # only emits points there at the lowest-angle run's band edge, where
+      # they are noise that the user invariably trims away.  In ki_z vs
+      # k_fz mode the y axis is kf_z which can legitimately straddle the
+      # origin (small kf_z is the specular ridge), so leave it alone.
+      # See plan/prompt-35-todo.md T4.
+      if kizmkfz or qxqz:
+        y1=max(0.0, y1)
       # sigma proportional to the region (separately in x and y), floored so a
       # narrow axis (e.g. Qx) does not collapse the spot to nothing
       sigma_x=max((x2-x1)*sigma_percentage, min_sigma_size)

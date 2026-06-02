@@ -49,3 +49,31 @@ normalization objects.
 - `tests/main_gui_test.py::LoadExtractionRoundTrip` — 5 passed (incl. the new test)
 - `tests/main_gui_test.py::MainGUIReductionActions` — 7 passed (no regressions)
 
+### T4 — Smoothing dialog Y1 ≥ 0 clamp
+
+**Decision:** in `SmoothDialog.drawPlot` (`quicknxs/gui_utils.py:683`),
+clamp the seeded `y1 = max(0.0, y1)` **only** in the (ki_z-kf_z)-vs-Qz
+and Qx-vs-Qz modes (where the y axis is Qz, non-physical for Qz < 0).
+The (ki_z, kf_z) mode is left alone — kf_z can legitimately straddle
+zero (specular ridge near kf_z=0).
+
+**Why this is conservative**: the only data the clamp affects is
+non-physical negative-Qz noise at the lowest-angle run's band edge.
+The user has been manually clamping Y1→0 every reduce (visible in
+`quicknxs-offspecular-smoothing-options-000525-take2.png`); this just
+makes the default what they do anyway.
+
+**Regression test** (added in
+`tests/main_gui_test.py::SmoothDialogYClamp`):
+- builds a small synthetic OffSpec data array with Qz crossing zero
+  (-0.05 → 0.40) and kf_z crossing zero (-0.15 → 0.38),
+- opens SmoothDialog in each of the three modes (kizmkfz, qxqz, kizkfz),
+- asserts Y1 ≥ 0 in the Qz-y modes and Y1 < 0 (allowed) in the kf_z-y mode.
+
+The test's ki_z is **varied along the Ny axis** (not constant) so the
+(ki_z, kf_z) mode does not trigger the `x_max <= x_min` degenerate-extent
+fallback (which would seed y_min=0 regardless and obscure the clamp).
+
+**Tests run:**
+- `tests/main_gui_test.py::SmoothDialogYClamp` — 3 passed
+
