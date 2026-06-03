@@ -2980,3 +2980,29 @@ At this point, I would like to compare reduction outputs of *specular* reflectiv
 2. add a feature to plot-offspec-compare.py makes *vertical* line cuts along 'representative ki_z-kf_z' as a toggle, with one of the representations being ki_z-kf_z == 0, if present in the data. I like the order of the plots and the layout of the tool, please just make the feature toggle between *horizontal* cuts along 'representative Qz' or *vertical* cuts along 'representative ki_z-kf_z'.
 
 This will be a fantastic diagnostic set! Thank you so much.
+
+```
+● Both items shipped. Summary:
+
+  1. New scripts/plot_specular_compare.py — same layout shape as plot_offspec_compare.py:
+  - Top row: Ref R(Q), Prop R(Q), log10(prop/ref) vs Qz, relative error vs Qz
+  - Bottom row (wide): R(Q) overlay — ref = ● solid, prop = ✕ dashed, color per segment
+  - Segments are grouped by unique θ value (not contiguous rows) so it works with both v4.3.0rc1's sequential-runs layout and v1's Qz-sorted interleaved layout
+  - Metrics: log-Pearson, median ratio, ratio IQR, RMS log residual, integrated R, per-segment breakdown so a single-angle outlier shows up immediately
+
+  Verified on your prompt35 artifacts:
+  - vs TOF=400: median ratio 1.0011, log-Pearson 0.998, seg0 θ≈0.008 is 0.81× (low-angle slight low), seg1/seg2 ≈ 1.02
+  - vs TOF=40: median ratio 1.0001, similar segment pattern
+  
+  2. plot_offspec_compare.py --cut-axis toggle — top-row layout/order unchanged; just the bottom-panel line cuts switch direction:
+  - --cut-axis horizontal (default, existing): I vs (kiz-kfz) at representative Qz rows. Source: --qz-cut.
+  - --cut-axis vertical (new): I vs Qz at representative kiz-kfz columns. Source: --kxz-cut. Always includes the column closest to kiz-kfz=0 (specular ridge) when the common-grid x extent straddles zero.
+  
+  Both new features in one commit 2dbffb9 on feature/read-event-nexus, ready for you to push.
+```
+
+### Prompt 35.2
+
+Fantastic! I updated my comparison scripting. One thing to change on plot_specular_compare.py: Observe that when the horizontal axis label is emitted, it may conflict with the points readout metrics (see ~/shared/REF_M/QuickNXSv1/prompt35/compare-specular-tof-400-vs-tof-40.png). Can you adjust the code so that the metrics do not overlap with the axis label of the plot above them? Use your judgement as to the most robust method for this and future additions. I suspect that plot_offspec_compare.py might suffer similar effects, so can you check that also?
+
+
