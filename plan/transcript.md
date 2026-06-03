@@ -2923,3 +2923,60 @@ Wrote /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3
 5. After completing 1-4 above, please execute the revised plan/prompt-35-todo.md. If there are any choices, please use your recommended choice, but explain in a retrospective document why you made the choice so that I may review it. The reason I give this instruction in this session is that I will be away from this workstation and your goal is to complete all the tasks to completion.
 
 The cross-project rules should tell you that if you reach a session token limit, please wait for the limit to reset. As always, obtain any tool you need, be resourceful and ask me if you are missing any information or capability that you need to complete your investigation. Thank you!
+
+```
+● Session complete. Here's the final summary:
+
+  Investigation findings (items 1–4)
+
+  1. TOF bins issue: Per-cell intensity IS bin-invariant (median ratio 0.93 on a common Cartesian (Qx, Qz) grid). What changes is coverage — the .dat is a list of bin samples, sparse at TOF=40, dense at TOF=400. Total integrated
+  intensity scales with bin count because each row is per-bin, not per-area. Documented in plan/tof-binning-and-offspec-coverage.md.
+  2. Clear+reload bug: clearRefList doesn't clear ref_norm; loadExtraction's setNorm(do_remove=False) is a no-op if the entry exists. Result: stale ref_norm at OLD binning → getNorm() returns None on length mismatch → xtof_overview
+  un-normalized in clear+reload, normalized in fresh session. Root cause for the visible difference between the user's two screenshots.
+  3. Smoothing defaults: documented in plan/offspec-smoothing-defaults.md — 5% inset of the I>0 data extent, σ = 0.005 × X-span (coupled in Qz-axis modes), R = 3.0.
+  4. Plan revised at plan/prompt-35-todo.md.
+
+  Executed fixes (item 5)
+
+  6 commits on feature/read-event-nexus:
+  
+  ┌─────────┬──────┬──────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ commit  │ item │                                               what                                               │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ f092b54 │ T1   │ clear ref_norm on loadExtraction so a reload at new TOF bins is honored                          │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 12001e8 │ T4   │ clamp smoothing dialog Y1 ≥ 0 in Qz-axis modes                                                   │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ ed86435 │ T2   │ TOF-binning docs + shading experiment (kept gouraud — gaps are physical, not a shading artifact) │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ eb3cd05 │ N5   │ auto-fit offspecImin/Imax on first plot, with user-edit override                                 │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 803925a │ N4   │ debounce flux-floor valueChanged via 300 ms QTimer                                               │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4bbdc49 │ docs │ finalize plan/prompt-35-retrospective.md                                                         │
+  └─────────┴──────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  11 new regression tests added; full suite green (130 main_gui + 105 qreduce/qio/qcalc = 235 passed).
+
+  Outstanding for you
+
+  - Push the 6 commits — git push origin feature/read-event-nexus (push reserved for human per CLAUDE.md).
+  - Optionally fold "use bins=400 for clean off-spec preview" into quicknxs/CLAUDE.md after reviewing plan/tof-binning-and-offspec-coverage.md.
+  - Retrospective at plan/prompt-35-retrospective.md records every autonomous choice for your review.
+
+  Deferred (not in this prompt's scope)
+
+  - plot_offspec caching speed-up; reduction-dialog → statusbar progress; Overview-tab 30 s freeze; σ default coupling; v4.17.0rc5 comparison (no reference data); off-spec preview onto regular grid.
+```
+
+### Prompt 35.1
+
+Nice job, Claude. I ran the tests, reduction and comparisons. Everything seemed pretty smooth to me. I put all my artifacts into ~/shared/REF_M/QuickNXSv1/prompt35/**. You made a script named plot-offspec-compare.py which I used to compare "correctReduction" with "tof-40" and "tof-400" reductions from my test run (see ~/shared/REF_M/QuickNXSv1/prompt35/commands.txt and ~/shared/REF_M/QuickNXSv1/prompt35/compare-transcript.txt).
+
+At this point, I would like to compare reduction outputs of *specular* reflectivity files. I ensured that this time the specular output would be generated. The files are in REF_M_44159+44160+44161_Specular_Off_Off.dat and represent 1D reflectivity data. This is effectively the line where ki_z == kf_z (or the vertical cut along the offspec output where (ki_z-kf_z == 0). Would you do the following:
+
+1. create a comparison script plot-specular-compare.py in quicknxsv1/scripts/* that I can use just like plot-offspec-compare.py to meaningfully visualize two specular reflectivity files? Exemplars are ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_Specular_Off_Off.dat, ~/shared/REF_M/QuickNXSv1/prompt35/reduce-tof-40/REF_M_44159+44160+44161_Specular_Off_Off.dat and ~/shared/REF_M/QuickNXSv1/prompt35/reduce-tof-400/REF_M_44159+44160+44161_Specular_Off_Off.dat
+
+2. add a feature to plot-offspec-compare.py makes *vertical* line cuts along 'representative ki_z-kf_z' as a toggle, with one of the representations being ki_z-kf_z == 0, if present in the data. I like the order of the plots and the layout of the tool, please just make the feature toggle between *horizontal* cuts along 'representative Qz' or *vertical* cuts along 'representative ki_z-kf_z'.
+
+This will be a fantastic diagnostic set! Thank you so much.
