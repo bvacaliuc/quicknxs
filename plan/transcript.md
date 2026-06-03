@@ -3005,4 +3005,79 @@ This will be a fantastic diagnostic set! Thank you so much.
 
 Fantastic! I updated my comparison scripting. One thing to change on plot_specular_compare.py: Observe that when the horizontal axis label is emitted, it may conflict with the points readout metrics (see ~/shared/REF_M/QuickNXSv1/prompt35/compare-specular-tof-400-vs-tof-40.png). Can you adjust the code so that the metrics do not overlap with the axis label of the plot above them? Use your judgement as to the most robust method for this and future additions. I suspect that plot_offspec_compare.py might suffer similar effects, so can you check that also?
 
+```
+● Fixed. Both scripts now use a shared _layout_with_footer(fig, text) helper that sizes the bottom margin from the text's line count:
+
+  - Count lines × font_size × 1.4 (matplotlib's monospace leading) + 4 pt below + 10 pt above the text → reserved bottom fraction of fig.get_size_inches()[1] (capped at 40 % as a safety).
+  - Inlined in each script — no shared module since they're independent diagnostic tools.
+
+  Why this approach over alternatives I considered:
+
+  ┌────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                           option                           │                       pros                       │                                                 cons                                                 │
+  ├────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ bump rect=(0, 0.10, …) → 0.15 (CHOSEN ALTERNATIVE in past) │ one-line fix                                     │ brittle: 13 lines breaks it again, same for adding any new metric                                    │
+  ├────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ fixed subplots_adjust(bottom=0.2)                          │ simpler than tight_layout                        │ doesn't pack the upper plots; loses tight_layout's value                                             │
+  ├────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ dedicated GridSpec footer row                              │ matplotlib handles the spacing                   │ three- vs two-row layout depends on caller and complicates gs[1, :] overlay; less flexible than text │
+  ├────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ compute-from-line-count (CHOSEN)                           │ robust to future additions, no upstream coupling │ needs the line-height/leading constants; values picked to match matplotlib defaults                  │
+  └────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Verified on your failing case and three other artefacts — the bottom panel's x-axis label is now visible with a clean gap above the metrics in every case. Committed as f33819b, ready for you to push.
+```
+
+### Prompt 35.3
+
+Great! I ran which produced compare-transcript.txt. I notice there were some 'RuntimeWarnings' emitted, for example:
+
+```
+Loading reference:  /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt35/reduced-tof-400/REF_M_44159+44160+44161_Specular_Off_Off.dat
+  meta:    QuickNXS 1.3.0.dev49 | 2026-06-03 03:04:43
+  points:  1156, segments: 3
+  Qz:      [0.01165, 0.27506] (span 0.2634)
+    seg0  θ=0.00786  Qz=[0.01165, 0.04119]  n=381
+    seg1  θ=0.01948  Qz=[0.02887, 0.10205]  n=381
+    seg2  θ=0.04831  Qz=[0.07144, 0.27506]  n=394
+Loading proposed:   /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt35/reduced-tof-40/REF_M_44159+44160+44161_Specular_Off_Off.dat
+  meta:    QuickNXS 1.3.0.dev49 | 2026-06-03 02:53:51
+  points:  79, segments: 3
+  Qz:      [0.01261, 0.23796] (span 0.2253)
+    seg0  θ=0.00786  Qz=[0.01261, 0.02133]  n=21
+    seg1  θ=0.01948  Qz=[0.03126, 0.05286]  n=21
+    seg2  θ=0.04831  Qz=[0.07302, 0.23796]  n=37
+Regridding (log-R linear-in-Qz) prop -> ref Qz grid...
+  ref Qz grid: n=1156  overlap n=1093
+Computing metrics...
+  points_total              1156
+  points_valid_ref          1156
+  points_valid_prop         1093
+  points_valid_both         1093
+  points_positive_both      1065
+  fraction_valid_both       0.945502
+  log_pearson               0.983519
+  rms_log_residual          0.546366
+  median_ratio              1.00261
+  ratio_q25                 0.915083
+  ratio_q75                 1.14092
+  integrated_R_ref          0.0044175
+  integrated_R_prop         0.00378603
+  integrated_ratio          0.857052
+  plateau_pixels            0
+  plateau_median_ref        None
+  plateau_median_prop       None
+  seg0 theta=0.007859727 n=  327 med=1.0242371557138106 logP=0.9924060641609643
+  seg1 theta=0.01947604 n=  368 med=0.9518209381426892 logP=0.8542339534335218
+  seg2 theta=0.04830529 n=  370 med=0.9914758025573545 logP=0.9859441017300187
+Plotting...
+/home/bvacaliuc/Projects/Claude/1/quicknxsv1/scripts/plot_specular_compare.py:396: RuntimeWarning: divide by zero encountered in divide
+  rel_err_ref  = np.where(Rr > 0, dRr / Rr, np.nan)
+/home/bvacaliuc/Projects/Claude/1/quicknxsv1/scripts/plot_specular_compare.py:396: RuntimeWarning: invalid value encountered in divide
+  rel_err_ref  = np.where(Rr > 0, dRr / Rr, np.nan)
+Wrote /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt35/compare-specular-tof-400-vs-tof-40.png
+```
+
+Would you have a look?
+
 
