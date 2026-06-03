@@ -325,6 +325,32 @@ def compute_metrics(grid, intensity_floor=1e-8):
 _SEG_COLORS = ['#1f77b4', '#d62728', '#2ca02c', '#9467bd', '#ff7f0e', '#17becf']
 
 
+def _layout_with_footer(fig, footer_text, *, font_size=8, top=0.97):
+    """Place ``footer_text`` at the bottom-left of ``fig`` and reserve
+    just enough bottom margin so the text never overlaps the axis label
+    of the plot above it.
+
+    Robust to varying line counts (different metric sets / segment
+    counts / future additions): the reserved fraction is computed from
+    the line count times an estimated line height in points, converted
+    to a figure fraction via ``fig.get_size_inches()[1]``.  Constants
+    below are chosen to match matplotlib's defaults for monospace text
+    and xlabel padding.
+    """
+    n_lines = footer_text.count('\n') + 1
+    line_h_pt        = font_size * 1.4   # monospace leading
+    pad_above_text   = 10                # gap between text top & axes
+    pad_below_text   = 4                 # gap between fig bottom & text
+    fig_h_pt = fig.get_size_inches()[1] * 72.0
+    text_h_pt = n_lines * line_h_pt
+    reserved_pt = pad_below_text + text_h_pt + pad_above_text
+    bottom_frac = min(reserved_pt / fig_h_pt, 0.40)
+    text_y_frac = pad_below_text / fig_h_pt
+    fig.text(0.01, text_y_frac, footer_text,
+             family='monospace', fontsize=font_size, va='bottom')
+    plt.tight_layout(rect=(0, bottom_frac, 1, top))
+
+
 def plot_comparison(ref, prop, grid, metrics, out_path,
                     ymin=1e-6, ymax=2.0, ratio_clip=1.0,
                     plot_segments=True):
@@ -455,10 +481,11 @@ def plot_comparison(ref, prop, grid, metrics, out_path,
             f"n={seg['n_positive']:5d}  "
             f"med={_fmt(seg.get('median_ratio'))}  "
             f"logP={_fmt(seg.get('log_pearson'))}")
-    fig.text(0.01, 0.005, '\n'.join(lines),
-             family='monospace', fontsize=8, va='bottom')
 
-    plt.tight_layout(rect=(0, 0.10, 1, 0.97))
+    # _layout_with_footer reserves bottom margin sized by line count, so a
+    # longer footer (more segments, future metrics) won't eat the bottom
+    # panel's x-axis label.
+    _layout_with_footer(fig, '\n'.join(lines), font_size=8)
     plt.savefig(out_path, dpi=110)
     print(f'Wrote {out_path}')
 
