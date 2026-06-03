@@ -363,8 +363,22 @@ def compute_metrics(grid, specular_halfwidth=2e-3, intensity_floor=1e-6):
 # ----- Plotting --------------------------------------------------------------
 
 def plot_comparison(ref, prop, grid, metrics, out_path,
-                    vmin=1e-6, vmax=2.0, qz_cuts=None, ratio_clip=1.0):
-    """Render the 5-panel comparison figure (Ref, Prop, log ratio, coverage, line cuts)."""
+                    vmin=1e-6, vmax=2.0, qz_cuts=None, kxz_cuts=None,
+                    cut_axis='horizontal', ratio_clip=1.0):
+    """Render the 5-panel comparison figure (Ref, Prop, log ratio, coverage, line cuts).
+
+    ``cut_axis`` selects the bottom-panel line-cut direction:
+
+      - ``'horizontal'`` (default): cut along the x axis at representative
+        ``Qz`` values -- the plot shows I vs (k_iz - k_fz).  Source list:
+        ``qz_cuts`` (auto-picked spread across the Qz extent if None).
+      - ``'vertical'``: cut along the y axis at representative ``k_iz - k_fz``
+        values -- the plot shows I vs Qz.  Source list: ``kxz_cuts``
+        (auto-picked with ``k_iz - k_fz = 0`` always included if it lies in
+        the common-grid x extent).
+
+    Both modes plot ref as solid and prop as dashed, matched colors per cut.
+    """
     fig = plt.figure(figsize=(18, 11))
     gs = fig.add_gridspec(2, 4, height_ratios=[3, 2], width_ratios=[1, 1, 1, 1])
 
@@ -418,27 +432,66 @@ def plot_comparison(ref, prop, grid, metrics, out_path,
     cb = plt.colorbar(im, ax=ax_mask, ticks=[0, 1, 2, 3])
     cb.set_ticklabels(['none', 'ref', 'prop', 'both'])
 
-    # Line cuts at representative Qz values
-    if qz_cuts is None:
-        ymin, ymax = grid['yrange']
-        # Avoid the very edges where coverage is thin.
-        qz_cuts = [ymin + 0.10 * (ymax - ymin),
-                   ymin + 0.30 * (ymax - ymin),
-                   ymin + 0.55 * (ymax - ymin),
-                   ymin + 0.80 * (ymax - ymin)]
-    for qz in qz_cuts:
-        j = int(np.argmin(np.abs(grid['y_axis'] - qz)))
-        qz_actual = grid['y_axis'][j]
-        Ir_cut = np.where(Mr[j] & np.isfinite(Ir[j]), Ir[j], np.nan)
-        Ip_cut = np.where(Mp[j] & np.isfinite(Ip[j]), Ip[j], np.nan)
-        line, = ax_cuts.plot(grid['x_axis'], Ir_cut, '-', lw=1.5,
-                             label=f'ref  Qz={qz_actual:.3f}')
-        ax_cuts.plot(grid['x_axis'], Ip_cut, '--', color=line.get_color(),
-                     lw=1.2, label=f'prop Qz={qz_actual:.3f}')
+    # Line cuts.  Two modes:
+    #
+    # - 'horizontal': cut across constant-Qz rows of the regrided
+    #   intensity, so the bottom plot is I vs (k_iz - k_fz) at several
+    #   representative Qz values.  This is the historical default.
+    # - 'vertical': cut down constant-(k_iz-k_fz) columns, so the bottom
+    #   plot is I vs Qz at several representative k_iz-k_fz values --
+    #   useful for asking "does the specular ridge (k_iz-k_fz=0) match?"
+    #   without having to read it off the 2-D maps above.  Always
+    #   includes the column closest to 0 if the common-grid x extent
+    #   straddles 0.
+    if cut_axis == 'horizontal':
+        if qz_cuts is None:
+            ymin, ymax = grid['yrange']
+            qz_cuts = [ymin + 0.10 * (ymax - ymin),
+                       ymin + 0.30 * (ymax - ymin),
+                       ymin + 0.55 * (ymax - ymin),
+                       ymin + 0.80 * (ymax - ymin)]
+        for qz in qz_cuts:
+            j = int(np.argmin(np.abs(grid['y_axis'] - qz)))
+            qz_actual = grid['y_axis'][j]
+            Ir_cut = np.where(Mr[j] & np.isfinite(Ir[j]), Ir[j], np.nan)
+            Ip_cut = np.where(Mp[j] & np.isfinite(Ip[j]), Ip[j], np.nan)
+            line, = ax_cuts.plot(grid['x_axis'], Ir_cut, '-', lw=1.5,
+                                 label=f'ref  Qz={qz_actual:.3f}')
+            ax_cuts.plot(grid['x_axis'], Ip_cut, '--', color=line.get_color(),
+                         lw=1.2, label=f'prop Qz={qz_actual:.3f}')
+        ax_cuts.set_xlabel(r'$k_{i,z} - k_{f,z}\ [\mathrm{\AA}^{-1}]$')
+        ax_cuts.set_title(r'Line cuts at representative $Q_z$ '
+                          r'(solid=ref, dashed=prop)')
+    elif cut_axis == 'vertical':
+        if kxz_cuts is None:
+            xmin, xmax = grid['xrange']
+            kxz_cuts = [xmin + 0.15 * (xmax - xmin),
+                        xmin + 0.40 * (xmax - xmin),
+                        xmin + 0.60 * (xmax - xmin),
+                        xmin + 0.85 * (xmax - xmin)]
+            # Always include the specular ridge (k_iz - k_fz = 0) if it
+            # is inside the common-grid x extent.
+            if xmin <= 0.0 <= xmax:
+                kxz_cuts.append(0.0)
+        for kxz in kxz_cuts:
+            i = int(np.argmin(np.abs(grid['x_axis'] - kxz)))
+            kxz_actual = grid['x_axis'][i]
+            Ir_col = Ir[:, i]
+            Ip_col = Ip[:, i]
+            Ir_cut = np.where(Mr[:, i] & np.isfinite(Ir_col), Ir_col, np.nan)
+            Ip_cut = np.where(Mp[:, i] & np.isfinite(Ip_col), Ip_col, np.nan)
+            line, = ax_cuts.plot(grid['y_axis'], Ir_cut, '-', lw=1.5,
+                                 label=f'ref  Δkz={kxz_actual:+.4f}')
+            ax_cuts.plot(grid['y_axis'], Ip_cut, '--', color=line.get_color(),
+                         lw=1.2, label=f'prop Δkz={kxz_actual:+.4f}')
+        ax_cuts.set_xlabel(r'$Q_z\ [\mathrm{\AA}^{-1}]$')
+        ax_cuts.set_title(r'Line cuts at representative $k_{i,z} - k_{f,z}$ '
+                          r'(solid=ref, dashed=prop)')
+    else:
+        raise ValueError(f'unknown cut_axis {cut_axis!r}; '
+                         "expected 'horizontal' or 'vertical'")
     ax_cuts.set_yscale('log')
-    ax_cuts.set_xlabel(r'$k_{i,z} - k_{f,z}\ [\mathrm{\AA}^{-1}]$')
     ax_cuts.set_ylabel('I (log)')
-    ax_cuts.set_title('Line cuts at representative Qz (solid=ref, dashed=prop)')
     ax_cuts.legend(fontsize=7, ncol=4, loc='upper right')
     ax_cuts.grid(True, alpha=0.3)
 
@@ -492,8 +545,21 @@ def main():
                     help='Log-ratio panel symmetric clip (default 1.0 = ±decade)')
     ap.add_argument('--specular-halfwidth', type=float, default=2e-3,
                     help='|k_iz - k_fz| < this is the specular stripe (default 2e-3)')
+    ap.add_argument('--cut-axis', choices=('horizontal', 'vertical'),
+                    default='horizontal',
+                    help='Direction of the bottom-panel line cuts: '
+                         '"horizontal" (default) = I vs (k_iz-k_fz) at '
+                         'representative Qz values; "vertical" = I vs Qz '
+                         'at representative k_iz-k_fz values (always '
+                         'includes k_iz-k_fz=0 if the grid straddles it).')
     ap.add_argument('--qz-cut', type=float, action='append', default=None,
-                    help='Add a line-cut at this Qz value; repeat for multiple')
+                    help='Add a HORIZONTAL line-cut at this Qz value; '
+                         'repeat for multiple.  Only used when '
+                         '--cut-axis=horizontal.')
+    ap.add_argument('--kxz-cut', type=float, action='append', default=None,
+                    help='Add a VERTICAL line-cut at this k_iz - k_fz '
+                         'value; repeat for multiple.  Only used when '
+                         '--cut-axis=vertical.')
     ap.add_argument('--x-col', type=int, default=None,
                     help='Column index for x = k_iz - k_fz (auto if omitted: '
                          '3-col file -> 0, 7-col -> 4)')
@@ -549,7 +615,9 @@ def main():
     print('Plotting...')
     plot_comparison(ref, prop, grid, metrics, args.out,
                     vmin=args.vmin, vmax=args.vmax,
-                    ratio_clip=args.ratio_clip, qz_cuts=args.qz_cut)
+                    ratio_clip=args.ratio_clip,
+                    cut_axis=args.cut_axis,
+                    qz_cuts=args.qz_cut, kxz_cuts=args.kxz_cut)
 
     if args.json_out:
         out = {'ref_meta': ref.meta,
