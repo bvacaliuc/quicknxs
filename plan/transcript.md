@@ -17,15 +17,15 @@ This error is obtained when performing `pixi run python scripts/quicknxs`:
 [INFO] - 2026-02-12 07:43:50,305 - gui_logging.py:115:setup_system *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging started ***
 [CRITICAL] - 2026-02-12 07:43:51,752 - gui_logging.py:39:excepthook_overwrite python error
 Traceback (most recent call last):
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/scripts/quicknxs", line 58, in <module>
+  File "~/Projects/Claude/quicknxsv1/scripts/quicknxs", line 58, in <module>
     sys.exit(_run(sys.argv[1:]))
              ^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/scripts/quicknxs", line 45, in _run
+  File "~/Projects/Claude/quicknxsv1/scripts/quicknxs", line 45, in _run
     window=MainGUI(argv)
            ^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 180, in __init__
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 180, in __init__
     self.readSettings()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 2296, in readSettings
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 2296, in readSettings
     if gui.geometry is not None: self.restoreGeometry(QtCore.QByteArray(gui.geometry))
                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 TypeError: arguments did not match any overloaded call:
@@ -57,28 +57,28 @@ This error occurs in the GUI when attempting to read REF_M_25899_histo.nxs:
 [CRITICAL] - 2026-02-13 04:16:49,327 - gui_logging.py:39:excepthook_overwrite python error
 Traceback (most recent call last):
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 1238, in openByNumber
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 1238, in openByNumber
     self.fileOpen(os.path.abspath(search[0]), do_plot=do_plot)
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 169, in log_input
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 169, in log_input
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 352, in fileOpen
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 352, in fileOpen
     data=NXSData(filename,
          ^^^^^^^^^^^^^^^^^
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 232, in log_both
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 232, in log_both
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qreduce.py", line 224, in __new__
+  File "~/Projects/Claude/quicknxsv1/quicknxs/qreduce.py", line 224, in __new__
     if not self._read_file(filename):
            ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qreduce.py", line 255, in _read_file
+  File "~/Projects/Claude/quicknxsv1/quicknxs/qreduce.py", line 255, in _read_file
     self._options['callback'](0.)
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 2203, in updateEventReadout
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 2203, in updateEventReadout
     self.eventProgress.setValue(progress*100)
 TypeError: setValue(self, value: int): argument 1 has unexpected type 'float'
 [INFO] - 2026-02-13 04:17:17,623 - gui_logging.py:45:goodby *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging ended ***
@@ -169,29 +169,29 @@ This error is obtained when performing a reduction from the ReduceDialog:
 [CRITICAL] - 2026-02-14 13:16:34,845 - gui_logging.py:39:excepthook_overwrite python error
 Traceback (most recent call last):
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 1965, in reduceDatasets
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 1965, in reduceDatasets
     dialog.exec_()
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 468, in exec_
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 468, in exec_
     self.execute()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 101, in execute
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 101, in execute
     self.smooth_offspec()
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 217, in smooth_offspec
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 217, in smooth_offspec
     dia=SmoothDialog(self._parent_window, data)
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 637, in __init__
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 637, in __init__
     self.drawPlot()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 712, in drawPlot
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 712, in drawPlot
     self.sigma_1=Ellipse(sigma_pos, self.ui.sigmaX.value()*2, self.ui.sigmaY.value()*2,
                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 TypeError: Ellipse.__init__() takes 4 positional arguments but 5 were given
@@ -229,21 +229,21 @@ This error is obtained when selecting 'Qx vs Qz' from a Smoothing dialog:
 [INFO] - 2026-02-14 14:17:29,594 - gui_utils.py:98:execute Extracting corrected off-specular data...
 [CRITICAL] - 2026-02-14 14:17:49,599 - gui_logging.py:39:excepthook_overwrite python error
 Traceback (most recent call last):
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 722, in drawPlot
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 722, in drawPlot
     plot.draw()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/mplwidget.py", line 356, in draw
+  File "~/Projects/Claude/quicknxsv1/quicknxs/mplwidget.py", line 356, in draw
     self.canvas.draw()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_agg.py", line 380, in draw
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_agg.py", line 380, in draw
     with (self.toolbar._wait_cursor_for_draw_cm() if self.toolbar
           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/contextlib.py", line 144, in __exit__
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/contextlib.py", line 144, in __exit__
     next(self.gen)
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backend_bases.py", line 2928, in _wait_cursor_for_draw_cm
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backend_bases.py", line 2928, in _wait_cursor_for_draw_cm
     self.canvas.set_cursor(self._last_cursor)
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_qt.py", line 284, in set_cursor
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_qt.py", line 284, in set_cursor
     self.setCursor(_api.check_getitem(cursord, cursor=cursor))
                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/_api/__init__.py", line 198, in check_getitem
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/_api/__init__.py", line 198, in check_getitem
     raise ValueError(
 ValueError: None is not a valid value for cursor; supported values are <Cursors.MOVE: 4>, <Cursors.HAND: 2>, <Cursors.POINTER: 1>, <Cursors.SELECT_REGION: 3>, <Cursors.WAIT: 5>, <Cursors.RESIZE_HORIZONTAL: 6>, <Cursors.RESIZE_VERTICAL: 7>
 ```
@@ -586,7 +586,7 @@ Response:
 ```
   #!/bin/bash                                  
   # run_implementation.sh                                                                                                                                                                                                                  
-  cd /home/bvacaliuc/Projects/Claude.2/quicknxsv1                                                                                                                                                                                          
+  cd ~/Projects/Claude.2/quicknxsv1                                                                                                                                                                                          
                                                                                                                                                                                                                                            
   claude -p "$(cat prompts/session1.md)" --dangerously-skip-permissions --model claude-opus-4-6                                                                                                                                            
   claude -p "$(cat prompts/session2.md)" --dangerously-skip-permissions --model claude-opus-4-6
@@ -1039,7 +1039,7 @@ then
 
 ### Prompt 30.1
 
-Great! I tested the current state of the quicknxsv1 (0a92e5c7) and produced my result in /home/bvacaliuc/shared/REF_M/11486/session13/**. Note: /home/bvacaliuc/shared/REF_M/11486/** is an rsync-copy of /SNS/users/6ov/shared/REF_M/11486/** I made because on this machine /SNS/users/6ov/** is accessed via an sshfs mount over a 50Mbps link. Thank you for making it possible for me to load quicknxsv2 files. I loaded correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat and performed reductions. I note from your earlier responses that there are still remaining tasks in plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md. However, I'm uncertain as to what parts have been done already from these two plans and what remains. Please review these plans against your context so far as well as the new information from session13/**. As for myself, I observe a discrepancy in the offspecular (compare session13/quicknxsv1-offspecular-smoothing-options.png with session12/quicknxsv1-offspecular-smoothing-options.png) plot that shows missing data. This is a similar issue that was reported earlier (see plan/prompt-28.2-offspec.png and plan/prompt-30.1-offspec.png). Please review the current state of the code, my interactive tests made so far and suggest reasonable next steps.
+Great! I tested the current state of the quicknxsv1 (0a92e5c7) and produced my result in ~/shared/REF_M/11486/session13/**. Note: ~/shared/REF_M/11486/** is an rsync-copy of /SNS/users/6ov/shared/REF_M/11486/** I made because on this machine /SNS/users/6ov/** is accessed via an sshfs mount over a 50Mbps link. Thank you for making it possible for me to load quicknxsv2 files. I loaded correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat and performed reductions. I note from your earlier responses that there are still remaining tasks in plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md. However, I'm uncertain as to what parts have been done already from these two plans and what remains. Please review these plans against your context so far as well as the new information from session13/**. As for myself, I observe a discrepancy in the offspecular (compare session13/quicknxsv1-offspecular-smoothing-options.png with session12/quicknxsv1-offspecular-smoothing-options.png) plot that shows missing data. This is a similar issue that was reported earlier (see plan/prompt-28.2-offspec.png and plan/prompt-30.1-offspec.png). Please review the current state of the code, my interactive tests made so far and suggest reasonable next steps.
 
 During the above prompt operation, I observed something and asked a 'by the way' question:
 
@@ -2834,13 +2834,13 @@ Files referenced without a full path are to be found in ~/shared/REF_M/QuickNXSv
 
 ```
 └─$ ( cd ~/Projects/Claude/1/quicknxsv1 ; pixi run python scripts/plot_offspec_compare.py --ref ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat --prop ~/shared/REF_M/QuickNXSv1/prompt34/reduced-prompt-34.7-smoothed/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat --out ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8.png )
-Loading reference:  /home/bvacaliuc/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat
+Loading reference:  ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat
   meta:    QuickNXS 4.3.0rc1 | Mantid 6.12.0 | 2025-04-08 16:11:14
   columns: 3-col file, using (x,y,I)=(0, 1, 2)
   grid:    nx=563, ny=1000, regular=True
   x range: [-0.11404, 0.08589]
   y range: [-0.10000, 0.37582]
-Loading proposed:   /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt34/reduced-prompt-34.7-smoothed/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat
+Loading proposed:   ~/shared/REF_M/QuickNXSv1/prompt34/reduced-prompt-34.7-smoothed/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat
   meta:    QuickNXS 1.3.0.dev49 | 2026-06-02 07:16:26
   columns: 3-col file, using (x,y,I)=(0, 1, 2)
   grid:    nx=536, ny=996, regular=True
@@ -2871,20 +2871,20 @@ Computing metrics...
   peak_dx                  -0.0747051
   peak_dy                  0.104767
 Plotting...
-Wrote /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8.png
+Wrote ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8.png
 ```
 
 I then noticed that the x-range and y-range values in the above *differed* between the two reduced values, so I started a *third* quicknxsv1 session, to choose the *same* x/y range values (see quicknxs-offspecular-smoothing-options-000525-take2.png, and the reduced output in ~/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/**):
 
 ```
 └─$ ( cd ~/Projects/Claude/1/quicknxsv1 ; pixi run python scripts/plot_offspec_compare.py --ref ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat --prop ~/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat --out ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8-take2.png )
-Loading reference:  /home/bvacaliuc/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat
+Loading reference:  ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat
   meta:    QuickNXS 4.3.0rc1 | Mantid 6.12.0 | 2025-04-08 16:11:14
   columns: 3-col file, using (x,y,I)=(0, 1, 2)
   grid:    nx=563, ny=1000, regular=True
   x range: [-0.11404, 0.08589]
   y range: [-0.10000, 0.37582]
-Loading proposed:   /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat
+Loading proposed:   ~/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat
   meta:    QuickNXS 1.3.0.dev49 | 2026-06-02 09:03:33
   columns: 3-col file, using (x,y,I)=(0, 1, 2)
   grid:    nx=536, ny=1000, regular=True
@@ -2915,7 +2915,7 @@ Computing metrics...
   peak_dx                  -0.0743493
   peak_dy                  0.104785
 Plotting...
-Wrote /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8-take2.png
+Wrote ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8-take2.png
 ```
 
 4. Please review plan/prompt-35-todo.md and update it in light of the above investigations.
@@ -3030,17 +3030,17 @@ Fantastic! I updated my comparison scripting. One thing to change on plot_specul
 
 ### Prompt 35.3
 
-Great! I ran which produced compare-transcript.txt. I notice there were some 'RuntimeWarnings' emitted, for example:
+Great! I ran ~/shared/REF_M/QuickNXSv1/prompt35/commands.txt which produced ~/shared/REF_M/QuickNXSv1/prompt35/compare-transcript.txt. I notice there were some 'RuntimeWarnings' emitted, for example:
 
 ```
-Loading reference:  /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt35/reduced-tof-400/REF_M_44159+44160+44161_Specular_Off_Off.dat
+Loading reference:  ~/shared/REF_M/QuickNXSv1/prompt35/reduced-tof-400/REF_M_44159+44160+44161_Specular_Off_Off.dat
   meta:    QuickNXS 1.3.0.dev49 | 2026-06-03 03:04:43
   points:  1156, segments: 3
   Qz:      [0.01165, 0.27506] (span 0.2634)
     seg0  θ=0.00786  Qz=[0.01165, 0.04119]  n=381
     seg1  θ=0.01948  Qz=[0.02887, 0.10205]  n=381
     seg2  θ=0.04831  Qz=[0.07144, 0.27506]  n=394
-Loading proposed:   /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt35/reduced-tof-40/REF_M_44159+44160+44161_Specular_Off_Off.dat
+Loading proposed:   ~/shared/REF_M/QuickNXSv1/prompt35/reduced-tof-40/REF_M_44159+44160+44161_Specular_Off_Off.dat
   meta:    QuickNXS 1.3.0.dev49 | 2026-06-03 02:53:51
   points:  79, segments: 3
   Qz:      [0.01261, 0.23796] (span 0.2253)
@@ -3071,11 +3071,11 @@ Computing metrics...
   seg1 theta=0.01947604 n=  368 med=0.9518209381426892 logP=0.8542339534335218
   seg2 theta=0.04830529 n=  370 med=0.9914758025573545 logP=0.9859441017300187
 Plotting...
-/home/bvacaliuc/Projects/Claude/1/quicknxsv1/scripts/plot_specular_compare.py:396: RuntimeWarning: divide by zero encountered in divide
+~/Projects/Claude/1/quicknxsv1/scripts/plot_specular_compare.py:396: RuntimeWarning: divide by zero encountered in divide
   rel_err_ref  = np.where(Rr > 0, dRr / Rr, np.nan)
-/home/bvacaliuc/Projects/Claude/1/quicknxsv1/scripts/plot_specular_compare.py:396: RuntimeWarning: invalid value encountered in divide
+~/Projects/Claude/1/quicknxsv1/scripts/plot_specular_compare.py:396: RuntimeWarning: invalid value encountered in divide
   rel_err_ref  = np.where(Rr > 0, dRr / Rr, np.nan)
-Wrote /home/bvacaliuc/shared/REF_M/QuickNXSv1/prompt35/compare-specular-tof-400-vs-tof-40.png
+Wrote ~/shared/REF_M/QuickNXSv1/prompt35/compare-specular-tof-400-vs-tof-40.png
 ```
 
 Would you have a look?
