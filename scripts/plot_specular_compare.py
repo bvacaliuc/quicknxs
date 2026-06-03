@@ -417,10 +417,21 @@ def plot_comparison(ref, prop, grid, metrics, out_path,
     ax_ratio.grid(True, alpha=0.4)
 
     # Relative error vs Qz: dR/R for each side.
+    #
+    # ``np.where(cond, A/B, default)`` evaluates ``A/B`` for *every* element
+    # and only then selects -- that fires the divide-by-zero / invalid-value
+    # warnings on the elements we ultimately discard.  ``np.divide(out=...,
+    # where=...)`` doesn't compute the divide at all on the masked-out
+    # positions, so the result is identical without the spurious warnings.
     dRr = grid['dR_ref']
     dRp = grid['dR_prop']
-    rel_err_ref  = np.where(Rr > 0, dRr / Rr, np.nan)
-    rel_err_prop = np.where(Rp > 0, dRp / Rp, np.nan)
+    def _safe_rel_err(dR, R):
+        out  = np.full_like(R, np.nan, dtype=float)
+        mask = np.isfinite(R) & (R > 0) & np.isfinite(dR)
+        np.divide(dR, R, out=out, where=mask)
+        return out
+    rel_err_ref  = _safe_rel_err(dRr, Rr)
+    rel_err_prop = _safe_rel_err(dRp, Rp)
     ax_err.plot(Qz[pos_both], rel_err_ref[pos_both],  '.', ms=2.5, alpha=0.7,
                 color='#1f77b4', label='ref')
     ax_err.plot(Qz[pos_both], rel_err_prop[pos_both], '.', ms=2.5, alpha=0.7,
