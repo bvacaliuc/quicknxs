@@ -351,6 +351,38 @@ def _layout_with_footer(fig, footer_text, *, font_size=8, top=0.97):
     plt.tight_layout(rect=(0, bottom_frac, 1, top))
 
 
+def _safe_rel_err(dR, R):
+    """Return ``dR / R`` as a float array, with NaN at any element where the
+    division would be invalid or undefined.
+
+    Why this exists: the obvious one-liner ``np.where(R > 0, dR / R, np.nan)``
+    looks safe but is NOT -- ``np.where`` is eager in its argument evaluation,
+    so ``dR / R`` is computed for every element BEFORE the mask is applied.
+    On the masked-out positions that arithmetic produces divide-by-zero
+    (R == 0) or invalid-value (R == NaN, dR == NaN) RuntimeWarnings even
+    though the resulting cells are immediately overwritten with NaN.
+
+    Using ``np.divide(out=, where=)`` skips the divide on positions where the
+    mask is False, so no warnings are produced and the result is identical
+    to the intended one.
+
+    The mask combines:
+
+    - ``np.isfinite(R) & (R > 0)`` -- positive, finite denominator,
+    - ``np.isfinite(dR)``          -- finite numerator.
+
+    Any element failing any of these reads as NaN in the output, so callers
+    can plot the result on a log axis without further masking.
+
+    Use this anywhere you would write ``dR/R``, ``np.where(R>0, dR/R, nan)``,
+    or wrap an unguarded divide in ``with np.errstate(...): ...``.
+    """
+    out  = np.full_like(R, np.nan, dtype=float)
+    mask = np.isfinite(R) & (R > 0) & np.isfinite(dR)
+    np.divide(dR, R, out=out, where=mask)
+    return out
+
+
 def plot_comparison(ref, prop, grid, metrics, out_path,
                     ymin=1e-6, ymax=2.0, ratio_clip=1.0,
                     plot_segments=True):
@@ -416,20 +448,10 @@ def plot_comparison(ref, prop, grid, metrics, out_path,
     ax_ratio.set_title(r'$\log_{10}$(prop / ref) vs $Q_z$ (common grid)')
     ax_ratio.grid(True, alpha=0.4)
 
-    # Relative error vs Qz: dR/R for each side.
-    #
-    # ``np.where(cond, A/B, default)`` evaluates ``A/B`` for *every* element
-    # and only then selects -- that fires the divide-by-zero / invalid-value
-    # warnings on the elements we ultimately discard.  ``np.divide(out=...,
-    # where=...)`` doesn't compute the divide at all on the masked-out
-    # positions, so the result is identical without the spurious warnings.
+    # Relative error vs Qz: dR/R for each side.  _safe_rel_err handles the
+    # np.where-divide-by-zero footgun (see its module-scope docstring).
     dRr = grid['dR_ref']
     dRp = grid['dR_prop']
-    def _safe_rel_err(dR, R):
-        out  = np.full_like(R, np.nan, dtype=float)
-        mask = np.isfinite(R) & (R > 0) & np.isfinite(dR)
-        np.divide(dR, R, out=out, where=mask)
-        return out
     rel_err_ref  = _safe_rel_err(dRr, Rr)
     rel_err_prop = _safe_rel_err(dRp, Rp)
     ax_err.plot(Qz[pos_both], rel_err_ref[pos_both],  '.', ms=2.5, alpha=0.7,

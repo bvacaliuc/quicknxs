@@ -234,9 +234,14 @@ def _make_evaluator(red):
         I_out = f_I(pts)
         M_out = f_M(pts)
         # Renormalize intensity to "undo" the NaN-as-zero dilution near edges.
-        with np.errstate(invalid='ignore', divide='ignore'):
-            I_out = np.where(M_out > 1e-6, I_out / np.maximum(M_out, 1e-6), np.nan)
-        return I_out, (M_out > 0.5)
+        # Use np.divide(out=, where=) instead of np.where + errstate so the
+        # division is not computed at all on masked-out positions -- avoids
+        # the same divide-by-zero / invalid-value RuntimeWarnings that
+        # plot_specular_compare._safe_rel_err defends against.
+        out  = np.full_like(M_out, np.nan, dtype=float)
+        mask = (M_out > 1e-6) & np.isfinite(I_out)
+        np.divide(I_out, M_out, out=out, where=mask)
+        return out, (M_out > 0.5)
     return _eval
 
 
