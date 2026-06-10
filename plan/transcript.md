@@ -3113,5 +3113,35 @@ Would you have a look?
 
 Ok, thank you. Would you have a look at the remaining scripts in scripts/* and apply the same guard. Perhaps define _safe_rel_err() in module scope with a proper docstring?
 
+```
+● Done. Summary of the audit:
+
+  ┌─────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────┐
+  │                           script                            │                    divides / logs                    │                                    verdict                                    │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ plot_specular_compare.py                                    │ rel_err sites at 422-423                             │ migrated to module-scope _safe_rel_err                                        │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ plot_offspec_compare.py                                     │ _make_evaluator regular-grid branch                  │ migrated to np.divide(out=, where=) (drops the with np.errstate(...) wrapper) │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ compare_offspec_44159.py                                    │ np.log(np.maximum(...)) + mine_I[mask] / ref_I[mask] │ safe — explicit pre-mask + clamp                                              │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ validate_load_reduced_specular.py                           │ np.log10, divide, sqrt                               │ safe — good = (R > 0) & isfinite(R) filter applied before the math            │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ diag_specular_decompose.py                                  │ Python-scalar divides                                │ safe — if x else nan / if x > 0 guards                                        │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ reduce_offspec_headless.py                                  │ ETA divide                                           │ safe — if frac > 0 else inf                                                   │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ reduce_headless.py, load_test.py, profile_responsiveness.py │ no risky math                                        │ —                                                                             │
+  └─────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────┘
+
+  _safe_rel_err is now at module scope in plot_specular_compare.py with a docstring that explains:
+  - the np.where eager-evaluation footgun it defends against,
+  - the exact mask conditions (isfinite(R) & (R > 0) & isfinite(dR)),
+  - when to use it (anywhere you'd write dR/R, np.where(R>0, dR/R, nan), or wrap in with np.errstate(...)).
+  
+  All four user cases run silent under -W error::RuntimeWarning. Committed as f7cb6d5, ready for you to push (now 3 commits ahead).
+```
+
+
 
 
