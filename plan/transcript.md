@@ -3080,4 +3080,38 @@ Wrote ~/shared/REF_M/QuickNXSv1/prompt35/compare-specular-tof-400-vs-tof-40.png
 
 Would you have a look?
 
+```
+● Both scripts run silent under -W error::RuntimeWarning.
+
+  Root cause: np.where(R > 0, dR / R, nan) evaluates both branches before selecting — dR / R runs on every element including where R is 0 or NaN, firing the warnings. The mask just picks the result; it doesn't gate the computation.
+
+  Fix: swap to np.divide(dR, R, out=nan_array, where=mask), which actually skips the divide on masked-out positions. I wrapped it in a small _safe_rel_err helper so the two relative-error sites share one definition and the intent is
+  documented inline:
+
+  def _safe_rel_err(dR, R):
+      out  = np.full_like(R, np.nan, dtype=float)
+      mask = np.isfinite(R) & (R > 0) & np.isfinite(dR)
+      np.divide(dR, R, out=out, where=mask)
+      return out
+  
+  Audit of both scripts:
+
+  ┌────────────────────────────────────────────────────────────────────┬───────────────┬───────────────────────────────────────────────────────┐
+  │                                site                                │     safe?     │                          why                          │
+  ├────────────────────────────────────────────────────────────────────┼───────────────┼───────────────────────────────────────────────────────┤
+  │ specular_compare.py:422–423 rel_err_ref/prop                       │ ❌ → ✅ fixed │ now _safe_rel_err                                     │
+  ├────────────────────────────────────────────────────────────────────┼───────────────┼───────────────────────────────────────────────────────┤
+  │ offspec_compare.py:238 np.where(M>1e-6, I/np.maximum(M,1e-6), nan) │ ✅            │ np.maximum(M, 1e-6) guarantees denom ≥ 1e-6           │
+  ├────────────────────────────────────────────────────────────────────┼───────────────┼───────────────────────────────────────────────────────┤
+  │ offspec_compare.py:314–319, 350–353, 439                           │ ✅            │ all already on [pos_both] / [sel] pre-filtered arrays │
+  └────────────────────────────────────────────────────────────────────┴───────────────┴───────────────────────────────────────────────────────┘
+
+  Committed as 8121774, ready for you to push.
+```
+
+### Prompt 35.4
+
+Ok, thank you. Would you have a look at the remaining scripts in scripts/* and apply the same guard. Perhaps define _safe_rel_err() in module scope with a proper docstring?
+
+
 
