@@ -292,18 +292,15 @@ class DataReductionTests(unittest.TestCase):
     self.assertGreater(np.abs(S[:, kept]).max(), 0., 'illuminated bins must retain signal')
 
   def test_offspec_flux_floor_tames_low_flux_blowup(self):
-    """With the flux floor, the off-spec max is no larger than with the floor
-    disabled (floor=0, the old norm.I>0 guard) -- i.e. the floor only ever
-    removes (masks) the low-flux 1/flux spikes, never inflates signal."""
+    """With the flux floor (offspec_flux_floor option), the off-spec max is no
+    larger than with the floor disabled (offspec_flux_floor=0, the old norm.I>0
+    guard) -- i.e. the floor only ever removes (masks) low-flux 1/flux spikes,
+    never inflates signal.  Exercises the per-run option the GUI now exposes."""
     d=self.data[0]
     norm=qreduce.Reflectivity(d, x_pos=206., tth=0., dpix=206.)
     oS_floor=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206., normalization=norm)
-    old=qreduce.MANTID_OFFSPEC_FLUX_FLOOR
-    try:
-      qreduce.MANTID_OFFSPEC_FLUX_FLOOR=0.0
-      oS_none=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206., normalization=norm)
-    finally:
-      qreduce.MANTID_OFFSPEC_FLUX_FLOOR=old
+    oS_none=qreduce.OffSpecular(d, x_pos=206., tth=0., dpix=206., normalization=norm,
+                                offspec_flux_floor=0.0)
     self.assertLessEqual(np.nanmax(np.abs(np.asarray(oS_floor.S))),
                          np.nanmax(np.abs(np.asarray(oS_none.S)))+1e-12)
     self.assertTrue(np.isfinite(oS_floor.S).all())

@@ -17,15 +17,15 @@ This error is obtained when performing `pixi run python scripts/quicknxs`:
 [INFO] - 2026-02-12 07:43:50,305 - gui_logging.py:115:setup_system *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging started ***
 [CRITICAL] - 2026-02-12 07:43:51,752 - gui_logging.py:39:excepthook_overwrite python error
 Traceback (most recent call last):
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/scripts/quicknxs", line 58, in <module>
+  File "~/Projects/Claude/quicknxsv1/scripts/quicknxs", line 58, in <module>
     sys.exit(_run(sys.argv[1:]))
              ^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/scripts/quicknxs", line 45, in _run
+  File "~/Projects/Claude/quicknxsv1/scripts/quicknxs", line 45, in _run
     window=MainGUI(argv)
            ^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 180, in __init__
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 180, in __init__
     self.readSettings()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 2296, in readSettings
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 2296, in readSettings
     if gui.geometry is not None: self.restoreGeometry(QtCore.QByteArray(gui.geometry))
                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 TypeError: arguments did not match any overloaded call:
@@ -57,28 +57,28 @@ This error occurs in the GUI when attempting to read REF_M_25899_histo.nxs:
 [CRITICAL] - 2026-02-13 04:16:49,327 - gui_logging.py:39:excepthook_overwrite python error
 Traceback (most recent call last):
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 1238, in openByNumber
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 1238, in openByNumber
     self.fileOpen(os.path.abspath(search[0]), do_plot=do_plot)
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 169, in log_input
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 169, in log_input
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 352, in fileOpen
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 352, in fileOpen
     data=NXSData(filename,
          ^^^^^^^^^^^^^^^^^
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 232, in log_both
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 232, in log_both
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qreduce.py", line 224, in __new__
+  File "~/Projects/Claude/quicknxsv1/quicknxs/qreduce.py", line 224, in __new__
     if not self._read_file(filename):
            ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/qreduce.py", line 255, in _read_file
+  File "~/Projects/Claude/quicknxsv1/quicknxs/qreduce.py", line 255, in _read_file
     self._options['callback'](0.)
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 2203, in updateEventReadout
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 2203, in updateEventReadout
     self.eventProgress.setValue(progress*100)
 TypeError: setValue(self, value: int): argument 1 has unexpected type 'float'
 [INFO] - 2026-02-13 04:17:17,623 - gui_logging.py:45:goodby *** QuickNXS 1.1.6 feature/pixi_py3_qt5 Logging ended ***
@@ -169,29 +169,29 @@ This error is obtained when performing a reduction from the ReduceDialog:
 [CRITICAL] - 2026-02-14 13:16:34,845 - gui_logging.py:39:excepthook_overwrite python error
 Traceback (most recent call last):
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 1965, in reduceDatasets
+  File "~/Projects/Claude/quicknxsv1/quicknxs/main_gui.py", line 1965, in reduceDatasets
     dialog.exec_()
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 468, in exec_
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 468, in exec_
     self.execute()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 101, in execute
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 101, in execute
     self.smooth_offspec()
   File "<string>", line 1, in <lambda>
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
+  File "~/Projects/Claude/quicknxsv1/quicknxs/decorators.py", line 154, in log_call
     if logging.root.getEffectiveLevel()>logging.DEBUG: return func(*args, **kw)
                                                               ^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 217, in smooth_offspec
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 217, in smooth_offspec
     dia=SmoothDialog(self._parent_window, data)
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 637, in __init__
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 637, in __init__
     self.drawPlot()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 712, in drawPlot
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 712, in drawPlot
     self.sigma_1=Ellipse(sigma_pos, self.ui.sigmaX.value()*2, self.ui.sigmaY.value()*2,
                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 TypeError: Ellipse.__init__() takes 4 positional arguments but 5 were given
@@ -229,21 +229,21 @@ This error is obtained when selecting 'Qx vs Qz' from a Smoothing dialog:
 [INFO] - 2026-02-14 14:17:29,594 - gui_utils.py:98:execute Extracting corrected off-specular data...
 [CRITICAL] - 2026-02-14 14:17:49,599 - gui_logging.py:39:excepthook_overwrite python error
 Traceback (most recent call last):
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 722, in drawPlot
+  File "~/Projects/Claude/quicknxsv1/quicknxs/gui_utils.py", line 722, in drawPlot
     plot.draw()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/quicknxs/mplwidget.py", line 356, in draw
+  File "~/Projects/Claude/quicknxsv1/quicknxs/mplwidget.py", line 356, in draw
     self.canvas.draw()
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_agg.py", line 380, in draw
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_agg.py", line 380, in draw
     with (self.toolbar._wait_cursor_for_draw_cm() if self.toolbar
           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/contextlib.py", line 144, in __exit__
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/contextlib.py", line 144, in __exit__
     next(self.gen)
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backend_bases.py", line 2928, in _wait_cursor_for_draw_cm
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backend_bases.py", line 2928, in _wait_cursor_for_draw_cm
     self.canvas.set_cursor(self._last_cursor)
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_qt.py", line 284, in set_cursor
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/backends/backend_qt.py", line 284, in set_cursor
     self.setCursor(_api.check_getitem(cursord, cursor=cursor))
                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/bvacaliuc/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/_api/__init__.py", line 198, in check_getitem
+  File "~/Projects/Claude/quicknxsv1/.pixi/envs/default/lib/python3.12/site-packages/matplotlib/_api/__init__.py", line 198, in check_getitem
     raise ValueError(
 ValueError: None is not a valid value for cursor; supported values are <Cursors.MOVE: 4>, <Cursors.HAND: 2>, <Cursors.POINTER: 1>, <Cursors.SELECT_REGION: 3>, <Cursors.WAIT: 5>, <Cursors.RESIZE_HORIZONTAL: 6>, <Cursors.RESIZE_VERTICAL: 7>
 ```
@@ -586,7 +586,7 @@ Response:
 ```
   #!/bin/bash                                  
   # run_implementation.sh                                                                                                                                                                                                                  
-  cd /home/bvacaliuc/Projects/Claude.2/quicknxsv1                                                                                                                                                                                          
+  cd ~/Projects/Claude.2/quicknxsv1                                                                                                                                                                                          
                                                                                                                                                                                                                                            
   claude -p "$(cat prompts/session1.md)" --dangerously-skip-permissions --model claude-opus-4-6                                                                                                                                            
   claude -p "$(cat prompts/session2.md)" --dangerously-skip-permissions --model claude-opus-4-6
@@ -1039,7 +1039,7 @@ then
 
 ### Prompt 30.1
 
-Great! I tested the current state of the quicknxsv1 (0a92e5c7) and produced my result in /home/bvacaliuc/shared/REF_M/11486/session13/**. Note: /home/bvacaliuc/shared/REF_M/11486/** is an rsync-copy of /SNS/users/6ov/shared/REF_M/11486/** I made because on this machine /SNS/users/6ov/** is accessed via an sshfs mount over a 50Mbps link. Thank you for making it possible for me to load quicknxsv2 files. I loaded correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat and performed reductions. I note from your earlier responses that there are still remaining tasks in plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md. However, I'm uncertain as to what parts have been done already from these two plans and what remains. Please review these plans against your context so far as well as the new information from session13/**. As for myself, I observe a discrepancy in the offspecular (compare session13/quicknxsv1-offspecular-smoothing-options.png with session12/quicknxsv1-offspecular-smoothing-options.png) plot that shows missing data. This is a similar issue that was reported earlier (see plan/prompt-28.2-offspec.png and plan/prompt-30.1-offspec.png). Please review the current state of the code, my interactive tests made so far and suggest reasonable next steps.
+Great! I tested the current state of the quicknxsv1 (0a92e5c7) and produced my result in ~/shared/REF_M/11486/session13/**. Note: ~/shared/REF_M/11486/** is an rsync-copy of /SNS/users/6ov/shared/REF_M/11486/** I made because on this machine /SNS/users/6ov/** is accessed via an sshfs mount over a 50Mbps link. Thank you for making it possible for me to load quicknxsv2 files. I loaded correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat and performed reductions. I note from your earlier responses that there are still remaining tasks in plan/prompt-30-remaining.md and plan/prompt-31-load-reduced-data.md. However, I'm uncertain as to what parts have been done already from these two plans and what remains. Please review these plans against your context so far as well as the new information from session13/**. As for myself, I observe a discrepancy in the offspecular (compare session13/quicknxsv1-offspecular-smoothing-options.png with session12/quicknxsv1-offspecular-smoothing-options.png) plot that shows missing data. This is a similar issue that was reported earlier (see plan/prompt-28.2-offspec.png and plan/prompt-30.1-offspec.png). Please review the current state of the code, my interactive tests made so far and suggest reasonable next steps.
 
 During the above prompt operation, I observed something and asked a 'by the way' question:
 
@@ -2614,6 +2614,533 @@ I restored the sshfs mounts
 ### Prompt 34.2
 
 I have restored the sshfs mounts, please continue with the paired end-to-end check.
+
+```
+● Committed 4a87b61 (only this commit is unpushed now — looks like you pushed the earlier ones).
+  
+  Done — the v1-vs-Mantid off-spec deficit is fully resolved
+
+  With the mount back, the paired end-to-end closes it: v1 now matches correctReduction at median ratio 1.067 (both channels) — from the original 0.154. Specular ≈ off-spec (asymmetry gone), peaks coincident, log-Pearson 0.89. The
+  leftover 1.067 is the benign ~1.07 ROI-bookkeeping factor (v1's round(pos±w/2)+1 pixel ROI vs v2's exact ROI — uniform, peaks aligned), not a deficit.
+
+  Four root causes, four fixes — all committed on feature/read-event-nexus:
+  1. Per-channel proton charge (99baaa3) — the ~2× factor; v1 was normalizing every spin channel by the full-run charge. This also fixed the deferred specular deficit #1.
+  2. BG-X off toggle (5b6317b) — correctReduction was made with background subtraction off; removed the spec/offspec asymmetry.
+  3. Paired DB (9c13190) — the DB_ID=1/1/1 is a v2 writer bug (pass-by-value int); correctReduction is actually paired. Use --db-mode paired.
+  4. Direct-beam flux floor (358b8ba) — replaced the too-blunt 1.4 Å band-crop that was destroying run 44161's high-angle signal; masks only genuinely unilluminated DB bins.
+
+  Your three clarifying tasks
+
+  - DB_ID: confirmed a v2 writer bug; correctReduction is paired; v2→v1 interop is dangerous (v1 reads DB_ID literally, no angle re-match). Full matrix in plan/db-id-bug-and-interop.md.
+  - Scripts: all 15 diagnostics moved to quicknxsv1/plan/scripts/ (+README); docs cite in-repo paths. The "capture documented methods in the repo" rule is now in the parent CLAUDE.md.
+  - Preferences saved: no out-of-tree documented code, and wait-for-limit-reset (memory + agent-discipline.md todo).
+
+  Ready to push: quicknxsv1 4a87b61 (final docs) and parent dragonfly (b758ab1, 6c103a8). Nothing left open — the deficit investigation is complete end-to-end.
+```
+
+### Prompt 34.3
+
+Expose subtract_background and flux floor in the GUI off-spec dialog.
+
+```
+● Done — both settings are now in the Off-Specular tab. Committed 718fc8c.
+
+  What I added
+  
+  - offspec_flux_floor — new qreduce per-run option (in Reflectivity.DEFAULT_OPTIONS, default MANTID_OFFSPEC_FLUX_FLOOR=1e-3); _calc_offspec now reads it.
+  - Off-Specular tab controls (added programmatically in main_gui.py, so both default/docked interfaces get them, no .ui recompile):
+    - "Subtract BG (BG X)" checkbox → subtract_background.
+    - "Flux floor 10^" spinbox → offspec_flux_floor (default −3 = 1e‑3).
+  - Wiring: both flow into the calcReflParams options dict (baked at Reduce, so export honors them) and are applied live in plot_offspec (preview updates immediately).
+
+  Design choice (worth knowing)
+
+  BG-X is one logical flag (v2's model — it affects specular and off-spec). Rather than add a second, redundant BG control, I two-way-synced the new "Subtract BG (BG X)" checkbox with the existing background checkbox (bgActive), which
+  now drives the clean subtract_background flag. So you get the BG-X toggle visible in the off-spec tab, but there's still a single source of truth. The flux floor is genuinely off-spec-specific and new.
+
+  Tests (headless/offscreen, green)
+  
+  - main_gui_test.test_offspec_bgx_and_flux_floor_controls — controls exist, default flux floor = 1e‑3, BG-X ↔ bgActive two-way sync.
+  - qreduce_test flux-floor tests now exercise the offspec_flux_floor option path.
+  - GUI construction + reduce tests still pass.
+
+  Needs your eyes (display required)
+
+  I can't click through a live window. Quick smoke test:
+  1. Load a polarized REF_M run set, reduce a few into the list, open the Off-Specular tab → confirm the checkbox + spinbox appear under the Imin/Imax row.
+  2. Toggle Subtract BG (BG X) → it should track the main background checkbox and the preview wings should change (BG off ⇒ brighter wings). 
+  3. Bump Flux floor 10^ (−3 → −2, Enter) → preview re-renders (more edge masking); set it very low (−8) and you should see the 44159-type edge spike reappear.
+  4. Export off-spec → the .dat reflects the settings baked at the last Reduce.
+
+  Ready to push: 718fc8c on feature/read-event-nexus.
+```
+
+### Prompt 34.4
+
+I have performed the live test. My artifacts are saved in ~/shared/REF_M/QuickNXSv1/session13/**. To answer your questions:
+
+Re: 1. I confirm the checkbox + spinbox
+Re: 2. I confirm the subtract BG tracks the main background and the preview changes when toggled (quicknxsv1-offspec-no-bgx.png)
+Re: 3. I confirm the change in flux floor spinbox changes the preview (quicknxsv1-offspec-no-bgx-flux-floor-10e{-2,-8}.png)
+Re: 4. I confirm reduction, but I am unsure that the settings are reflected as we are still not comparable to correctReduction
+
+I have the following notes on UI usability, however:
+
+N1. If the 'Subtract BG' on the Off-Specular tab is just a mirror of the main background checkbox, why have it in two places?
+N2. Along the lines of A1, can the Flux floor 10^ spinbox be moved to the main background checkbox?
+N3. The spinbox behavior differs from the rest: In v1 changing any value of the spinbox causes *immediate* recalculation. In v2 one must press Enter before the recalculation starts. The new flux floor spinbox follows v2 behavior contrary to the rest of the spin boxes. I have spoken with the scientists about this and they have accepted the new v2 behavior (in v2). Converting v1 is a project to be dealt with in another session. For now, please harmonize the flux floor spinbox with the v1 behavior and make a note about this in the project CLAUDE.md for future agents.
+N4. I observed many cases where an action "froze" the UI for some time with no obvious report. Recall that we had done work to make sure that *all actions* produced an immediate feedback in the statusbar text and a spinning cursor for long runs. One very obvious one was when I switched back to the Overview tab: There was a very long (30s?) period of *no response*, before the feedback in the statusbar came thru and by that time the UI had changed. I then enabled the DEBUG log, so ~/.quicknx/debug.log shows timelines. I performed the same operations again. Please review the logs and see if you can identify the reason for the lack of feedback. If you can, please make a plan for the next prompt (I guess that would be prompt-35-todo.md) to resolve this and other identified issues.
+  - change flux floor, toggle Subtract BG (no response for >30s, then box goes gray for >30s, then check appears and UI is responsive again)
+  - toggle Subtract BG (box goes gray for >30s, then check disappears and UI is responsive again)
+  - select Overview tab (this time, the feedback happened immediately...)
+  - after doing the reduction for N5 below, I went back to change the flux floor (very long no response)
+  - then I changed the colorbar to 'jet'. This time I did get the statusbar message right away
+N5. For reduction, I observe that the off specular preview has different axes scales, colormap and intensity scale than the off specular smoothing parameters dialog. See quicknxsv1-offspec-smoothing-parameters-no-bgx-flux-floor-10e-3.png. I would like the off specular preview to begin with full scale rendering (like in the smoothing parameters dialog) and I would like to select the same colormap (I like the one in the smoothing parameters dialog).
+  - in the main window, in plot options, there is a Colorbar checkbox and a drop down that holds the value 'gist_ncar'. Is this where the colormap is selected? If so what is the one used for the offspec smoothing parameters dialog? If they differ, please ensure that all plots use the same colormap defined in the plot options. Otherwise, please investigate the dichotomy.
+  - I changed the sigma value to 0.000525 (see quicknxsv1-offspec-smoothing-parameters-no-bgx-flux-floor-10e-3-000525.png). Notice the black spot at (0.0, 0.10). It would seem to be a more appropriate default. There is also the anisotropy of the spot. I understand this is an artifact of the single entry. Please add the sigma value treatment (default size, anisotropy, x/y coupled calculations) to the prompt-35-todo.md to tackle in a future session.
+  - I performed the reduction. I noticed the pop up progress box, but the statusbar text was frozen at 'Opening reduction dialog...'. Is there a way to update that in the dialog (at least once when performing the reductions)?
+N6. I performed a reduction with no Subtract BG, flux floor 10^-8 and smoothing parameters similar to the ones that v4.17.0rc5 used and the comparison is still pretty far away (compare-v4.3.0rc1-vs-v1.3.0dev49-flux-floor-10e-8.{png, txt}). Would you have a look at what parameters are missing/different so as to cause the difference?
+
+One point to note: the power has gone off at this worksite. We are running on battery backup for the internet. The UPS running the worksations will run out of power in approx 15min. The UPS running the internet will run out of power in approx 60min. The machine you are running on is a laptop with an old battery and I do not know how long it will last. So please checkpoint often, write .md files to the filesystem more often than you normally do for the rest of this session. Because of this, after making the plans, you may go ahead and execute them. If there are any design choices, do document them, but proceed according to your recommended option. If you get close to the 60min mark, go ahead and update the prompt-35-todo.md file with the remaining investigations and prepare for a hard shutdown. I myself are leaving this worksite for another, so you are on your own. Good luck!
+
+```
+  Shipped this session
+
+  - N1+N2 (UI consolidation, 0e2b5c0) — removed the redundant BG-X mirror from the Off-Specular tab; moved the Flux floor 10^ spinbox to sit next to bgActive/bgCenter/bgWidth in the BG controls. bgActive is the single BG-X control.
+  - N3 (v1 immediate-recalc) — flux-floor spinbox now uses valueChanged instead of editingFinished. The v1→v2 (Enter-to-commit) harmonization is noted as a future-session project in the project CLAUDE.md and plan/prompt-35-todo.md.
+  - N4 (freeze feedback, 3a4244c) — debug log shows 25–57s gaps after _calc_offspec (3 runs × 2 channels × ~5s each). _replotOffspec is now wrapped in self.busy('Off-specular preview...') so the wait cursor + statusbar message fire
+  instantly on BG-X toggle or flux-floor change. The work is still slow; the user sees feedback throughout.
+  - N5 (colormap unification, 4c7b2d0) — SmoothDialog.drawPlot had no cmap= and inherited matplotlib's default (viridis), while the main preview used cmap=self.color (gist_ncar). It now reads self.parent().color so both use the same
+  colormap from Plot Options. Change it once there, it applies everywhere.
+  - N6 (export refresh, 4c7b2d0) — the two flux-floor-10e-{3,8} exports had byte-identical metrics because off-spec settings baked into refl.options only at calcReflParams time. Reducer.execute() now refreshes subtract_background and
+  offspec_flux_floor from the live GUI on every refl before the Exporter runs, so the user's late toggles actually take effect on Reduce → export.
+
+  Deferred to next session (in plan/prompt-35-todo.md)
+  
+  - Coalesce the spinbox valueChanged so spinning doesn't queue multiple 30s replots.
+  - Cache OffSpecular results per (file, channel, options) to make preview fast.
+  - Reduction-dialog statusbar updates (statusbar froze at "Opening reduction dialog…").
+  - Overview-tab switch trace (find the missing busy() wrapper).
+  - Off-spec preview start with full-scale rendering (like the smoothing dialog).
+  - Smoothing σ defaults + anisotropy + x/y coupling.
+  - Specular re-compute on late BG-X toggle (the export refresh only re-extracts off-spec; specular R(Q) is already computed and unchanged).
+  - Upstream v2 quicknxs_io DB_ID writer fix; harden v1's reader to warn on 1/1/1 with a multi-DB block.
+
+  Quick numerical answer for N6
+
+  Your two comparison .txts had identical metrics because the spinbox change wasn't reaching the export. With 4c7b2d0 it will. Note: even after that, matching correctReduction (v4.3.0rc1) requires v4.3.0rc1-style smoothing, not
+  v4.17.0rc5 — yesterday's matched run (paired + flux floor 1e-3 + BG-off + v1 default smoothing) gave median 1.067; v4.17.0rc5-like smoothing will diverge in the off-spec wings.
+
+  Push-ready
+  
+  feature/read-event-nexus is 3 ahead of origin: 0e2b5c0, 3a4244c, 4c7b2d0. Tests green (qreduce + GUI). Good luck with the trip.
+```
+
+### Prompt 34.5
+
+Ok, one last item before we close this session. I checked the gui and I notice the following: The reflectivity extraction control has got scrollbars now. The addition of the flux floor control has overloaded the scaling. See ~/shared/REF_M/QuickNXSv1/prompt34/quicknxsv1-reflectivity-extraction-improper-scrollbars.png - Is there an adjustment you can make? Perhaps not so wide of a spinbox for the Flux floor 10^ spinbox if its only 1 or 2 digits?
+
+```
+● Fixed and committed 2585c71.
+
+  What I changed:
+  - Label: "Flux floor 10^" → "Flux 10^" (now matches the "Scale 10^" / "BG X" naming pattern in that panel).
+  - Spinbox: setMaximumWidth(60) — plenty for the 4-character "-3.0" / "-8.0" values. 
+  - Grid cell: reduced the spinbox column span from (1, 2) → (1, 1) so it no longer claims two columns.
+  - Tooltip kept the full "Off-spec direct-beam flux floor 10^x: …" description so the meaning isn't lost when hovering.
+  - Project CLAUDE.md note updated to reflect the shorter label. 
+  
+  Push-ready: feature/read-event-nexus is now 4 ahead of origin — 0e2b5c0, 3a4244c, 4c7b2d0, 2585c71. Tests green.
+```
+
+### Prompt 34.6
+
+Thanks; can you adjust the Label+Spinbox so that it is right-justified and set the entire 'Reflectivity Extraction (Basic)' height so as to remove the vertical scrollbar? What I see is ~/shared/REF_M/QuickNXSv1/prompt34/quicknxsv1-reflectivity-extraction-improper-scrollbars-2.png - the parameter sections should not have scrollbars.
+
+```
+● Committed b574946. Two changes:
+
+  - Right-align label — Qt.AlignRight | Qt.AlignTrailing | Qt.AlignVCenter on the "Flux 10^" QLabel so it matches the existing "X", "Y", "BG X", "Scale 10^", "Cut Pts" labels in the panel.
+  - Expand the enclosing dock/toolbox — after adding the row, recompute the contents widget's sizeHint().height() and propagate it to the enclosing QDockWidget (docked interface) or QToolBox (default interface). The original .ui sized
+  the dock for the original row count; adding a row programmatically without resizing was what forced the scrollbars.
+
+  This is heuristic (Qt geometry-walking always is) — if the V-scrollbar persists in your live test, send me another screenshot and I'll tune the +10 px buffer or set a setFixedHeight instead.
+
+  Push-ready: feature/read-event-nexus is 5 ahead of origin — 0e2b5c0, 3a4244c, 4c7b2d0, 2585c71, b574946. Tests green.
+```
+
+### Prompt 34.7
+
+Ok, still got scrollbars: here is the default main window view: '~/shared/REF_M/QuickNXSv1/prompt34/quicknxsv1-overview-after-prompt-34.6.png'. If I resize the main window, it shows like this: '~/shared/REF_M/QuickNXSv1/prompt34/quicknxsv1-overview-after-prompt-34.6-resized-to-remove-horizontal-scrollbar-but-vertical-scrollbar-persists.png
+
+```
+● Committed 04fb840. Honest answer: the QToolBox page in the .ui was sized for its original 6 rows, and Qt internally wraps an oversized page in a scroll area regardless of what we try to do at runtime — a clean fix would need editing
+  the .ui itself (which is a bigger change with .py-recompile fallout).
+
+  So I reverted the flux-floor placement to the OffSpec tab (its original home, plenty of room there). What I kept from your N1/N2/N3 feedback and the subsequent polish:
+
+  - No BG-X mirror — bgActive remains the single BG-X control (your N1).
+  - Compact "Flux 10^" label + 60 px width-capped spinbox (your screenshot follow-up).
+  - Right-aligned label style consistent with the rest.
+  - v1 immediate valueChanged recalc (your N3).
+  - self.busy('Off-specular preview…') wrap for instant feedback (N4).
+  - Reducer.execute() refresh of refl.options from the live GUI so toggles take effect on export (N6).
+
+  The Reflectivity Extraction (Basic) panel returns to its original row count — no scrollbars there. The flux floor lives in the OffSpec tab where it has room. prompt-35-todo.md is updated with the design iteration so the next session
+  knows the placement history.
+
+  Push-ready: feature/read-event-nexus is now 7 ahead of origin — 0e2b5c0, 3a4244c, 4c7b2d0, 2585c71, b574946, b574946's revert, 04fb840. All tests green.
+```
+
+### Prompt 34.8 (epilogue)
+
+Thanks, Claude. Good session, and I appreciate that you reverted the UI edit once you realized the structural difficulty. Before we go, would you do two things? 1) Make sure we describe the ui tension as a *deficiency to be dealt with in a future date, perhaps in plan/todo-* document or something like that. 2) Is there anything we have learned during this session that should be promoted to the cross-project knowledge layer? Please lets do that before we move on to continue with our plans for prompt 35 in a new session. See you soon!
+
+```
+● Both done. Summary for your records:
+
+  1. Project-specific deficiency (committed 1795225 in quicknxsv1)
+
+  quicknxsv1/plan/todo-ui-toolbox-page-sizing.md — describes the BG-section / QToolBox page sizing tension, the runtime mitigations tried and rejected, what a proper .ui-level fix looks like, why we did not do it this session, and the
+  acceptance criterion (no scrollbars with both BG-X and Flux 10^ visible in "Reflectivity Extraction (Basic)" in both default and docked interfaces).
+
+  2. Cross-project lessons (committed cf5510f on dragonfly)
+
+  setup/patterns/ui-aspects.md gained two new sections — both generally useful for any Qt+matplotlib reduction GUI:
+
+  - "Adding widgets at runtime to a Qt Designer–sized container" — captures the order-of-preference fixes (roomier container > edit .ui > scroll-policy override) and the docked-vs-default column-position gotcha, so the next agent who
+  tries to programmatically grow a QToolBox page knows the runtime mitigations don't reliably work and reaches for the right tool.
+  - "Diagnosing UI freezes with a debug-log gap scan" — the project-agnostic Python snippet we used here to find the 25–57 s gaps after _calc_offspec, plus how to read the output (gap-after-single-heavy-handler → missing busy() /
+  _activity_transient; gaps of hundreds of seconds → user idle, not a freeze; 5–60 s gaps matching the user's window → the signal).
+
+  Push-ready, both repos:
+  - quicknxsv1 feature/read-event-nexus: ahead 8 (1795225, 04fb840, b574946, 2585c71, 4c7b2d0, 3a4244c, 0e2b5c0, plus my earlier 718fc8c).
+  - Parent dragonfly: ahead by 1 net new (cf5510f).
+
+  Have a good break — see you in prompt 35.
+```
+
+## Prompt 35
+
+You are working in the quicknxsv1 project, feature/read-event-nexus branch. In the last prompt, we made progress on understanding the issues surrounding offspecular reduction behavior between a later version of quicknxsv2 (v4.3.0rc1) and quicknxsv1. With the right set of steps and parameters, it is possible to obtain comparable reductions as shown in ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8.png. For this session, please continue this investigation. I have made the following notes from the previous session, which I would like you to tackle:
+
+Files referenced without a full path are to be found in ~/shared/REF_M/QuickNXSv1/prompt34/**.
+
+1. Loading a reduced data with tof bins = 40, results in the gaps (see quicknxsv1-offspec-preview-tof-40-after-prompt-34.7.png). Loading the same dataset with tof bins = 400, results in no gaps (see quicknxsv1-offspec-preview-tof-400-flux-10e-8.png). Please investigate why the choice of TOF bins affects the *data itself*. This is not expected and I would argue that it is incorrect behavior. The selection of how to partition the TOF bins is a purely statistical choice that the scientist has to control the level of detail they observe - it *must not* in any way alter the data. Please consider this issue *very carefully* as it lies at the heart of many problems that are seen in quicknxsv2 that force us to use '400' on this parameter. 
+
+2. In one session with quicknxsv1, I loaded reduced data with tof bins = 40, then *CLEARED* the data set using the trashcan icon on the main UI, then *changed* tof bins = 400, and reloaded the *same reduced data*. What I got was a *DIFFERENT* overview than I expected (see quicknxsv1-overview-tof-400-clear-and-reload.png). I saved the contents of ~/.quicknxs/** to dot-quicknxs-prompt34.7-clear-and-reload.tar.gz (so as to preserve it as a snap shot for your review). Then, I closed quicknxsv1, started a new session, set tof bins = 400, loaded the *same reduced data*. This time I got what I expected (see quicknxsv1-overview-tof-400-clean-load-extraction.png). This is quite jarring. Please determine the root cause of this and add this to the plan to fix it.
+
+3. I went ahead and reduced the off specular data (files in ~/shared/REF_M/QuickNXSv1/prompt34/reduced-prompt-34.7-smoothed/**). I had to change the default off specular smoothing output options (see quicknxs-offspecular-smoothing-options-default.png) to change extents (see quicknxs-offspecular-smoothing-options-000525.png). This is ok, but I would like to know how the options for off specular smoothing are determined by quicknxsv1. I think this could be a good item to capture in a review document because it will inform future sessions and eventually affect quicknxsv2. The product of the reduction, I compared with the script that you made for this purpose, giving:
+
+```
+└─$ ( cd ~/Projects/Claude/1/quicknxsv1 ; pixi run python scripts/plot_offspec_compare.py --ref ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat --prop ~/shared/REF_M/QuickNXSv1/prompt34/reduced-prompt-34.7-smoothed/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat --out ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8.png )
+Loading reference:  ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat
+  meta:    QuickNXS 4.3.0rc1 | Mantid 6.12.0 | 2025-04-08 16:11:14
+  columns: 3-col file, using (x,y,I)=(0, 1, 2)
+  grid:    nx=563, ny=1000, regular=True
+  x range: [-0.11404, 0.08589]
+  y range: [-0.10000, 0.37582]
+Loading proposed:   ~/shared/REF_M/QuickNXSv1/prompt34/reduced-prompt-34.7-smoothed/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat
+  meta:    QuickNXS 1.3.0.dev49 | 2026-06-02 07:16:26
+  columns: 3-col file, using (x,y,I)=(0, 1, 2)
+  grid:    nx=536, ny=996, regular=True
+  x range: [-0.11404, 0.08589]
+  y range: [0.00000, 0.37097]
+Regridding (intersect) to common scientific coordinate space...
+  common grid: nx=563, ny=996, x=[-0.11404,0.08589], y=[0.00000,0.37097]
+Computing metrics...
+  pixels_valid_ref         560748
+  pixels_valid_prop        560748
+  pixels_valid_both        560748
+  pixels_positive_both     238212
+  fraction_valid_both      1
+  log_pearson              0.901875
+  rms_log_residual         0.700286
+  median_ratio             1.07224
+  ratio_q25                0.87712
+  ratio_q75                1.30895
+  total_intensity_ref      1282.62
+  total_intensity_prop     1924.24
+  integrated_ratio         1.50025
+  specular_pixels          7656
+  specular_median_ratio    1.06359
+  specular_log_pearson     0.981814
+  offspec_pixels           230556
+  offspec_median_ratio     1.07278
+  offspec_log_pearson      0.883762
+  peak_dx                  -0.0747051
+  peak_dy                  0.104767
+Plotting...
+Wrote ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8.png
+```
+
+I then noticed that the x-range and y-range values in the above *differed* between the two reduced values, so I started a *third* quicknxsv1 session, to choose the *same* x/y range values (see quicknxs-offspecular-smoothing-options-000525-take2.png, and the reduced output in ~/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/**):
+
+```
+└─$ ( cd ~/Projects/Claude/1/quicknxsv1 ; pixi run python scripts/plot_offspec_compare.py --ref ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat --prop ~/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat --out ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8-take2.png )
+Loading reference:  ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_OffSpecSmooth_Off_Off.dat
+  meta:    QuickNXS 4.3.0rc1 | Mantid 6.12.0 | 2025-04-08 16:11:14
+  columns: 3-col file, using (x,y,I)=(0, 1, 2)
+  grid:    nx=563, ny=1000, regular=True
+  x range: [-0.11404, 0.08589]
+  y range: [-0.10000, 0.37582]
+Loading proposed:   ~/shared/REF_M/QuickNXSv1/prompt34/reduced-tof-400/REF_M_44159+44160+44161_OffSpecSmooth_Off_Off.dat
+  meta:    QuickNXS 1.3.0.dev49 | 2026-06-02 09:03:33
+  columns: 3-col file, using (x,y,I)=(0, 1, 2)
+  grid:    nx=536, ny=1000, regular=True
+  x range: [-0.11404, 0.08589]
+  y range: [-0.10000, 0.37582]
+Regridding (intersect) to common scientific coordinate space...
+  common grid: nx=563, ny=1000, x=[-0.11404,0.08589], y=[-0.10000,0.37582]
+Computing metrics...
+  pixels_valid_ref         444770
+  pixels_valid_prop        563000
+  pixels_valid_both        444770
+  pixels_positive_both     184942
+  fraction_valid_both      0.79
+  log_pearson              0.887755
+  rms_log_residual         0.744522
+  median_ratio             1.07109
+  ratio_q25                0.872968
+  ratio_q75                1.31137
+  total_intensity_ref      1004.38
+  total_intensity_prop     1521.22
+  integrated_ratio         1.51459
+  specular_pixels          5957
+  specular_median_ratio    1.06328
+  specular_log_pearson     0.96255
+  offspec_pixels           178985
+  offspec_median_ratio     1.0717
+  offspec_log_pearson      0.868674
+  peak_dx                  -0.0743493
+  peak_dy                  0.104785
+Plotting...
+Wrote ~/shared/REF_M/QuickNXSv1/prompt34/compare-v4.3.0rc1-vs-v1.3.0dev49-tof-400-flux-10e-8-take2.png
+```
+
+4. Please review plan/prompt-35-todo.md and update it in light of the above investigations.
+
+5. After completing 1-4 above, please execute the revised plan/prompt-35-todo.md. If there are any choices, please use your recommended choice, but explain in a retrospective document why you made the choice so that I may review it. The reason I give this instruction in this session is that I will be away from this workstation and your goal is to complete all the tasks to completion.
+
+The cross-project rules should tell you that if you reach a session token limit, please wait for the limit to reset. As always, obtain any tool you need, be resourceful and ask me if you are missing any information or capability that you need to complete your investigation. Thank you!
+
+```
+● Session complete. Here's the final summary:
+
+  Investigation findings (items 1–4)
+
+  1. TOF bins issue: Per-cell intensity IS bin-invariant (median ratio 0.93 on a common Cartesian (Qx, Qz) grid). What changes is coverage — the .dat is a list of bin samples, sparse at TOF=40, dense at TOF=400. Total integrated
+  intensity scales with bin count because each row is per-bin, not per-area. Documented in plan/tof-binning-and-offspec-coverage.md.
+  2. Clear+reload bug: clearRefList doesn't clear ref_norm; loadExtraction's setNorm(do_remove=False) is a no-op if the entry exists. Result: stale ref_norm at OLD binning → getNorm() returns None on length mismatch → xtof_overview
+  un-normalized in clear+reload, normalized in fresh session. Root cause for the visible difference between the user's two screenshots.
+  3. Smoothing defaults: documented in plan/offspec-smoothing-defaults.md — 5% inset of the I>0 data extent, σ = 0.005 × X-span (coupled in Qz-axis modes), R = 3.0.
+  4. Plan revised at plan/prompt-35-todo.md.
+
+  Executed fixes (item 5)
+
+  6 commits on feature/read-event-nexus:
+  
+  ┌─────────┬──────┬──────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ commit  │ item │                                               what                                               │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ f092b54 │ T1   │ clear ref_norm on loadExtraction so a reload at new TOF bins is honored                          │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 12001e8 │ T4   │ clamp smoothing dialog Y1 ≥ 0 in Qz-axis modes                                                   │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ ed86435 │ T2   │ TOF-binning docs + shading experiment (kept gouraud — gaps are physical, not a shading artifact) │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ eb3cd05 │ N5   │ auto-fit offspecImin/Imax on first plot, with user-edit override                                 │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 803925a │ N4   │ debounce flux-floor valueChanged via 300 ms QTimer                                               │
+  ├─────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4bbdc49 │ docs │ finalize plan/prompt-35-retrospective.md                                                         │
+  └─────────┴──────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  11 new regression tests added; full suite green (130 main_gui + 105 qreduce/qio/qcalc = 235 passed).
+
+  Outstanding for you
+
+  - Push the 6 commits — git push origin feature/read-event-nexus (push reserved for human per CLAUDE.md).
+  - Optionally fold "use bins=400 for clean off-spec preview" into quicknxs/CLAUDE.md after reviewing plan/tof-binning-and-offspec-coverage.md.
+  - Retrospective at plan/prompt-35-retrospective.md records every autonomous choice for your review.
+
+  Deferred (not in this prompt's scope)
+
+  - plot_offspec caching speed-up; reduction-dialog → statusbar progress; Overview-tab 30 s freeze; σ default coupling; v4.17.0rc5 comparison (no reference data); off-spec preview onto regular grid.
+```
+
+### Prompt 35.1
+
+Nice job, Claude. I ran the tests, reduction and comparisons. Everything seemed pretty smooth to me. I put all my artifacts into ~/shared/REF_M/QuickNXSv1/prompt35/**. You made a script named plot-offspec-compare.py which I used to compare "correctReduction" with "tof-40" and "tof-400" reductions from my test run (see ~/shared/REF_M/QuickNXSv1/prompt35/commands.txt and ~/shared/REF_M/QuickNXSv1/prompt35/compare-transcript.txt).
+
+At this point, I would like to compare reduction outputs of *specular* reflectivity files. I ensured that this time the specular output would be generated. The files are in REF_M_44159+44160+44161_Specular_Off_Off.dat and represent 1D reflectivity data. This is effectively the line where ki_z == kf_z (or the vertical cut along the offspec output where (ki_z-kf_z == 0). Would you do the following:
+
+1. create a comparison script plot-specular-compare.py in quicknxsv1/scripts/* that I can use just like plot-offspec-compare.py to meaningfully visualize two specular reflectivity files? Exemplars are ~/shared/REF_M/11486/correctReduction/REF_M_44159+44160+44161_peak1_Specular_Off_Off.dat, ~/shared/REF_M/QuickNXSv1/prompt35/reduce-tof-40/REF_M_44159+44160+44161_Specular_Off_Off.dat and ~/shared/REF_M/QuickNXSv1/prompt35/reduce-tof-400/REF_M_44159+44160+44161_Specular_Off_Off.dat
+
+2. add a feature to plot-offspec-compare.py makes *vertical* line cuts along 'representative ki_z-kf_z' as a toggle, with one of the representations being ki_z-kf_z == 0, if present in the data. I like the order of the plots and the layout of the tool, please just make the feature toggle between *horizontal* cuts along 'representative Qz' or *vertical* cuts along 'representative ki_z-kf_z'.
+
+This will be a fantastic diagnostic set! Thank you so much.
+
+```
+● Both items shipped. Summary:
+
+  1. New scripts/plot_specular_compare.py — same layout shape as plot_offspec_compare.py:
+  - Top row: Ref R(Q), Prop R(Q), log10(prop/ref) vs Qz, relative error vs Qz
+  - Bottom row (wide): R(Q) overlay — ref = ● solid, prop = ✕ dashed, color per segment
+  - Segments are grouped by unique θ value (not contiguous rows) so it works with both v4.3.0rc1's sequential-runs layout and v1's Qz-sorted interleaved layout
+  - Metrics: log-Pearson, median ratio, ratio IQR, RMS log residual, integrated R, per-segment breakdown so a single-angle outlier shows up immediately
+
+  Verified on your prompt35 artifacts:
+  - vs TOF=400: median ratio 1.0011, log-Pearson 0.998, seg0 θ≈0.008 is 0.81× (low-angle slight low), seg1/seg2 ≈ 1.02
+  - vs TOF=40: median ratio 1.0001, similar segment pattern
+  
+  2. plot_offspec_compare.py --cut-axis toggle — top-row layout/order unchanged; just the bottom-panel line cuts switch direction:
+  - --cut-axis horizontal (default, existing): I vs (kiz-kfz) at representative Qz rows. Source: --qz-cut.
+  - --cut-axis vertical (new): I vs Qz at representative kiz-kfz columns. Source: --kxz-cut. Always includes the column closest to kiz-kfz=0 (specular ridge) when the common-grid x extent straddles zero.
+  
+  Both new features in one commit 2dbffb9 on feature/read-event-nexus, ready for you to push.
+```
+
+### Prompt 35.2
+
+Fantastic! I updated my comparison scripting. One thing to change on plot_specular_compare.py: Observe that when the horizontal axis label is emitted, it may conflict with the points readout metrics (see ~/shared/REF_M/QuickNXSv1/prompt35/compare-specular-tof-400-vs-tof-40.png). Can you adjust the code so that the metrics do not overlap with the axis label of the plot above them? Use your judgement as to the most robust method for this and future additions. I suspect that plot_offspec_compare.py might suffer similar effects, so can you check that also?
+
+```
+● Fixed. Both scripts now use a shared _layout_with_footer(fig, text) helper that sizes the bottom margin from the text's line count:
+
+  - Count lines × font_size × 1.4 (matplotlib's monospace leading) + 4 pt below + 10 pt above the text → reserved bottom fraction of fig.get_size_inches()[1] (capped at 40 % as a safety).
+  - Inlined in each script — no shared module since they're independent diagnostic tools.
+
+  Why this approach over alternatives I considered:
+
+  ┌────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                           option                           │                       pros                       │                                                 cons                                                 │
+  ├────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ bump rect=(0, 0.10, …) → 0.15 (CHOSEN ALTERNATIVE in past) │ one-line fix                                     │ brittle: 13 lines breaks it again, same for adding any new metric                                    │
+  ├────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ fixed subplots_adjust(bottom=0.2)                          │ simpler than tight_layout                        │ doesn't pack the upper plots; loses tight_layout's value                                             │
+  ├────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ dedicated GridSpec footer row                              │ matplotlib handles the spacing                   │ three- vs two-row layout depends on caller and complicates gs[1, :] overlay; less flexible than text │
+  ├────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ compute-from-line-count (CHOSEN)                           │ robust to future additions, no upstream coupling │ needs the line-height/leading constants; values picked to match matplotlib defaults                  │
+  └────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Verified on your failing case and three other artefacts — the bottom panel's x-axis label is now visible with a clean gap above the metrics in every case. Committed as f33819b, ready for you to push.
+```
+
+### Prompt 35.3
+
+Great! I ran ~/shared/REF_M/QuickNXSv1/prompt35/commands.txt which produced ~/shared/REF_M/QuickNXSv1/prompt35/compare-transcript.txt. I notice there were some 'RuntimeWarnings' emitted, for example:
+
+```
+Loading reference:  ~/shared/REF_M/QuickNXSv1/prompt35/reduced-tof-400/REF_M_44159+44160+44161_Specular_Off_Off.dat
+  meta:    QuickNXS 1.3.0.dev49 | 2026-06-03 03:04:43
+  points:  1156, segments: 3
+  Qz:      [0.01165, 0.27506] (span 0.2634)
+    seg0  θ=0.00786  Qz=[0.01165, 0.04119]  n=381
+    seg1  θ=0.01948  Qz=[0.02887, 0.10205]  n=381
+    seg2  θ=0.04831  Qz=[0.07144, 0.27506]  n=394
+Loading proposed:   ~/shared/REF_M/QuickNXSv1/prompt35/reduced-tof-40/REF_M_44159+44160+44161_Specular_Off_Off.dat
+  meta:    QuickNXS 1.3.0.dev49 | 2026-06-03 02:53:51
+  points:  79, segments: 3
+  Qz:      [0.01261, 0.23796] (span 0.2253)
+    seg0  θ=0.00786  Qz=[0.01261, 0.02133]  n=21
+    seg1  θ=0.01948  Qz=[0.03126, 0.05286]  n=21
+    seg2  θ=0.04831  Qz=[0.07302, 0.23796]  n=37
+Regridding (log-R linear-in-Qz) prop -> ref Qz grid...
+  ref Qz grid: n=1156  overlap n=1093
+Computing metrics...
+  points_total              1156
+  points_valid_ref          1156
+  points_valid_prop         1093
+  points_valid_both         1093
+  points_positive_both      1065
+  fraction_valid_both       0.945502
+  log_pearson               0.983519
+  rms_log_residual          0.546366
+  median_ratio              1.00261
+  ratio_q25                 0.915083
+  ratio_q75                 1.14092
+  integrated_R_ref          0.0044175
+  integrated_R_prop         0.00378603
+  integrated_ratio          0.857052
+  plateau_pixels            0
+  plateau_median_ref        None
+  plateau_median_prop       None
+  seg0 theta=0.007859727 n=  327 med=1.0242371557138106 logP=0.9924060641609643
+  seg1 theta=0.01947604 n=  368 med=0.9518209381426892 logP=0.8542339534335218
+  seg2 theta=0.04830529 n=  370 med=0.9914758025573545 logP=0.9859441017300187
+Plotting...
+~/Projects/Claude/1/quicknxsv1/scripts/plot_specular_compare.py:396: RuntimeWarning: divide by zero encountered in divide
+  rel_err_ref  = np.where(Rr > 0, dRr / Rr, np.nan)
+~/Projects/Claude/1/quicknxsv1/scripts/plot_specular_compare.py:396: RuntimeWarning: invalid value encountered in divide
+  rel_err_ref  = np.where(Rr > 0, dRr / Rr, np.nan)
+Wrote ~/shared/REF_M/QuickNXSv1/prompt35/compare-specular-tof-400-vs-tof-40.png
+```
+
+Would you have a look?
+
+```
+● Both scripts run silent under -W error::RuntimeWarning.
+
+  Root cause: np.where(R > 0, dR / R, nan) evaluates both branches before selecting — dR / R runs on every element including where R is 0 or NaN, firing the warnings. The mask just picks the result; it doesn't gate the computation.
+
+  Fix: swap to np.divide(dR, R, out=nan_array, where=mask), which actually skips the divide on masked-out positions. I wrapped it in a small _safe_rel_err helper so the two relative-error sites share one definition and the intent is
+  documented inline:
+
+  def _safe_rel_err(dR, R):
+      out  = np.full_like(R, np.nan, dtype=float)
+      mask = np.isfinite(R) & (R > 0) & np.isfinite(dR)
+      np.divide(dR, R, out=out, where=mask)
+      return out
+  
+  Audit of both scripts:
+
+  ┌────────────────────────────────────────────────────────────────────┬───────────────┬───────────────────────────────────────────────────────┐
+  │                                site                                │     safe?     │                          why                          │
+  ├────────────────────────────────────────────────────────────────────┼───────────────┼───────────────────────────────────────────────────────┤
+  │ specular_compare.py:422–423 rel_err_ref/prop                       │ ❌ → ✅ fixed │ now _safe_rel_err                                     │
+  ├────────────────────────────────────────────────────────────────────┼───────────────┼───────────────────────────────────────────────────────┤
+  │ offspec_compare.py:238 np.where(M>1e-6, I/np.maximum(M,1e-6), nan) │ ✅            │ np.maximum(M, 1e-6) guarantees denom ≥ 1e-6           │
+  ├────────────────────────────────────────────────────────────────────┼───────────────┼───────────────────────────────────────────────────────┤
+  │ offspec_compare.py:314–319, 350–353, 439                           │ ✅            │ all already on [pos_both] / [sel] pre-filtered arrays │
+  └────────────────────────────────────────────────────────────────────┴───────────────┴───────────────────────────────────────────────────────┘
+
+  Committed as 8121774, ready for you to push.
+```
+
+### Prompt 35.4
+
+Ok, thank you. Would you have a look at the remaining scripts in scripts/* and apply the same guard. Perhaps define _safe_rel_err() in module scope with a proper docstring?
+
+```
+● Done. Summary of the audit:
+
+  ┌─────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────┐
+  │                           script                            │                    divides / logs                    │                                    verdict                                    │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ plot_specular_compare.py                                    │ rel_err sites at 422-423                             │ migrated to module-scope _safe_rel_err                                        │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ plot_offspec_compare.py                                     │ _make_evaluator regular-grid branch                  │ migrated to np.divide(out=, where=) (drops the with np.errstate(...) wrapper) │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ compare_offspec_44159.py                                    │ np.log(np.maximum(...)) + mine_I[mask] / ref_I[mask] │ safe — explicit pre-mask + clamp                                              │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ validate_load_reduced_specular.py                           │ np.log10, divide, sqrt                               │ safe — good = (R > 0) & isfinite(R) filter applied before the math            │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ diag_specular_decompose.py                                  │ Python-scalar divides                                │ safe — if x else nan / if x > 0 guards                                        │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ reduce_offspec_headless.py                                  │ ETA divide                                           │ safe — if frac > 0 else inf                                                   │
+  ├─────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ reduce_headless.py, load_test.py, profile_responsiveness.py │ no risky math                                        │ —                                                                             │
+  └─────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────┘
+
+  _safe_rel_err is now at module scope in plot_specular_compare.py with a docstring that explains:
+  - the np.where eager-evaluation footgun it defends against,
+  - the exact mask conditions (isfinite(R) & (R > 0) & isfinite(dR)),
+  - when to use it (anywhere you'd write dR/R, np.where(R>0, dR/R, nan), or wrap in with np.errstate(...)).
+  
+  All four user cases run silent under -W error::RuntimeWarning. Committed as f7cb6d5, ready for you to push (now 3 commits ahead).
+```
 
 
 

@@ -88,6 +88,22 @@ class MainGUIGeneral(unittest.TestCase):
     self.assertNotEqual(ystart, self.gui.ui.refYPos.value(), 'y-fitting')
     self.assertNotEqual(ywstart, self.gui.ui.refYWidth.value(), 'yw-fitting')
 
+  def test_offspec_flux_floor_control(self):
+    '''The flux-floor spinbox lives in the Off-Specular tab (the Reflectivity
+    Extraction Basic panel is sized for its original rows; adding controls
+    there sprouts scrollbars).  No redundant BG-X mirror; default value =
+    MANTID_OFFSPEC_FLUX_FLOOR (as log10); v1 immediate-recalc convention
+    (valueChanged-connected, not editingFinished).'''
+    from quicknxs.qreduce import MANTID_OFFSPEC_FLUX_FLOOR
+    self.assertTrue(hasattr(self.gui, '_offspecFluxFloor'))
+    self.assertFalse(hasattr(self.gui, '_offspecBgX'),
+                     'BG-X mirror was removed; bgActive is the single BG-X control')
+    self.assertAlmostEqual(10**self.gui._offspecFluxFloor.value(),
+                           MANTID_OFFSPEC_FLUX_FLOOR, places=6)
+    # parented under the Off-Specular tab so the Reflectivity Extraction (Basic)
+    # QToolBox page doesn't gain a row and start showing scrollbars
+    self.assertIs(self.gui._offspecFluxFloor.parentWidget(), self.gui.ui.OffSpec_Tab)
+
   def test_eventTofBins_max_supports_v2_resolution(self):
     # v2 reduces off-spec at 400 TOF bins; Load Extraction reads at this
     # spinbox value, so the cap must allow >=400 (prompt-30.1).
@@ -1363,6 +1379,257 @@ class SmoothDataCallbackFix(unittest.TestCase):
     self.assertAlmostEqual(progress_values[-1], 1.0)
 
 
+class OffspecFluxFloorDebounce(unittest.TestCase):
+  """N4: rapid valueChanged on the flux-floor spinbox should coalesce
+  to a single _replotOffspec call ~300 ms after the spinbox settles,
+  not one call per step.  See plan/prompt-35-todo.md N4."""
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def test_timer_is_configured_singleshot_300ms(self):
+    """The debounce timer must be single-shot at 300 ms."""
+    self.assertTrue(hasattr(self.gui, '_offspec_replot_timer'),
+                    'debounce timer should be installed in __init__')
+    t=self.gui._offspec_replot_timer
+    self.assertTrue(t.isSingleShot(),
+                    'debounce timer must be single-shot so each new '
+                    'valueChanged resets it instead of stacking')
+    self.assertEqual(t.interval(), 300,
+                     'debounce should be 300 ms')
+
+  def test_rapid_value_changes_coalesce_to_one_replot(self):
+    """Twenty rapid spinbox steps within 100 ms should fire _replotOffspec
+    once (after the 300 ms quiet period), not 20 times.
+
+    We replace _replotOffspec with a counter to avoid the heavy actual
+    replot, then drive the spinbox programmatically and pump the Qt event
+    loop with sleeps until the timer fires.
+    """
+    from qtpy.QtCore import QCoreApplication
+    import time
+    counter=[0]
+    def _count(*_):
+      counter[0]+=1
+    # _offspec_replot_timer was wired to self._replotOffspec at __init__.
+    # We can't rebind self._replotOffspec on an instance (it's a method)
+    # and have the existing connection follow; instead disconnect and
+    # rewire the timer to our counter.
+    self.gui._offspec_replot_timer.timeout.disconnect()
+    self.gui._offspec_replot_timer.timeout.connect(_count)
+
+    # Burst of value changes in tight succession.
+    for v in (-7.5, -7.0, -6.5, -6.0, -5.5, -5.0, -4.5, -4.0):
+      self.gui._offspecFluxFloor.setValue(v)
+      QCoreApplication.processEvents()
+    # During the burst the timer is in the running state but should NOT
+    # have fired (each setValue calls timer.start() which resets it).
+    self.assertEqual(counter[0], 0,
+                     'no replot should fire while the burst is in progress')
+
+    # Wait long enough for the timer to expire on its OWN cadence, but pump
+    # the event loop so the timeout actually fires (offscreen Qt won't tick
+    # unless we yield to it).
+    t0=time.time()
+    while time.time()-t0 < 1.0:
+      QCoreApplication.processEvents()
+      time.sleep(0.05)
+
+    self.assertEqual(counter[0], 1,
+                     'debounce should coalesce the burst into ONE replot')
+
+
+class OffspecIntensityAutoFit(unittest.TestCase):
+  """N5: the off-spec preview should auto-fit Imin/Imax to the actual
+  data extent on the FIRST plot after a clear-or-load event; user edits
+  of the spinboxes disable further auto-fit until the reduction list is
+  reset again.  See plan/prompt-35-todo.md N5.
+  """
+
+  def setUp(self):
+    self.app=_app
+    if os.path.exists(statepath):
+      os.remove(statepath)
+    self._warn_patcher=patch.object(QMessageBox, 'warning', return_value=QMessageBox.No)
+    self._warn_patcher.start()
+    self.gui=MainGUI([])
+    self.gui.trigger.stay_alive=False
+    self.gui.trigger.wait()
+    self.gui.trigger=lambda action, *args: self.gui.processDelayedTrigger(action, args)
+
+  def tearDown(self):
+    self.gui.close()
+    self._warn_patcher.stop()
+    if os.path.exists(statepath):
+      os.remove(statepath)
+
+  def _mock_prepared(self, *, I_min, I_max, n_pts=64):
+    """Build a list of (channel_idx, FakeOffSpec, P0, PN) the way
+    plot_offspec's pre-pass would, with a known S-extent."""
+    import numpy as np
+    class FakeOffSpec:
+      pass
+    fos=FakeOffSpec()
+    # S has shape (Nx, NTOF); the visible slice is [:, PN:P0]
+    NTOF=n_pts
+    PN, P0=0, NTOF
+    Nx=4
+    # log-spaced positive values from I_min to I_max
+    S=np.geomspace(I_min, I_max, NTOF)[None, :]*np.ones(Nx)[:, None]
+    fos.S=S
+    return [(0, fos, P0, PN)]
+
+  def test_offspec_intensity_extent_returns_data_bounds(self):
+    """_offspec_intensity_extent should return (I_min, I_max) ≈ data extent
+    with Imin floored by the 1st percentile."""
+    prepared=self._mock_prepared(I_min=1e-6, I_max=1e-2, n_pts=200)
+    I_min, I_max=self.gui._offspec_intensity_extent(prepared)
+    self.assertIsNotNone(I_min)
+    self.assertIsNotNone(I_max)
+    # I_max should match the data max within numeric precision
+    self.assertAlmostEqual(I_max, 1e-2, delta=1e-6)
+    # I_min is the 1st percentile of positive values, floored at 1e-8.
+    # For geomspace this is close to the min, but above the floor.
+    self.assertGreater(I_min, 1e-8)
+    self.assertLess(I_min, 1e-4)
+
+  def test_offspec_intensity_extent_empty_input(self):
+    """No positive values → returns (None, None)."""
+    import numpy as np
+    class FakeOffSpec:
+      pass
+    fos=FakeOffSpec()
+    fos.S=np.zeros((4, 16))
+    I_min, I_max=self.gui._offspec_intensity_extent([(0, fos, 16, 0)])
+    self.assertIsNone(I_min)
+    self.assertIsNone(I_max)
+
+  def test_clearRefList_sets_auto_fit_pending(self):
+    """clearRefList must set the auto-fit flag so the next plot fits."""
+    self.gui._offspec_auto_fit_pending=False
+    self.gui.clearRefList(do_plot=False)
+    self.assertTrue(self.gui._offspec_auto_fit_pending,
+                    'clearRefList should re-enable auto-fit on the next preview')
+
+  def test_user_spinbox_change_disables_auto_fit(self):
+    """A non-programmatic spinbox edit must mark auto-fit as 'done'
+    so a subsequent plot does not re-fit and clobber the user's value."""
+    self.gui._offspec_auto_fit_pending=True
+    self.gui.auto_change_active=False  # user input, not programmatic
+    self.gui._on_offspec_intensity_user_set(-4.0)
+    self.assertFalse(self.gui._offspec_auto_fit_pending,
+                     'a user edit of Imin/Imax should disable auto-fit')
+
+  def test_programmatic_setValue_preserves_auto_fit_state(self):
+    """The slot must be a no-op when auto_change_active is True, so
+    the plot_offspec auto-fit pass does not flip the flag back off
+    mid-fit and re-enable it the user does not want."""
+    self.gui._offspec_auto_fit_pending=True
+    self.gui.auto_change_active=True  # programmatic
+    self.gui._on_offspec_intensity_user_set(-4.0)
+    self.assertTrue(self.gui._offspec_auto_fit_pending,
+                    'programmatic setValue must not flip auto-fit state')
+
+
+class SmoothDialogYClamp(unittest.TestCase):
+  """Verify SmoothDialog.drawPlot clamps Y1 >= 0 in (kizmkfz, Qz) /
+  (Qx, Qz) modes, where the y axis is Qz (non-physical for Qz < 0)."""
+
+  def _make_data(self, *, y_min, y_max):
+    """Build a small synthetic off-spec input data array suitable for
+    SmoothDialog.drawPlot.  Layout matches what
+    Exporter.output_data['OffSpec'] produces (shape (Nx, Ny, ≥6) with
+    columns Qx, Qz, ki_z, kf_z, _, I, ...).
+
+    ki_z is varied along the Ny (TOF) axis to keep the (ki_z) and
+    (kf_z) extents non-degenerate -- a constant ki_z triggers the
+    drawPlot 'degenerate window' fallback (x_max <= x_min) and the
+    test would not actually exercise the (ki_z, kf_z) mode.
+    """
+    import numpy as np
+    Nx, Ny=8, 12
+    Qx=np.linspace(-0.05, 0.05, Nx)[:, None]*np.ones(Ny)[None, :]
+    Qz=np.linspace(y_min, y_max, Ny)[None, :]*np.ones(Nx)[:, None]
+    ki_z=np.linspace(0.02, 0.10, Ny)[None, :]*np.ones(Nx)[:, None]
+    kf_z=Qz-ki_z
+    I=np.full_like(Qx, 1e-2)
+    dI=np.full_like(Qx, 1e-5)
+    item=np.stack([Qx, Qz, ki_z, kf_z, ki_z-kf_z, I, dI], axis=-1)
+    return [item]
+
+  def setUp(self):
+    self.app=_app
+
+  def test_kizmkfz_mode_clamps_y1_to_zero(self):
+    """In (kizmkfz)-vs-Qz mode, Y1 must seed to >= 0 even when the data
+    extent crosses zero.  This avoids the user having to manually clamp
+    Y1 every time (the user's prompt-34 take-2 screenshot shows them
+    setting Y1 from -0.0297 to 0.0).
+    """
+    from quicknxs.gui_utils import SmoothDialog
+    data=self._make_data(y_min=-0.05, y_max=0.40)
+    dia=SmoothDialog(None, data)
+    try:
+      # kizmkfzVSqz is the default radio button per smooth_dialog.py:31
+      self.assertTrue(dia.ui.kizmkfzVSqz.isChecked(),
+                      'kizmkfzVSqz should be the default mode')
+      self.assertGreaterEqual(dia.ui.gridYmin.value(), 0.0,
+                              'Y1 should clamp to >= 0 in Qz-y mode')
+    finally:
+      dia.deleteLater()
+
+  def test_qxqz_mode_clamps_y1_to_zero(self):
+    """In Qx-vs-Qz mode, Y1 must also seed to >= 0 (y axis is Qz)."""
+    from quicknxs.gui_utils import SmoothDialog
+    data=self._make_data(y_min=-0.05, y_max=0.40)
+    dia=SmoothDialog(None, data)
+    try:
+      # Switch to Qx-vs-Qz mode, then redraw so seeds reflect that mode.
+      dia.ui.kizmkfzVSqz.setChecked(False)
+      dia.ui.qxVSqz.setChecked(True)
+      dia.drawPlot()
+      self.assertGreaterEqual(dia.ui.gridYmin.value(), 0.0,
+                              'Y1 should clamp to >= 0 in qxVSqz mode')
+    finally:
+      dia.deleteLater()
+
+  def test_kizkfz_mode_does_not_clamp(self):
+    """In (ki_z)-vs-(kf_z) mode the y axis is k_fz, NOT Qz, and the
+    natural data extent can legitimately straddle zero (specular ridge).
+    Y1 must NOT be clamped in this mode.  We use a kf_z range that
+    crosses zero and verify the seeded Y1 is allowed to be negative.
+    """
+    from quicknxs.gui_utils import SmoothDialog
+    data=self._make_data(y_min=-0.05, y_max=0.40)
+    dia=SmoothDialog(None, data)
+    try:
+      dia.ui.kizmkfzVSqz.setChecked(False)
+      dia.ui.kizVSkfz.setChecked(True)
+      dia.drawPlot()
+      # In kizVSkfz mode the y axis is kf_z = Qz - ki_z.  With Qz from
+      # -0.05 to 0.40 and ki_z from 0.02 to 0.10 (data extent), kf_z
+      # ranges roughly -0.15 to +0.38, straddling zero.  T4 must NOT
+      # clamp in this mode; the seeded Y1 should be negative.
+      self.assertLess(dia.ui.gridYmin.value(), 0.0,
+                      'in kizVSkfz mode Y1 must follow the data extent (negative ok), not clamp to 0')
+    finally:
+      dia.deleteLater()
+
+
 # ──────────────────────────────────────────────────────────────
 #  QFileDialog tuple return fix tests
 # ──────────────────────────────────────────────────────────────
@@ -1561,6 +1828,50 @@ class LoadExtractionRoundTrip(unittest.TestCase):
     self.gui.loadExtraction()
     self.assertGreater(len(self.gui.reduction_list), 0,
                        'reduction_list should be populated from pending header')
+
+  def test_load_extraction_clears_stale_norms_on_reload(self):
+    """Reload after a trashcan-clear must NOT keep the previous load's
+    norms.  Otherwise a reload at a different `bins` (TOF bin count) is
+    silently mismatched against the new active_data and `getNorm()`
+    returns None, breaking the xtof_overview normalization.
+
+    See plan/prompt-35-todo.md T1 — the visible difference between the
+    user's `quicknxsv1-overview-tof-400-clear-and-reload.png` and
+    `quicknxsv1-overview-tof-400-clean-load-extraction.png` traces to
+    this: ref_norm survived the trashcan + reload, then carried an
+    OLD-binning Reflectivity whose Rraw length no longer matched
+    active_data.tof at the new bin count.
+    """
+    dat_path=self._generate_reduced_dat()
+
+    # First load — populates ref_norm normally.
+    self.gui.loadExtraction(filename=dat_path)
+    self.assertGreater(len(self.gui.ref_norm), 0,
+                       'first load should populate ref_norm')
+    # Save the EXACT same Reflectivity objects so we can detect identity
+    # (these MUST be replaced by the reload, not kept around).
+    first_load_norm_ids=set(id(v) for v in self.gui.ref_norm.values())
+
+    # Simulate the trashcan click: clears refl list only.  This is the
+    # user's behavior that previously left ref_norm populated.
+    self.gui.clearRefList(do_plot=False)
+    self.assertEqual(len(self.gui.reduction_list), 0,
+                     'trashcan should clear refl list')
+
+    # Reload the same extraction.  With the fix, ref_norm is wiped at
+    # the top of loadExtraction and re-populated with fresh objects.
+    self.gui.loadExtraction(filename=dat_path)
+    self.assertGreater(len(self.gui.ref_norm), 0,
+                       'reload should re-populate ref_norm')
+
+    # POST-CONDITION: every Reflectivity in ref_norm is a fresh object,
+    # not the stale ones from the first load.  Identity check is the
+    # strongest assertion that the fix is in place — even if the
+    # bin count happens to match, the objects must be replaced.
+    second_load_norm_ids=set(id(v) for v in self.gui.ref_norm.values())
+    self.assertFalse(first_load_norm_ids & second_load_norm_ids,
+                     'ref_norm must hold fresh Reflectivity objects '
+                     'after reload, not stale ones from the prior load')
 
 
 class CalcReflParamsFreshFileReseed(unittest.TestCase):

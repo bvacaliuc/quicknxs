@@ -82,6 +82,23 @@ class Reducer(object):
     self.exported_files_plots=[]
     self.exported_files_data=[]
 
+    # Refresh off-spec settings (BG-X / flux floor) from the live GUI so a
+    # change after the last calcReflParams takes effect on export.  Off-spec
+    # extraction happens inside Exporter.extract_offspecular and constructs
+    # OffSpecular() fresh from refl.options, so updating the options dict here
+    # propagates to the export.  (Without this the user's spinbox/checkbox
+    # changes silently used the *baked* values; see plan/prompt-35-todo.md N6.)
+    _pw=getattr(self, '_parent_window', None)
+    if _pw is not None and hasattr(_pw, 'ui') and hasattr(_pw, '_offspecFluxFloor'):
+      try:
+        _bgx=_pw.ui.bgActive.isChecked()
+        _ff=10**_pw._offspecFluxFloor.value()
+        for refl in self.refls:
+          refl.options['subtract_background']=_bgx
+          refl.options['offspec_flux_floor']=_ff
+      except Exception:
+        pass
+
     # calculate and collect reflectivities
     self.exporter=Exporter(self.channels, self.refls,
                            sample_length=opts['sampleSize'],
@@ -706,8 +723,17 @@ class SmoothDialog(QDialog):
         else:
           xdata=ki_z
           ydata=kf_z
-        plot.pcolormesh(xdata, ydata, I, log=True,
-                        imin=1e-6, imax=1., shading='gouraud')
+        # Use the same colormap the main window uses for its off-spec preview
+        # (self.parent() is the MainGUI; it sets `self.color` from the
+        # Plot-Options dropdown).  Without this, this dialog would inherit
+        # matplotlib's default (viridis) while the main preview shows the
+        # configured map -- a confusing inconsistency reported in
+        # plan/prompt-35-todo.md N5.
+        _pcm=dict(log=True, imin=1e-6, imax=1., shading='gouraud')
+        _cmap=getattr(self.parent(), 'color', None)
+        if _cmap is not None:
+          _pcm['cmap']=_cmap
+        plot.pcolormesh(xdata, ydata, I, **_pcm)
         # accumulate the data extent (where there is intensity) across items
         mask=I>0
         if not mask.any():
@@ -744,6 +770,15 @@ class SmoothDialog(QDialog):
       x2=x_max-(x_max-x_min)*grid_percentage
       y1=y_min+(y_max-y_min)*grid_percentage
       y2=y_max-(y_max-y_min)*grid_percentage
+      # When the y axis represents Qz (both kizmkfz and qxqz modes), clamp
+      # Y1 to 0 — negative Qz is non-physical and the off-spec extraction
+      # only emits points there at the lowest-angle run's band edge, where
+      # they are noise that the user invariably trims away.  In ki_z vs
+      # k_fz mode the y axis is kf_z which can legitimately straddle the
+      # origin (small kf_z is the specular ridge), so leave it alone.
+      # See plan/prompt-35-todo.md T4.
+      if kizmkfz or qxqz:
+        y1=max(0.0, y1)
       # sigma proportional to the region (separately in x and y), floored so a
       # narrow axis (e.g. Qx) does not collapse the spot to nothing
       sigma_x=max((x2-x1)*sigma_percentage, min_sigma_size)
