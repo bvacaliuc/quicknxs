@@ -130,9 +130,17 @@ def load_specular_dat(path):
     """
     meta = _parse_header(path)
     data = np.loadtxt(path, comments='#')
-    if data.ndim != 2 or data.shape[1] < 5:
-        raise ValueError(f'{path}: expected ≥5-column data, got shape {data.shape}')
-    Qz, R, dR, dQz, theta = (data[:, i] for i in range(5))
+    try:
+        if data.ndim != 2 or data.shape[1] < 5:
+            raise ValueError(f'{path}: expected ≥5-column data, got shape {data.shape}')
+        Qz, R, dR, dQz, theta = (data[:, i] for i in range(5))
+    except ValueError as e:
+        print(f"Got: {repr(e)} with data.shape[1]={data.shape[1]} - handling if ==4")
+        if data.shape[1] != 4:
+            raise
+        Qz, R, dR, dQz = (data[:, i] for i in range(4))
+        theta = np.zeros(len(Qz))
+
     meta['ncols'] = data.shape[1]
     meta['n_points'] = int(len(Qz))
 
