@@ -466,21 +466,22 @@ def plot_comparison(ref, prop, grid, metrics, out_path,
     # Line cuts.  Two modes:
     #
     # - 'horizontal': cut across constant-Qz rows of the regrided
-    #   intensity, so the bottom plot is I vs (k_iz - k_fz) at several
-    #   representative Qz values.  This is the historical default.
+    #   intensity, so the bottom plot is I vs (k_iz - k_fz) at the mid-point
+    #   of the Qz range.
     # - 'vertical': cut down constant-(k_iz-k_fz) columns, so the bottom
     #   plot is I vs Qz at several representative k_iz-k_fz values --
     #   useful for asking "does the specular ridge (k_iz-k_fz=0) match?"
-    #   without having to read it off the 2-D maps above.  Always
-    #   includes the column closest to 0 if the common-grid x extent
-    #   straddles 0.
+    #   without having to read it off the 2-D maps above.  Without choosing
+    #   any cuts, include the common reflectivity plot at (k_iz-k_fz=0)
     if cut_axis == 'horizontal':
         if qz_cuts is None:
             ymin, ymax = grid['yrange']
-            qz_cuts = [ymin + 0.10 * (ymax - ymin),
-                       ymin + 0.30 * (ymax - ymin),
-                       ymin + 0.55 * (ymax - ymin),
-                       ymin + 0.80 * (ymax - ymin)]
+            ##qz_cuts = [ymin + 0.10 * (ymax - ymin),
+            ##           ymin + 0.30 * (ymax - ymin),
+            ##           ymin + 0.55 * (ymax - ymin),
+            ##           ymin + 0.80 * (ymax - ymin)]
+            # Just make one cut halfway thru the Qz range
+            qz_cuts = [ymin + 0.50 * (ymax - ymin)]
         for qz in qz_cuts:
             j = int(np.argmin(np.abs(grid['y_axis'] - qz)))
             qz_actual = grid['y_axis'][j]
@@ -496,14 +497,14 @@ def plot_comparison(ref, prop, grid, metrics, out_path,
     elif cut_axis == 'vertical':
         if kxz_cuts is None:
             xmin, xmax = grid['xrange']
-            kxz_cuts = [xmin + 0.15 * (xmax - xmin),
-                        xmin + 0.40 * (xmax - xmin),
-                        xmin + 0.60 * (xmax - xmin),
-                        xmin + 0.85 * (xmax - xmin)]
+            ##kxz_cuts = [xmin + 0.15 * (xmax - xmin),
+            ##            xmin + 0.40 * (xmax - xmin),
+            ##            xmin + 0.60 * (xmax - xmin),
+            ##            xmin + 0.85 * (xmax - xmin)]
             # Always include the specular ridge (k_iz - k_fz = 0) if it
             # is inside the common-grid x extent.
             if xmin <= 0.0 <= xmax:
-                kxz_cuts.append(0.0)
+                kxz_cuts = [0.0]
         for kxz in kxz_cuts:
             i = int(np.argmin(np.abs(grid['x_axis'] - kxz)))
             kxz_actual = grid['x_axis'][i]
@@ -578,7 +579,7 @@ def main():
     ap.add_argument('--specular-halfwidth', type=float, default=2e-3,
                     help='|k_iz - k_fz| < this is the specular stripe (default 2e-3)')
     ap.add_argument('--cut-axis', choices=('horizontal', 'vertical'),
-                    default='horizontal',
+                    default='vertical',
                     help='Direction of the bottom-panel line cuts: '
                          '"horizontal" (default) = I vs (k_iz-k_fz) at '
                          'representative Qz values; "vertical" = I vs Qz '
