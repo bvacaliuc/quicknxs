@@ -26,7 +26,6 @@ dist_data/quicknxs.icns
 dist_data/quicknxs.png
 dist_data/setup_win.iss
 dist_data/sns-quicknxs.desktop
-dist_data/update_version.py
 dist_data/x-quicknxs-dat.xml
 dist_data/x-quicknxs-nxs.xml
 doc/Makefile
@@ -129,6 +128,7 @@ icons/zoom-original.png
 icons/zoom-previous.png
 icons/zoom-select.png
 quicknxs/__init__.py
+quicknxs/_version.py
 quicknxs/advanced_background.py
 quicknxs/auto_reflectivity.py
 quicknxs/background_dialog.py
