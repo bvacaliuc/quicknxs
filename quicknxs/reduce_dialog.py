@@ -309,7 +309,7 @@ class Ui_Dialog(object):
     self.emailSend.setText(_translate("Dialog", "Send email with result files"))
     self.emailSendData.setText(_translate("Dialog", "Only Data"))
     self.label_4.setText(_translate("Dialog", "To:"))
-    self.emailTo.setText(_translate("Dialog", "agf@ornl.gov"))
+    self.emailTo.setText(_translate("Dialog", "vacaliucb@ornl.gov"))
     self.label_5.setText(_translate("Dialog", "CC:"))
     self.label_3.setText(_translate("Dialog", "Subject:"))
     self.label_6.setText(_translate("Dialog", "Message Text:"))
