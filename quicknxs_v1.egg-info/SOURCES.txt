@@ -129,6 +129,7 @@ icons/zoom-previous.png
 icons/zoom-select.png
 quicknxs/__init__.py
 quicknxs/_version.py
+quicknxs/activity_status.py
 quicknxs/advanced_background.py
 quicknxs/auto_reflectivity.py
 quicknxs/background_dialog.py
@@ -276,12 +277,14 @@ quicknxs_v1.egg-info/SOURCES.txt
 quicknxs_v1.egg-info/dependency_links.txt
 quicknxs_v1.egg-info/top_level.txt
 tests/__init__.py
+tests/activity_status_test.py
 tests/conftest.py
 tests/database_test.py
 tests/main_gui_test.py
 tests/qcalc_test.py
 tests/qio_test.py
 tests/qreduce_test.py
+tests/responsiveness_test.py
 tests/test1_event.nxs
 tests/test1_histo.nxs
 tests/test_event_h5.py
